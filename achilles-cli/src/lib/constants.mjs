@@ -33,6 +33,7 @@ export const BUILT_IN_SKILLS = {
   // Execution and refinement
   EXECUTE: 'execute-skill',
   SKILL_REFINER: 'skill-refiner',
+  AKU_MEMORY: 'aku-memory',
 
   // Documentation scaffolding
   SCAFFOLD_DOC: 'scaffold-doc-skill',

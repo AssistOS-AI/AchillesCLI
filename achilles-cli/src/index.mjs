@@ -28,6 +28,10 @@ import {
     installWorkspaceSkillRefreshHook,
     refreshWorkspaceSkillsNow,
 } from './lib/workspaceSkillRefresh.mjs';
+import { AkuMemoryAdapter } from './lib/akuMemory/AkuMemoryAdapter.mjs';
+import { buildAKUPlanningPacket } from './lib/akuMemory/akuPlanningPacket.mjs';
+import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMemory/akuContextFormatter.mjs';
+import { createAKUSessionState } from './lib/akuMemory/akuSessionState.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -303,6 +307,17 @@ async function main() {
                 logger,
                 skipBashPermissions,
             };
+            const akuSessionState = createAKUSessionState();
+            context.akuSessionState = akuSessionState;
+            const akuPrompt = await preparePromptForAKUMemory({
+                prompt,
+                workingDir,
+                workspaceRoot: workingDir,
+                context,
+                sessionState: akuSessionState,
+                logger,
+            });
+            agent.context = context;
             await startIntroSkill(agent, {
                 workingDir,
                 context,
@@ -312,7 +327,7 @@ async function main() {
                 },
             });
 
-            let result = await agent.executePrompt(prompt, {
+            let result = await agent.executePrompt(akuPrompt.prompt, {
                 context,
                 mode,
                 systemPrompt: buildOrchestratorSystemPrompt(),
@@ -368,6 +383,61 @@ async function main() {
     }
 }
 
+async function preparePromptForAKUMemory({
+    prompt,
+    normalizedMessage = null,
+    workingDir,
+    workspaceRoot,
+    context,
+    sessionState,
+    logger,
+}) {
+    const adapter = context.akuMemoryAdapter instanceof AkuMemoryAdapter
+        ? context.akuMemoryAdapter
+        : new AkuMemoryAdapter({
+            rootDir: workspaceRoot || workingDir,
+            workspaceRoot: workspaceRoot || workingDir,
+            actor: 'achilles-cli',
+            sessionState,
+            logger,
+        });
+    context.akuMemoryAdapter = adapter;
+    context.akuMemoryActions = adapter.createActionSurface();
+
+    const packet = buildAKUPlanningPacket({
+        text: prompt,
+        rawText: normalizedMessage?.rawText,
+        normalizedMessage,
+        workingDir,
+        workspaceRoot: workspaceRoot || workingDir,
+        previousSessionState: sessionState?.toJSON?.() ?? null,
+        sessionId: process.env.SSO_SESSION_ID || null,
+    });
+
+    try {
+        const preflight = await adapter.preparePromptMemory(packet);
+        context.akuMemoryPreflight = preflight;
+        const memoryContext = formatAKUContextForPrompt(preflight);
+        return {
+            prompt: appendAKUContextToPrompt(prompt, memoryContext),
+            preflight,
+            memoryContext,
+        };
+    } catch (error) {
+        logger?.debug?.(`AKU memory preflight skipped: ${error.message}`);
+        context.akuMemoryPreflight = {
+            enabled: false,
+            initialized: false,
+            diagnostics: [`AKU memory preflight skipped: ${error.message}`],
+        };
+        return {
+            prompt,
+            preflight: context.akuMemoryPreflight,
+            memoryContext: '',
+        };
+    }
+}
+
 function isWebchatRuntime() {
     if (hasSsoEnvironment()) {
         return true;
@@ -398,6 +468,7 @@ async function runWebchatInteractive(agent, options) {
     const { workingDir, skillsDir, skipBashPermissions, debug, renderMarkdown, tagRelayConfig } = options;
     const historyManager = new HistoryManager({ workingDir });
     const tagRelay = createWebchatTagRelay(tagRelayConfig);
+    const akuSessionState = createAKUSessionState();
     const slashState = {
         activeTier: TIERS.FAST,
         pinnedModel: null,
@@ -410,6 +481,7 @@ async function runWebchatInteractive(agent, options) {
         llmAgent: agent.llmAgent,
         skipBashPermissions,
     };
+    context.akuSessionState = akuSessionState;
     agent.context = context;
     await startIntroSkill(agent, {
         workingDir,
@@ -508,7 +580,17 @@ async function runWebchatInteractive(agent, options) {
                         return;
                     }
 
-                    let result = await agent.executePrompt(message, {
+                    const akuPrompt = await preparePromptForAKUMemory({
+                        prompt: message,
+                        normalizedMessage,
+                        workingDir,
+                        workspaceRoot: workingDir,
+                        context,
+                        sessionState: akuSessionState,
+                        logger: agent.logger,
+                    });
+
+                    let result = await agent.executePrompt(akuPrompt.prompt, {
                         context,
                         systemPrompt: buildOrchestratorSystemPrompt(),
                         signal: activeAbortController.signal,

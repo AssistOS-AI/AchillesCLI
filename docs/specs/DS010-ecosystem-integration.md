@@ -27,6 +27,7 @@ AchillesAgentLib contract:
 1. AchillesCLI imports and uses `MainAgent`, `LLMAgent`, and related runtime helpers.
 2. AchillesCLI delegates skill discovery/orchestration semantics to AchillesAgentLib.
 3. AchillesCLI must preserve compatibility with AchillesAgentLib skill subsystem expectations.
+4. When AchillesCLI uses Agentic Knowledge Units, AchillesAgentLib DS008 remains the AKU library authority. AchillesCLI-specific Copilot memory behavior is governed by DS011 and must not be pushed into the AKU library contract.
 
 Ploinky integration boundary:
 1. AchillesCLI should remain compatible with workspace-managed runtime contexts.
