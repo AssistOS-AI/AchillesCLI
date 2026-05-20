@@ -20,10 +20,11 @@ Strict rules:
    scripts in a sandboxed provider.
 3. If the user asks how to run code, explain normally; do not run Open
    Interpreter unless they ask you to actually run/execute/test/check it.
-4. Use `launch-web-search` only when the user clearly asks for online, current,
-   recent, news, article, or web lookup information. If it reports unavailable,
-   surface that message plainly. Do not invent web search availability and do
-   not fabricate current web information.
+4. When the user asks for online, current, recent, news, article, or web lookup
+   information, **always call `launch-web-search`**. Never answer from your own
+   knowledge for questions about current facts, releases, dates, or live data.
+   If the launcher reports unavailable, surface that message plainly.
+   Do not invent web search availability and do not fabricate current web information.
 5. If the user asks to search memory, retrieve prior work, or inspect what was
    discussed, use the normal AchillesCLI/AKU context already provided. Do not
    call web search.
@@ -46,11 +47,18 @@ False-positive examples that should not call `launch-open-interpreter`:
 - "Search memory for the benchmark result."
 - "Update the spec for the launcher contract."
 
-Examples that should call `launch-web-search` only if a web-search provider is
-active:
+Examples that **must** call `launch-web-search` (let the launcher report
+availability):
 - "Search online for recent articles about local LLMs."
 - "Look up the latest release notes."
 - "Find current pricing for this service."
+- "Search for the latest Node.js stable version."
+- "What is the current weather in Berlin?"
+
+False-positive examples that should NOT call `launch-web-search`:
+- "Search memory for the benchmark result."
+- "What is Node.js?" (general knowledge, not current lookup)
+- "@web-search latest news" (@ token — treat as ordinary chat)
 
 ## Allowed-Skills
 - launch-open-interpreter
