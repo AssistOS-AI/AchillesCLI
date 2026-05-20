@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -20,6 +21,39 @@ const HIGH_IMPACT_OPERATIONS = new Set([
     'delete',
 ]);
 const SENSITIVE_KEY_RE = /(secret|password|credential|token|private[_-]?key|api[_-]?key|hidden[_-]?reasoning|chain[_-]?of[_-]?thought|raw[_-]?prompt|private[_-]?prompt|content)$/i;
+const CACHE_PROMPT_STOP_WORDS = new Set([
+    'a',
+    'an',
+    'and',
+    'are',
+    'as',
+    'at',
+    'be',
+    'by',
+    'can',
+    'for',
+    'from',
+    'how',
+    'i',
+    'in',
+    'is',
+    'it',
+    'me',
+    'of',
+    'on',
+    'or',
+    'please',
+    'the',
+    'this',
+    'to',
+    'was',
+    'what',
+    'when',
+    'where',
+    'who',
+    'why',
+    'with',
+]);
 
 export class AkuMemoryAdapter {
     constructor(options = {}) {
@@ -450,6 +484,187 @@ export class AkuMemoryAdapter {
         return aku.buildScopedContextPack(query, options);
     }
 
+    async lookupCachedAgentResult({ prompt, backend, workingDir, ttlHintSeconds } = {}) {
+        const normalized = normalizeAgentResultCacheInput({ prompt, backend, workingDir, ttlHintSeconds });
+        if (!normalized.promptHash) {
+            return { hit: false, reason: 'missing_cache_key' };
+        }
+        let aku;
+        try {
+            aku = await this.getLoadedAKU();
+        } catch (error) {
+            return { hit: false, reason: 'aku_unavailable', diagnostics: [error.message] };
+        }
+
+        const kuType = normalized.backend ? agentResultKuType(normalized.backend) : '';
+        let records = [];
+        try {
+            records = await aku.listResults(kuType ? { kuType } : {});
+        } catch (error) {
+            return { hit: false, reason: 'lookup_failed', diagnostics: [error.message] };
+        }
+
+        const now = Date.now();
+        const exact = records
+            .filter((record) => agentResultRecordMatches(record, normalized, now, { requirePromptHash: true }))
+            .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')))[0];
+        if (exact) {
+            const resolvedBackend = agentResultRecordBackend(exact) || normalized.backend;
+            return {
+                hit: true,
+                backend: resolvedBackend,
+                resultText: exact.metadata?.result_text || exact.summary || '',
+                record: exact,
+                provenance: 'aku-agent-result-cache',
+            };
+        }
+
+        try {
+            const search = await aku.search(normalized.query, {
+                explain: true,
+                limit: 8,
+                recordTypes: ['result'],
+                ...(kuType ? { kuTypes: [kuType] } : {}),
+            });
+            const candidate = (search.results || [])
+                .find((record) => agentResultRecordMatches(record, normalized, now, { allowSimilarPrompt: true }));
+            if (candidate) {
+                const resolvedBackend = agentResultRecordBackend(candidate) || normalized.backend;
+                return {
+                    hit: true,
+                    backend: resolvedBackend,
+                    resultText: candidate.metadata?.result_text || candidate.summary || '',
+                    record: candidate,
+                    provenance: 'aku-agent-result-cache-search',
+                };
+            }
+        } catch (error) {
+            return { hit: false, reason: 'search_failed', diagnostics: [error.message] };
+        }
+
+        return { hit: false, reason: 'miss' };
+    }
+
+    async persistAgentResult({
+        prompt,
+        backend,
+        resultText,
+        workingDir,
+        cacheable,
+        ttlHintSeconds,
+        originPaths = [],
+        metadata = {},
+    } = {}) {
+        if (cacheable !== true) {
+            return { ok: true, skipped: true, reason: 'not_cacheable' };
+        }
+        const normalized = normalizeAgentResultCacheInput({ prompt, backend, workingDir, ttlHintSeconds });
+        if (!normalized.backend || !normalized.promptHash) {
+            return { ok: false, error: 'Missing backend or prompt for cacheable agent result.' };
+        }
+        const safeResultText = String(resultText || '').trim();
+        if (!safeResultText) {
+            return { ok: false, error: 'Missing result text for cacheable agent result.' };
+        }
+        const kuType = agentResultKuType(normalized.backend);
+        const safeMetadata = {
+            ...metadata,
+            prompt_hash: normalized.promptHash,
+            prompt_preview: normalized.promptPreview,
+            backend: normalized.backend,
+            generated_at_iso: new Date().toISOString(),
+            working_dir: normalized.workingDir,
+            ttl_hint_seconds: normalized.ttlHintSeconds,
+            origin_paths: uniqueStrings(originPaths),
+            result_text: safeResultText,
+        };
+        assertSafePayload(safeMetadata);
+
+        await this.ensureInitialized({
+            name: 'AchillesCLI AKU memory',
+            summary: 'Local memory used by AchillesCLI.',
+        });
+        const unit = {
+            kuType,
+            label: `Agent result cache: ${normalized.backend}`,
+            summary: `Cached pure-information provider results for ${normalized.backend}.`,
+        };
+        const manifest = await this.findExistingDurableKU(unit)
+            ?? await this.createKU({
+                ku_name: unit.label,
+                ku_type: kuType,
+                summary: unit.summary,
+                tags: ['agent-result-cache', normalized.backend],
+                keywords: [normalized.backend, kuType],
+            });
+        const record = await this.recordResult(manifest.ku_id, {
+            result_type: kuType,
+            title: `Cached ${normalized.backend} result`,
+            summary: safeResultText,
+            status: 'active',
+            tags: [
+                'agent-result-cache',
+                normalized.backend,
+                `prompt:${normalized.promptHash}`,
+                normalized.ttlHintSeconds ? `ttl:${normalized.ttlHintSeconds}` : null,
+            ].filter(Boolean),
+            keywords: [
+                normalized.backend,
+                normalized.promptHash,
+                normalized.normalizedPrompt,
+                normalized.workingDir,
+                ...uniqueStrings(originPaths),
+            ],
+            metadata: safeMetadata,
+        });
+        return { ok: true, ku: manifest, record };
+    }
+
+    async recordAgentDurableOutcome({ backend, result, persistenceHint = {}, context = {} } = {}) {
+        if (!persistenceHint || persistenceHint.record_result !== true) {
+            return { ok: true, skipped: true, reason: 'no_durable_record_requested' };
+        }
+        const normalizedBackend = normalizeBackend(backend || result?.backend);
+        const resultText = String(result?.result_text || result?.final_answer || result?.natural_language_output || '').trim();
+        if (!normalizedBackend || !resultText) {
+            return { ok: false, error: 'Missing backend or result text for durable provider outcome.' };
+        }
+        const kuType = normalizeKuType(persistenceHint.ku_type || 'code_work');
+        await this.ensureInitialized({
+            name: 'AchillesCLI AKU memory',
+            summary: 'Local memory used by AchillesCLI.',
+        });
+        const unit = {
+            kuType,
+            label: `${normalizedBackend} provider outcomes`,
+            summary: `Durable outcomes recorded from ${normalizedBackend}.`,
+        };
+        const manifest = await this.findExistingDurableKU(unit)
+            ?? await this.createKU({
+                ku_name: unit.label,
+                ku_type: kuType,
+                summary: unit.summary,
+                tags: ['provider-outcome', normalizedBackend],
+                keywords: [normalizedBackend, kuType],
+            });
+        const payload = {
+            result_type: `${normalizedBackend}.outcome`,
+            title: `${normalizedBackend} result`,
+            summary: resultText,
+            status: result?.ok === false ? 'blocked' : 'active',
+            tags: ['provider-outcome', normalizedBackend],
+            keywords: [normalizedBackend, kuType, String(context?.workingDir || '')].filter(Boolean),
+            metadata: {
+                backend: normalizedBackend,
+                working_dir: String(context?.workingDir || ''),
+                diagnostics: scrubAgentResultDiagnostics(result?.diagnostics),
+            },
+        };
+        assertSafePayload(payload);
+        const record = await this.recordResult(manifest.ku_id, payload);
+        return { ok: true, ku: manifest, record };
+    }
+
     async ensureInitialized(metadata = {}) {
         const aku = await this.getAKU();
         if (!(await aku.exists())) {
@@ -691,6 +906,173 @@ function normalizePathForCompare(value) {
         .replace(/\\+/g, '/')
         .replace(/^\/+/, '')
         .replace(/\/+$/, '');
+}
+
+function normalizeAgentResultCacheInput({ prompt, backend, workingDir, ttlHintSeconds } = {}) {
+    const normalizedPrompt = normalizePromptForCache(prompt);
+    const normalizedBackend = normalizeBackend(backend);
+    const normalizedWorkingDir = String(workingDir || '').trim();
+    return {
+        backend: normalizedBackend,
+        normalizedPrompt,
+        promptHash: normalizedPrompt ? sha256(normalizedPrompt) : '',
+        promptPreview: normalizedPrompt.slice(0, 500),
+        workingDir: normalizedWorkingDir,
+        ttlHintSeconds: Number.isFinite(Number(ttlHintSeconds)) && Number(ttlHintSeconds) > 0
+            ? Math.floor(Number(ttlHintSeconds))
+            : null,
+        query: uniqueStrings([normalizedBackend, normalizedPrompt]).join('\n'),
+    };
+}
+
+function normalizePromptForCache(prompt) {
+    return String(prompt || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
+function normalizeBackend(value) {
+    return String(value || '')
+        .trim()
+        .replace(/^@+/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+}
+
+function normalizeKuType(value) {
+    return String(value || 'knowledge_unit')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'knowledge_unit';
+}
+
+function agentResultKuType(backend) {
+    return `agent.result.${normalizeBackend(backend)}`;
+}
+
+function sha256(value) {
+    return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
+}
+
+function agentResultRecordMatches(record, normalized, nowMs, options = {}) {
+    const metadata = record?.metadata && typeof record.metadata === 'object' ? record.metadata : {};
+    const tags = asArray(record?.tags).map((tag) => String(tag || '').trim());
+    const keywords = asArray(record?.keywords).map((keyword) => String(keyword || '').trim());
+    if (!isAgentResultCacheRecord(record, tags)) {
+        return false;
+    }
+    const resolvedBackend = agentResultRecordBackend(record, { metadata, tags, keywords });
+    const backendMatches = normalized.backend
+        ? resolvedBackend === normalized.backend
+        || tags.includes(normalized.backend)
+        || keywords.includes(normalized.backend)
+        || String(record?.ku_type || record?.result_type || '').endsWith(`.${normalized.backend}`)
+        : Boolean(resolvedBackend);
+    if (!backendMatches) return false;
+    const promptMatches = metadata.prompt_hash === normalized.promptHash
+        || tags.includes(`prompt:${normalized.promptHash}`)
+        || keywords.includes(normalized.promptHash);
+    const recordWorkingDir = String(metadata.working_dir || '').trim();
+    const workingDirMatches = recordWorkingDir
+        ? recordWorkingDir === normalized.workingDir
+        : keywords.includes(normalized.workingDir);
+    if (!workingDirMatches) return false;
+    const ttlTag = tags
+        .map((tag) => /^ttl:(\d+)$/.exec(tag))
+        .find(Boolean)?.[1];
+    const ttl = Number(metadata.ttl_hint_seconds ?? ttlTag ?? normalized.ttlHintSeconds);
+    if (Number.isFinite(ttl) && ttl > 0) {
+        const generatedAt = Date.parse(metadata.generated_at_iso || record.updated_at || record.created_at || '');
+        if (Number.isFinite(generatedAt) && nowMs - generatedAt > ttl * 1000) {
+            return false;
+        }
+    }
+    if (options.requirePromptHash || !options.allowSimilarPrompt || promptMatches) {
+        return promptMatches;
+    }
+    return similarPromptMatches(record, normalized, metadata, tags, keywords);
+}
+
+function isAgentResultCacheRecord(record, tags = asArray(record?.tags).map((tag) => String(tag || '').trim())) {
+    return tags.includes('agent-result-cache')
+        || String(record?.ku_type || '').startsWith('agent.result.')
+        || String(record?.result_type || '').startsWith('agent.result.');
+}
+
+function agentResultRecordBackend(record, cached = {}) {
+    const metadata = cached.metadata || (record?.metadata && typeof record.metadata === 'object' ? record.metadata : {});
+    const tags = cached.tags || asArray(record?.tags).map((tag) => String(tag || '').trim());
+    const keywords = cached.keywords || asArray(record?.keywords).map((keyword) => String(keyword || '').trim());
+    const metadataBackend = normalizeBackend(metadata.backend);
+    if (metadataBackend) return metadataBackend;
+    for (const value of [record?.ku_type, record?.result_type, record?.type]) {
+        const text = String(value || '').trim();
+        const match = /^agent\.result\.([a-z0-9_-]+)$/i.exec(text);
+        if (match) return normalizeBackend(match[1]);
+    }
+    for (const value of [...tags, ...keywords]) {
+        const normalized = normalizeBackend(value);
+        if (normalized && normalized !== 'agent-result-cache' && !normalized.startsWith('prompt-') && !normalized.startsWith('ttl-')) {
+            return normalized;
+        }
+    }
+    return '';
+}
+
+function similarPromptMatches(record, normalized, metadata, tags, keywords) {
+    const queryTerms = promptCacheTerms(normalized.normalizedPrompt);
+    if (!queryTerms.length) {
+        return false;
+    }
+    const recordTerms = promptCacheTerms([
+        metadata.prompt_preview,
+        metadata.prompt_text,
+        metadata.normalized_prompt,
+        record?.title,
+        ...keywords,
+        ...tags.filter((tag) => !tag.startsWith('prompt:') && !tag.startsWith('ttl:')),
+    ].join(' '));
+    if (!recordTerms.length) {
+        return false;
+    }
+    let overlap = 0;
+    for (const term of queryTerms) {
+        if (recordTerms.includes(term)) {
+            overlap += 1;
+        }
+    }
+    if (queryTerms.length === 1) {
+        return overlap === 1 && Number(record?.score ?? 0) >= 0.45;
+    }
+    return overlap >= 2 && overlap / queryTerms.length >= 0.6;
+}
+
+function promptCacheTerms(text) {
+    return uniqueStrings(String(text || '')
+        .toLowerCase()
+        .match(/[a-z0-9]{3,}/g) || [])
+        .filter((term) => !CACHE_PROMPT_STOP_WORDS.has(term));
+}
+
+function scrubAgentResultDiagnostics(diagnostics) {
+    if (!diagnostics || typeof diagnostics !== 'object' || Array.isArray(diagnostics)) {
+        return {};
+    }
+    const safe = {};
+    for (const [key, value] of Object.entries(diagnostics)) {
+        if (SENSITIVE_KEY_RE.test(key)) {
+            continue;
+        }
+        if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+            safe[key] = value;
+        }
+    }
+    return safe;
 }
 
 export default AkuMemoryAdapter;

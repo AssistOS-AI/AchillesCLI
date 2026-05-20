@@ -21,7 +21,8 @@ import { BUILT_IN_SKILLS, TIERS } from './lib/constants.mjs';
 import { buildOrchestratorSystemPrompt } from './prompts/orchestrator-prompt.mjs';
 import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
-import { createWebchatTagRelay, isTruthyRelayFlag, normalizeWebchatMessage } from './lib/webchatTagRelay.mjs';
+import { normalizeWebchatMessage } from './lib/webchatEnvelope.mjs';
+import { materializeWebchatContext } from './lib/webchatResources.mjs';
 import { startIntroSkill } from './lib/introSkillBoot.mjs';
 import {
     drainWorkspaceSkillsRefresh,
@@ -66,6 +67,8 @@ export {
     // Constants
     builtInSkillsDir,
     BUILT_IN_SKILLS,
+    lookupCachedProviderResultForPrompt,
+    persistProviderLauncherResults,
 };
 
 // CLI entry point when run directly
@@ -82,15 +85,6 @@ async function main() {
     let uiStyle = process.env.ACHILLES_CLI_UI || 'claude-code'; // Default UI style
     let skipBashPermissions = false; // Skip bash command permission prompts
     const cliSkillRoots = []; // Skill roots from --skill-root flags
-    const tagRelayConfig = {
-        enabled: false,
-        agent: '',
-        submitTool: '',
-        listTool: '',
-        tags: '',
-        timeoutMs: 450000,
-        kind: 'tag-relay',
-    };
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -113,55 +107,6 @@ async function main() {
             if (rootPath) {
                 cliSkillRoots.push(path.resolve(rootPath));
             }
-        } else if (arg === '--research-tags' || arg === '--tag-relay') {
-            tagRelayConfig.enabled = true;
-            tagRelayConfig.kind = arg === '--research-tags' ? 'research' : tagRelayConfig.kind;
-        } else if (arg.startsWith('--research-tags=')) {
-            tagRelayConfig.enabled = isTruthyRelayFlag(arg.slice('--research-tags='.length));
-            tagRelayConfig.kind = 'research';
-        } else if (arg.startsWith('--tag-relay=')) {
-            tagRelayConfig.enabled = isTruthyRelayFlag(arg.slice('--tag-relay='.length));
-        } else if (arg === '--tag-relay-agent' || arg === '--research-relay-agent') {
-            tagRelayConfig.agent = args[i + 1] || '';
-            tagRelayConfig.kind = arg === '--research-relay-agent' ? 'research' : tagRelayConfig.kind;
-            i += 1;
-        } else if (arg.startsWith('--tag-relay-agent=')) {
-            tagRelayConfig.agent = arg.slice('--tag-relay-agent='.length);
-        } else if (arg.startsWith('--research-relay-agent=')) {
-            tagRelayConfig.agent = arg.slice('--research-relay-agent='.length);
-            tagRelayConfig.kind = 'research';
-        } else if (arg === '--tag-relay-submit-tool' || arg === '--research-relay-tool') {
-            tagRelayConfig.submitTool = args[i + 1] || '';
-            tagRelayConfig.kind = arg === '--research-relay-tool' ? 'research' : tagRelayConfig.kind;
-            i += 1;
-        } else if (arg.startsWith('--tag-relay-submit-tool=')) {
-            tagRelayConfig.submitTool = arg.slice('--tag-relay-submit-tool='.length);
-        } else if (arg.startsWith('--research-relay-tool=')) {
-            tagRelayConfig.submitTool = arg.slice('--research-relay-tool='.length);
-            tagRelayConfig.kind = 'research';
-        } else if (arg === '--tag-relay-list-tool' || arg === '--research-relay-list-tool') {
-            tagRelayConfig.listTool = args[i + 1] || '';
-            tagRelayConfig.kind = arg === '--research-relay-list-tool' ? 'research' : tagRelayConfig.kind;
-            i += 1;
-        } else if (arg.startsWith('--tag-relay-list-tool=')) {
-            tagRelayConfig.listTool = arg.slice('--tag-relay-list-tool='.length);
-        } else if (arg.startsWith('--research-relay-list-tool=')) {
-            tagRelayConfig.listTool = arg.slice('--research-relay-list-tool='.length);
-            tagRelayConfig.kind = 'research';
-        } else if (arg === '--tag-relay-tags' || arg === '--research-relay-tags') {
-            tagRelayConfig.tags = args[i + 1] || '';
-            tagRelayConfig.kind = arg === '--research-relay-tags' ? 'research' : tagRelayConfig.kind;
-            i += 1;
-        } else if (arg.startsWith('--tag-relay-tags=')) {
-            tagRelayConfig.tags = arg.slice('--tag-relay-tags='.length);
-        } else if (arg.startsWith('--research-relay-tags=')) {
-            tagRelayConfig.tags = arg.slice('--research-relay-tags='.length);
-            tagRelayConfig.kind = 'research';
-        } else if (arg === '--tag-relay-timeout-ms') {
-            tagRelayConfig.timeoutMs = Number(args[i + 1]) || tagRelayConfig.timeoutMs;
-            i += 1;
-        } else if (arg.startsWith('--tag-relay-timeout-ms=')) {
-            tagRelayConfig.timeoutMs = Number(arg.slice('--tag-relay-timeout-ms='.length)) || tagRelayConfig.timeoutMs;
         } else if (arg === '--help' || arg === '-h') {
             printHelp();
             process.exit(0);
@@ -367,7 +312,6 @@ async function main() {
             skipBashPermissions,
             debug,
             renderMarkdown,
-            tagRelayConfig,
         });
     } else {
         // REPL mode
@@ -438,6 +382,90 @@ async function preparePromptForAKUMemory({
     }
 }
 
+async function lookupCachedProviderResultForPrompt(context, {
+    prompt,
+    workingDir,
+    logger,
+} = {}) {
+    const adapter = context?.akuMemoryAdapter;
+    if (!(adapter instanceof AkuMemoryAdapter)) {
+        return { hit: false, reason: 'aku_adapter_unavailable' };
+    }
+    const cached = await adapter.lookupCachedAgentResult({
+        prompt,
+        workingDir,
+    });
+    if (!cached?.hit || !String(cached.resultText || '').trim()) {
+        return cached || { hit: false, reason: 'miss' };
+    }
+    logger?.debug?.(`AKU provider-result cache hit: ${cached.backend || 'unknown'} (${cached.provenance || 'aku'})`);
+    return {
+        ...cached,
+        resultText: String(cached.resultText || '').trim(),
+    };
+}
+
+async function persistProviderLauncherResults(context, {
+    prompt,
+    workingDir,
+    fromIndex = 0,
+    logger,
+} = {}) {
+    const adapter = context?.akuMemoryAdapter;
+    const launcherResults = Array.isArray(context?.providerLauncherResults)
+        ? context.providerLauncherResults.slice(Math.max(0, Number(fromIndex) || 0))
+        : [];
+    if (!(adapter instanceof AkuMemoryAdapter) || !launcherResults.length) {
+        return [];
+    }
+    const persisted = [];
+    for (const entry of launcherResults) {
+        const result = entry?.result && typeof entry.result === 'object' ? entry.result : entry;
+        const backend = String(entry?.backend || result?.backend || '').trim();
+        const resultText = String(result?.result_text || result?.final_answer || result?.natural_language_output || '').trim();
+        if (!backend || !resultText) {
+            continue;
+        }
+        try {
+            persisted.push(await adapter.persistAgentResult({
+                prompt: entry?.prompt || prompt,
+                backend,
+                resultText,
+                workingDir,
+                cacheable: result?.cacheable === true,
+                ttlHintSeconds: result?.persistence_hint?.ttl_hint_seconds ?? entry?.ttlHintSeconds,
+                originPaths: collectWebchatOriginPaths(context),
+                metadata: {
+                    launcher: String(entry?.launcher || '').trim() || undefined,
+                    ok: typeof result?.ok === 'boolean' ? result.ok : undefined,
+                    provider_availability: result?.diagnostics?.providerAvailability,
+                },
+            }));
+        } catch (error) {
+            logger?.debug?.(`AKU provider-result postflight skipped: ${error.message}`);
+            persisted.push({ ok: false, error: error.message });
+        }
+    }
+    return persisted;
+}
+
+function collectWebchatOriginPaths(context = {}) {
+    const paths = [];
+    for (const entry of Array.isArray(context.webchatPaths) ? context.webchatPaths : []) {
+        if (typeof entry === 'string') {
+            paths.push(entry);
+        } else if (entry && typeof entry === 'object') {
+            paths.push(entry.path);
+        }
+    }
+    for (const resource of Array.isArray(context.webchatResources) ? context.webchatResources : []) {
+        if (resource && typeof resource === 'object') {
+            paths.push(resource.path || resource.name);
+        }
+    }
+    return [...new Set(paths.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
 function isWebchatRuntime() {
     if (hasSsoEnvironment()) {
         return true;
@@ -465,9 +493,8 @@ function hasSsoEnvironment() {
 }
 
 async function runWebchatInteractive(agent, options) {
-    const { workingDir, skillsDir, skipBashPermissions, debug, renderMarkdown, tagRelayConfig } = options;
+    const { workingDir, skillsDir, skipBashPermissions, debug, renderMarkdown } = options;
     const historyManager = new HistoryManager({ workingDir });
-    const tagRelay = createWebchatTagRelay(tagRelayConfig);
     const akuSessionState = createAKUSessionState();
     const slashState = {
         activeTier: TIERS.FAST,
@@ -536,6 +563,7 @@ async function runWebchatInteractive(agent, options) {
         }
 
         const normalizedMessage = normalizeWebchatMessage(pendingLines.join('\n'));
+        updateWebchatContextForMessage(context, normalizedMessage, { workingDir });
         pendingLines = [];
 
         const message = normalizedMessage.text.trim();
@@ -567,19 +595,6 @@ async function runWebchatInteractive(agent, options) {
                         process.stdout.write(`${slashOutput.output}\n`);
                     }
                 } else {
-                    const tagRelayResult = await tagRelay.handle(normalizedMessage, {
-                        agentName: 'achilles-cli',
-                        workingDir,
-                        signal: activeAbortController.signal,
-                    });
-                    if (tagRelayResult?.handled) {
-                        if (tagRelayResult.output) {
-                            process.stdout.write(`${tagRelayResult.output}\n`);
-                        }
-                        historyManager.add(message);
-                        return;
-                    }
-
                     const akuPrompt = await preparePromptForAKUMemory({
                         prompt: message,
                         normalizedMessage,
@@ -590,29 +605,36 @@ async function runWebchatInteractive(agent, options) {
                         logger: agent.logger,
                     });
 
-                    let result = await agent.executePrompt(akuPrompt.prompt, {
-                        context,
-                        systemPrompt: buildOrchestratorSystemPrompt(),
+                    const cachedProviderResult = await lookupCachedProviderResultForPrompt(context, {
+                        prompt: message,
+                        workingDir,
+                        logger: agent.logger,
+                    });
+                    if (cachedProviderResult?.hit) {
+                        process.stdout.write(`${cachedProviderResult.resultText}\n`);
+                        historyManager.add(message);
+                        return;
+                    }
+
+                    if (!Array.isArray(context.providerLauncherResults)) {
+                        context.providerLauncherResults = [];
+                    }
+                    const launcherResultStart = context.providerLauncherResults.length;
+                    let result = await agent.executeSkill('copilot-router', akuPrompt.prompt, {
                         signal: activeAbortController.signal,
+                        context,
+                        supervisor: agent.supervisor || null,
                         model: slashState.pinnedModel || undefined,
                         tier: slashState.activeTier,
                     });
                     await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });
-
-                    if (typeof result === 'string') {
-                        try {
-                            const parsed = JSON.parse(result);
-                            if (parsed && (parsed.executions || parsed.type === 'orchestrator')) {
-                                result = debug ? JSON.stringify(parsed, null, 2) : summarizeResult(parsed);
-                            }
-                        } catch {
-                            // Not JSON, use as-is
-                        }
-                    } else if (!debug) {
-                        result = summarizeResult(result);
-                    } else {
-                        result = JSON.stringify(result, null, 2);
-                    }
+                    result = formatExecutionResult(result, debug);
+                    await persistProviderLauncherResults(context, {
+                        prompt: message,
+                        workingDir,
+                        fromIndex: launcherResultStart,
+                        logger: agent.logger,
+                    });
 
                     process.stdout.write(`${result}\n`);
                     historyManager.add(message);
@@ -849,6 +871,43 @@ function formatHistoryEntries(entries = []) {
         return 'No history entries.';
     }
     return entries.map((entry) => `${entry.index}. ${entry.command}`).join('\n');
+}
+
+function updateWebchatContextForMessage(context, normalizedMessage, { workingDir }) {
+    const materialized = materializeWebchatContext(normalizedMessage, { workingDir });
+    context.invocationToken = String(normalizedMessage?.invocationToken || '').trim();
+    context.webchatAttachments = Array.isArray(normalizedMessage?.attachments) ? normalizedMessage.attachments : [];
+    context.webchatReferences = Array.isArray(normalizedMessage?.references) ? normalizedMessage.references : [];
+    context.webchatResources = materialized.resources;
+    context.webchatPaths = materialized.paths;
+    context.webchatResourceWarnings = materialized.warnings;
+    context.webchatOrigin = {
+        type: 'semantic-copilot',
+        surface: 'webchat',
+        agent: 'achilles-cli',
+        working_directory: workingDir || '',
+    };
+}
+
+function formatExecutionResult(result, debug = false) {
+    if (result && typeof result === 'object' && Object.hasOwn(result, 'result')) {
+        result = result.result;
+    }
+    if (typeof result === 'string') {
+        try {
+            const parsed = JSON.parse(result);
+            if (parsed && (parsed.executions || parsed.type === 'orchestrator')) {
+                return debug ? JSON.stringify(parsed, null, 2) : summarizeResult(parsed);
+            }
+        } catch {
+            // Not JSON, use as-is.
+        }
+        return result;
+    }
+    if (!debug) {
+        return summarizeResult(result);
+    }
+    return JSON.stringify(result, null, 2);
 }
 
 function emitWebchatProgress(tool, reason) {

@@ -92,6 +92,32 @@ Postflight persistence:
 4. If a turn fails in an informative way and the failure is useful later, AchillesCLI may create or update a `failure_note` or type-appropriate result/event with an explicit failure status.
 5. If the user rejects or discards a result, AchillesCLI should use AKU status/discard APIs rather than deleting by default.
 
+Provider result cache policy:
+1. AchillesCLI may cache only pure-information provider results whose launcher
+   output declares `cacheable: true`.
+2. Open Interpreter execution results must never be automatic cache hits.
+   The Open Interpreter launcher declares `cacheable: false`; repeated
+   execution prompts must execute again.
+3. Cache lookup and persistence belong to `AkuMemoryAdapter` methods such as
+   `lookupCachedAgentResult()`, `persistAgentResult()`, and
+   `recordAgentDurableOutcome()`. These methods must use only public
+   `AgenticKnowledgeUnits` APIs such as `exists()`, `loadAKU()`, `search()`,
+   `listResults()`, `initKU()`, and `recordResult()`.
+4. Cache keys are represented through generic AKU metadata, tags, keywords, and
+   result fields. AchillesCLI must not read or write `.aku` internals to
+   implement provider caching.
+5. Cache matching has two allowed paths. Exact cache hits require the same
+   backend, same working directory, matching normalized prompt hash, and an
+   unexpired TTL. Similar-prompt cache hits may come from AKU `search()` without
+   a matching prompt hash only when the record is an agent-result cache entry
+   for the same backend and working directory, the TTL is unexpired, and the
+   prompt terms overlap conservatively enough for AchillesCLI to treat the hit
+   as a paraphrase rather than a different question. Lexical AKU search results
+   must not be treated as vector similarity.
+6. Cache records and durable outcome records must not store secrets,
+   invocation tokens, hidden reasoning, raw private prompts, credentials, or
+   sensitive file content.
+
 Retrieval behavior:
 1. Scoped natural-language references should resolve within the active folder-scoped parent context first.
 2. A request such as "get the results from experiment 1" is a representative retrieval example, not a special case.
@@ -143,6 +169,14 @@ Response: No. Experiments are one common KU type and the folder-plus-experiments
 ### Question #7: Is `ku_type` a closed enum?
 
 Response: No. DS008 defines `ku_type` as an open caller-defined string. The recommended catalog exists for interoperability and default policies, not validation. AchillesCLI must not reject or remap a clear custom type solely because it is absent from the recommended catalog.
+
+### Question #8: Can a provider-result cache hit reuse a similar prompt?
+
+Response: Yes, but only as a conservative AKU search fallback after exact
+prompt-hash lookup misses. Similar-prompt reuse must keep the same backend, same
+working directory, unexpired TTL, and an agent-result-cache record marker. The
+adapter must still reject low-overlap or unrelated search results so a cached
+provider answer is not served for a materially different request.
 
 ## Conclusion
 AchillesCLI should make AKU memory feel automatic to the user while preserving a strict boundary: Copilot interprets prompts and chooses memory actions; AKU stores, indexes, searches, links, repairs, and packs local Knowledge Units deterministically.
