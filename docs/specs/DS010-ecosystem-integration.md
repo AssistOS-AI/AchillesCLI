@@ -82,16 +82,21 @@ Cross-repository invariants:
 3. When AchillesAgentLib or host-runtime integration points change, AchillesCLI DS files must be updated in the same change set.
 
 Provider launcher discovery:
-1. Built-in provider launcher skills live under `achilles-cli/src/skills/`.
-   This makes semantic Copilot routing self-contained and avoids host-specific
-   assumptions about `copilot-agents/achilles-skills`.
-2. Compatibility launcher copies in external repositories may exist for tests
-   or packaging, but AchillesCLI runtime discovery is explicit and rooted in
-   AchillesCLI's built-in skill directory.
-3. A launcher that requires delegated MCP must declare that requirement in its
+1. Built-in provider launcher skills under `achilles-cli/src/skills/` may
+   provide fallback behavior, but they do not define provider availability.
+2. In Ploinky workspaces, AchillesCLI discovers provider launcher skills
+   generically from workspace-managed repository clones under
+   `.ploinky/repos/<repo>/achilles-skills`. Discovery must not hardcode
+   `copilot-agents`, backend names, provider agent ids, or provider MCP tool
+   names.
+3. A deployed repo launcher with the same normalized skill name may replace a
+   built-in fallback during startup registration. This makes the invariant
+   explicit: an external provider becomes selectable by exposing a launcher
+   skill, not by a Ploinky enable-research command or WebChat tag toggle.
+4. A launcher that requires delegated MCP must declare that requirement in its
    descriptor and return a clear user-facing unavailable message when the
    invocation token or relay route is absent.
-4. Provider availability for Copilot routing is determined by discovered
+5. Provider availability for Copilot routing is determined by discovered
    launcher skills, not by a Ploinky research enable command, bundle command, or
    WebChat toggle. A launcher may report that its relay backend or provider
    route is unavailable, but it must not tell the user to run an enable-research

@@ -21,3 +21,4 @@ Returns a structured launcher result with `ok`, `backend`, `cacheable`,
 ## Constraints
 Do not perform web search directly. A real provider agent must be deployed
 before this launcher can become active and cacheable.
+Treat `@web-search` and `@search` as ordinary chat text, not dispatch tokens.

@@ -169,6 +169,7 @@ async function main() {
 
     // User skills directory (do not create automatically)
     const nodeModulesSkillRoots = collectNodeModulesSkillRoots(__dirname, logger);
+    const ploinkyRepoSkillRoots = collectPloinkyRepoSkillRoots(workingDir, process.env, logger);
     const webchatRuntime = !prompt && isWebchatRuntime();
     const skillsDir = path.join(workingDir, 'skills');
 
@@ -183,15 +184,16 @@ async function main() {
     ensureAchillesCliDir(workingDir);
     ensureAgentLibLinksForRepos(workingDir);
 
-    // Merge all skill roots: built-in + CLI flags + node_modules skills
+    // Merge all skill roots: built-in + CLI flags + node_modules + deployed Ploinky repo skills
     const allSkillRoots = [
         { path: builtInSkillsDir, isInternal: true },
         ...cliSkillRoots.map((skillRoot) => ({ path: skillRoot, isInternal: false })),
         ...nodeModulesSkillRoots.map((skillRoot) => ({ path: skillRoot, isInternal: false, isAgentLibInternal: isAgentLibSkillRoot(skillRoot) })),
+        ...ploinkyRepoSkillRoots.map((skillRoot) => ({ path: skillRoot, isInternal: false, isPloinkyRepoSkillRoot: true })),
     ];
 
-    if (verbose && (cliSkillRoots.length > 0 || nodeModulesSkillRoots.length > 0)) {
-        logger.log(`Additional skill roots: ${[...cliSkillRoots, ...nodeModulesSkillRoots].join(', ')}`);
+    if (verbose && (cliSkillRoots.length > 0 || nodeModulesSkillRoots.length > 0 || ploinkyRepoSkillRoots.length > 0)) {
+        logger.log(`Additional skill roots: ${[...cliSkillRoots, ...nodeModulesSkillRoots, ...ploinkyRepoSkillRoots].join(', ')}`);
     }
 
     const supervisor = webchatRuntime ? new WebchatProgressSupervisor() : null;
@@ -1092,6 +1094,9 @@ For more information, see the README.md in the AchillesCliAgent directory.
  * Check if this module is being run directly (cross-platform safe)
  */
 function isRunDirectly() {
+    if (!process.argv[1]) {
+        return false;
+    }
     try {
         const scriptPath = realpathSync(process.argv[1]);
         const modulePath = realpathSync(fileURLToPath(import.meta.url));
@@ -1138,6 +1143,84 @@ function collectNodeModulesSkillRoots(baseDir, logger) {
     }
 
     return roots;
+}
+
+export function collectPloinkyRepoSkillRoots(workingDir = process.cwd(), env = process.env, logger = null) {
+    const roots = [];
+    const workspaceRoots = collectWorkspaceRootCandidates(workingDir, env);
+    for (const workspaceRoot of workspaceRoots) {
+        const reposDir = path.join(workspaceRoot, '.ploinky', 'repos');
+        if (!isDirectory(reposDir)) {
+            continue;
+        }
+
+        let entries = [];
+        try {
+            entries = fs.readdirSync(reposDir, { withFileTypes: true });
+        } catch (error) {
+            logger?.warn?.(`Failed to read Ploinky repo skill roots: ${error.message}`);
+            continue;
+        }
+
+        for (const entry of entries) {
+            if (!entry.isDirectory() || entry.name.startsWith('.')) {
+                continue;
+            }
+            const skillRoot = path.join(reposDir, entry.name, 'achilles-skills');
+            if (isDirectory(skillRoot)) {
+                roots.push(skillRoot);
+            }
+        }
+    }
+    return uniquePaths(roots);
+}
+
+function collectWorkspaceRootCandidates(workingDir, env) {
+    const roots = [];
+    const addWithAncestors = (value) => {
+        const text = String(value || '').trim();
+        if (!text) {
+            return;
+        }
+        let current = path.resolve(text);
+        for (let depth = 0; depth < 12; depth += 1) {
+            roots.push(current);
+            const parent = path.dirname(current);
+            if (!parent || parent === current) {
+                break;
+            }
+            current = parent;
+        }
+    };
+
+    addWithAncestors(env?.PLOINKY_WORKSPACE_ROOT);
+    addWithAncestors(env?.PLOINKY_CWD);
+    addWithAncestors(workingDir);
+    addWithAncestors(env?.WORKSPACE_PATH);
+
+    return uniquePaths(roots);
+}
+
+function uniquePaths(paths) {
+    const seen = new Set();
+    const unique = [];
+    for (const candidate of paths) {
+        const normalized = path.normalize(String(candidate || ''));
+        if (!normalized || seen.has(normalized)) {
+            continue;
+        }
+        seen.add(normalized);
+        unique.push(normalized);
+    }
+    return unique;
+}
+
+function isDirectory(candidate) {
+    try {
+        return fs.statSync(candidate).isDirectory();
+    } catch {
+        return false;
+    }
 }
 
 function isAgentLibSkillRoot(skillRoot) {
