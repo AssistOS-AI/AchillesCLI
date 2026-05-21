@@ -10,7 +10,10 @@ Call this after creating or changing a skill descriptor, or when the user asks w
 Input: skillName.
 
 ## Input Format
-Plain text skill name, or JSON with `skillName` or `name`.
+Plain text skill name.
+
+Example:
+validate-skill demo-skill
 
 ## Output Format
 Returns validation status, errors, warnings, and detected skill type.

@@ -6,6 +6,8 @@
  * Use "list all skills" to include internal skills.
  */
 
+import { isJsonLikeInput, rejectJsonInput } from '../../../lib/skillInputParser.mjs';
+
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
     const prompt = invocation.promptText;
@@ -35,6 +37,9 @@ export async function action(invocation = {}) {
     };
 
     if (typeof prompt === 'string' && prompt.trim()) {
+        if (isJsonLikeInput(prompt)) {
+            return rejectJsonInput('list-skills [filter|all]');
+        }
         const trimmed = prompt.trim().toLowerCase();
         // Check if user explicitly wants all skills
         if (allSkillPatterns.includes(trimmed)) {
@@ -44,8 +49,8 @@ export async function action(invocation = {}) {
         else if (!ignorePatterns.includes(trimmed) && !looksLikeCommand(trimmed)) {
             filter = trimmed;
         }
-    } else if (prompt && typeof prompt === 'object' && prompt.filter) {
-        filter = prompt.filter.toLowerCase();
+    } else if (prompt && typeof prompt === 'object') {
+        return 'Error: object input is no longer supported. Use positional syntax: list-skills [filter|all]';
     }
 
     // Get user skills only (exclude internal) unless explicitly requested all

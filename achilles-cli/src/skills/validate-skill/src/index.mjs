@@ -7,22 +7,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateSkillContent } from '../../../schemas/skillSchemas.mjs';
+import { parseSingleArgInput } from '../../../lib/skillInputParser.mjs';
 
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
     const prompt = invocation.promptText;
-    // Parse skill name
-    let skillName = null;
-    if (typeof prompt === 'string') {
-        try {
-            const parsed = JSON.parse(prompt);
-            skillName = parsed.skillName || parsed.name;
-        } catch (e) {
-            skillName = prompt.trim();
-        }
-    } else if (prompt && typeof prompt === 'object') {
-        skillName = prompt.skillName || prompt.name;
+    const parsed = parseSingleArgInput(prompt, 'validate-skill <skillName>');
+    if (parsed.error) {
+        return parsed.error;
     }
+    const skillName = parsed.value;
 
     if (!skillName) {
         return 'Error: skillName is required. Usage: validate-skill <skillName>';

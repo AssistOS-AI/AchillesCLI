@@ -48,7 +48,7 @@ function resolveAgentLibPackagePath() {
 async function loadLoopAgentSession() {
     if (LoopAgentSessionClass) return LoopAgentSessionClass;
     const packagePath = resolveAgentLibPackagePath();
-    const modulePath = path.join(path.dirname(packagePath), 'LLMAgents', 'AgenticSession.mjs');
+    const modulePath = path.join(path.dirname(packagePath), 'LLMAgents', 'LoopAgenticSession', 'LoopAgentSession.mjs');
     const module = await import(pathToFileURL(modulePath).href);
     LoopAgentSessionClass = module.LoopAgentSession || module.default;
     if (!LoopAgentSessionClass) {

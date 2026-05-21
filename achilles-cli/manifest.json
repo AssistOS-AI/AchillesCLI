@@ -17,7 +17,7 @@
   "expose": [
     {
       "name": "ACHILLES_DEBUG",
-      "ref": "ACHILLES_DEBUG"
+      "value": "true"
     }
   ]
 }

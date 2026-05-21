@@ -4,30 +4,29 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { parsePositionalInput } from '../../../lib/skillInputParser.mjs';
 
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
     const prompt = invocation.promptText;
-    // Parse arguments
-    let skillName = null;
-    let testInput = undefined;
-
-    if (typeof prompt === 'string') {
-        try {
-            const parsed = JSON.parse(prompt);
-            skillName = parsed.skillName || parsed.name;
-            testInput = parsed.testInput;
-        } catch (e) {
-            // Treat as plain skill name
-            skillName = prompt.trim();
-        }
-    } else if (prompt && typeof prompt === 'object') {
-        skillName = prompt.skillName || prompt.name;
-        testInput = prompt.testInput;
+    const usage = 'test-code <skillName> [--begin-input--\\n<testInput>\\n--end-input--]';
+    const parsed = parsePositionalInput(prompt, {
+        usage,
+        minArgs: 1,
+        block: true,
+    });
+    if (parsed.error) {
+        return parsed.error;
     }
 
+    const skillName = parsed.args[0];
+    const restInput = parsed.args.slice(1).join(' ');
+    const testInput = parsed.content !== null
+        ? parsed.content
+        : restInput || undefined;
+
     if (!skillName) {
-        return 'Error: skillName is required. Usage: test-code <skillName> or {skillName, testInput}';
+        return `Error: skillName is required. Usage: ${usage}`;
     }
 
     // Use getSkillRecord to get skill directory

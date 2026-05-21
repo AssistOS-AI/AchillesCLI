@@ -10,7 +10,10 @@ Call this only after the user explicitly asks to delete a skill. It removes the 
 Input: skillName.
 
 ## Input Format
-Plain text skill name, or JSON with `skillName` or `name`.
+Plain text skill name.
+
+Example:
+delete-skill demo-skill
 
 ## Output Format
 Returns a success message naming the deleted skill, or an error string explaining why deletion failed.

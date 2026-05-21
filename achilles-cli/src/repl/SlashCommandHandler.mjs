@@ -364,7 +364,7 @@ export class SlashCommandHandler {
      * @returns {{command: string, subOption: string|null, args: string, rawArgs: string}|null}
      */
     parseSlashCommand(input) {
-        const match = input.match(/^\/(\S+)(?:\s+(.*))?$/);
+        const match = input.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
         if (!match) return null;
 
         const command = match[1].toLowerCase();
@@ -507,9 +507,9 @@ export class SlashCommandHandler {
 
         // Handle /exec specially
         if (command === 'exec') {
-            const parts = args.split(/\s+/);
-            const skillName = parts[0];
-            const skillInput = parts.slice(1).join(' ') || skillName;
+            const match = args.match(/^(\S+)(?:\s+([\s\S]*))?$/);
+            const skillName = match?.[1];
+            const skillInput = match?.[2]?.trim() || skillName;
             try {
                 const result = await this.executeSkill(skillName, skillInput, options);
                 return { handled: true, result: formatSlashResult(result) };

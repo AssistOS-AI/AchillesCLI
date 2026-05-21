@@ -7,10 +7,13 @@ Generate broader test files for supported skill types.
 Call this when a supported generated runtime skill needs a broader test file. It generates tests for `tskill`/`dbtable` and `cskill`.
 
 ## Help
-Input: skillName or JSON { skillName, options }.
+Input: `write-tests <skillName>` or `write-tests <skillName> force`.
 
 ## Input Format
-Plain text skill name, or JSON with `skillName` and optional `options`.
+Skill name, with optional `force` to overwrite an existing test file.
+
+Example:
+write-tests demo-skill force
 
 ## Output Format
 Returns a generated test file summary, or an error string.

@@ -8,39 +8,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { detectSkillType, parseSkillSections, loadSpecsContent } from '../../../schemas/skillSchemas.mjs';
 import { SKILL_TYPE_NAMES, FILE_NAMES, TIERS, RESPONSE_SHAPES } from '../../../lib/constants.mjs';
+import { parsePositionalInput } from '../../../lib/skillInputParser.mjs';
 
 /**
  * Parse input to extract skillName and options
  */
 function parseInput(prompt) {
-    if (!prompt) {
-        return { skillName: null, options: {} };
+    const parsed = parsePositionalInput(prompt, {
+        usage: 'write-tests <skillName> [force]',
+        minArgs: 1,
+        maxArgs: 2,
+    });
+    if (parsed.error) {
+        return { skillName: null, options: {}, error: parsed.error };
     }
 
-    if (typeof prompt === 'string') {
-        const trimmed = prompt.trim();
-
-        // Try JSON parse
-        try {
-            const parsed = JSON.parse(trimmed);
-            return {
-                skillName: parsed.skillName || parsed.name,
-                options: parsed.options || {},
-            };
-        } catch (e) {
-            // Not JSON, treat as skill name
-            return { skillName: trimmed, options: {} };
-        }
-    }
-
-    if (typeof prompt === 'object') {
-        return {
-            skillName: prompt.skillName || prompt.name,
-            options: prompt.options || {},
-        };
-    }
-
-    return { skillName: null, options: {} };
+    return {
+        skillName: parsed.args[0],
+        options: { force: parsed.args[1] === 'force' },
+        error: null,
+    };
 }
 
 /**
@@ -306,11 +293,14 @@ export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
     const prompt = invocation.promptText;
     const llmAgent = mainAgent?.llmAgent;
-    const { skillName, options } = parseInput(prompt);
+    const { skillName, options, error } = parseInput(prompt);
+    if (error) {
+        return error;
+    }
     const force = options.force || false;
 
     if (!skillName) {
-        return 'Error: skillName is required. Usage: /write-tests <skill-name>';
+        return 'Error: skillName is required. Usage: write-tests <skillName> [force]';
     }
 
     // Find the skill
@@ -345,7 +335,7 @@ export async function action(invocation = {}) {
 
     // Check if test file already exists
     if (fs.existsSync(outPath) && !force) {
-        return `Test file already exists: ${outPath}\n\nUse { "force": true } to overwrite.`;
+        return `Test file already exists: ${outPath}\n\nUse: write-tests ${skillName} force`;
     }
 
     // Ensure tests directory exists

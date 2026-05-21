@@ -27,6 +27,9 @@ JSON object:
 }
 ```
 
+Example:
+{"workspaceName":"admin-workspace","skills":[{"name":"admin-flow-orchestrator","type":"orchestrator","description":"Coordinate admin workflows."}]}
+
 ## Output Format
 Returns a plain text introduction message suitable for direct display to the user.
 

@@ -10,7 +10,10 @@ Call this when the user asks about implementation requirements or before changin
 Input: skillName.
 
 ## Input Format
-Plain text skill name, or JSON with `skillName` or `name`.
+Plain text skill name.
+
+Example:
+read-specs demo-skill
 
 ## Output Format
 Returns specs file paths and content, or an error string when no specs/ files exist.

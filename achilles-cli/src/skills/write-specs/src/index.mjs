@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { requestWorkspaceSkillsRefresh } from '../../../lib/workspaceSkillRefresh.mjs';
+import { parsePositionalInput } from '../../../lib/skillInputParser.mjs';
 
 /**
  * Generate a basic specs template for a skill
@@ -191,25 +192,20 @@ export async function action(invocation = {}) {
 
     const skillsDir = path.join(startDir, 'skills');
 
-    // Parse arguments
-    let args;
-    if (typeof prompt === 'string') {
-        try {
-            args = JSON.parse(prompt);
-        } catch (e) {
-            // Check if it's just a skill name (for template generation)
-            const trimmed = prompt.trim();
-            if (trimmed && !trimmed.includes('{')) {
-                args = { skillName: trimmed, generateTemplate: true };
-            } else {
-                return `Error: Invalid input. Expected: {skillName, content} or just skillName for template. Got: ${prompt.slice(0, 100)}`;
-            }
-        }
-    } else {
-        args = prompt || {};
+    const usage = 'write-specs <skillName> [fileName] --begin-content--\\n<content>\\n--end-content--';
+    const parsed = parsePositionalInput(prompt, {
+        usage,
+        minArgs: 1,
+        maxArgs: 2,
+        block: true,
+    });
+    if (parsed.error) {
+        return parsed.error;
     }
 
-    const { skillName, content, generateTemplate, section, sectionContent } = args;
+    const [skillName, requestedSpecFile] = parsed.args;
+    const content = parsed.content;
+    const generateTemplate = content === null && !requestedSpecFile;
 
     if (!skillName) {
         return 'Error: skillName is required';
@@ -228,42 +224,9 @@ export async function action(invocation = {}) {
     }
 
     const skillType = skillRecord?.type || 'cskill';
-    const specFile = safeSpecFileName(args.fileName || args.specFile || args.path, skillType);
+    const specFile = safeSpecFileName(requestedSpecFile, skillType);
     const specsDir = path.join(skillDir, 'specs');
     const specsPath = path.join(specsDir, specFile);
-
-    // Handle section update
-    if (section && sectionContent !== undefined) {
-        if (!fs.existsSync(specsPath)) {
-            return `Error: No specs file exists for "${skillName}". Create one first with: /specs-write ${skillName}`;
-        }
-
-        try {
-            let existingContent = fs.readFileSync(specsPath, 'utf8');
-
-            // Find and replace the section
-            const sectionRegex = new RegExp(
-                `(##\\s+${section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\n)([\\s\\S]*?)(?=\\n##\\s|$)`,
-                'i'
-            );
-
-            if (existingContent.match(sectionRegex)) {
-                existingContent = existingContent.replace(sectionRegex, `$1${sectionContent}\n`);
-            } else {
-                existingContent += `\n## ${section}\n\n${sectionContent}\n`;
-            }
-
-            fs.writeFileSync(specsPath, existingContent, 'utf8');
-            requestWorkspaceSkillsRefresh(mainAgent, {
-                operation: 'write-specs',
-                skillName,
-                filePath: specsPath,
-            });
-            return `Updated section "${section}" in ${skillName}/specs/${specFile}`;
-        } catch (error) {
-            return `Error updating section: ${error.message}`;
-        }
-    }
 
     // Handle full content write or template generation
     let finalContent = content;
@@ -273,7 +236,7 @@ export async function action(invocation = {}) {
     }
 
     if (!finalContent) {
-        return `Error: content is required. Use {skillName, content} to write specs, or just skillName to generate a template.`;
+        return `Error: content is required. Use ${usage}, or write-specs <skillName> to generate a template.`;
     }
 
     try {
