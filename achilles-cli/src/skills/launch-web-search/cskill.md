@@ -14,6 +14,9 @@ disabled
 ## Input Format
 Accepts a JSON object or prompt text with a `prompt` field.
 
+Example:
+launch-web-search find current documentation for the requested package
+
 ## Output Format
 Returns a structured launcher result with `ok`, `backend`, `cacheable`,
 `result_text`, `persistence_hint`, and `diagnostics`.

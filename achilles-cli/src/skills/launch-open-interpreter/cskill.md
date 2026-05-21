@@ -29,6 +29,9 @@ Fields:
 When invoked by AchillesCLI WebChat, the invocation token and materialized
 resources are read from the skill execution context.
 
+Example:
+launch-open-interpreter run the test suite and summarize failures
+
 ## Output Format
 Returns a structured object:
 

@@ -12,6 +12,9 @@ Input: skillType, e.g. tskill, cskill, oskill, mskill.
 ## Input Format
 Plain text skill type such as `tskill`, `cskill`, `oskill`, `mskill`, `dcgskill`, or `anthropic`.
 
+Example:
+get-template cskill
+
 ## Output Format
 Returns the template text and schema metadata, or an error string listing supported types.
 

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SKILL_FILE_NAMES } from '../../../lib/constants.mjs';
 import { requestWorkspaceSkillsRefresh } from '../../../lib/workspaceSkillRefresh.mjs';
+import { parsePositionalInput } from '../../../lib/skillInputParser.mjs';
 
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
@@ -18,19 +19,20 @@ export async function action(invocation = {}) {
 
     const skillsDir = path.join(startDir, 'skills');
 
-    // Parse arguments
-    let args;
-    if (typeof prompt === 'string') {
-        try {
-            args = JSON.parse(prompt);
-        } catch (e) {
-            return `Error: Invalid JSON input. Expected: {skillName, fileName, content}. Got: ${prompt.slice(0, 100)}`;
-        }
-    } else {
-        args = prompt || {};
+    const usage = 'write-skill <skillName> <fileName> --begin-content--\\n<content>\\n--end-content--';
+    const parsed = parsePositionalInput(prompt, {
+        usage,
+        minArgs: 2,
+        maxArgs: 2,
+        block: true,
+        blockRequired: true,
+    });
+    if (parsed.error) {
+        return parsed.error;
     }
 
-    const { skillName, fileName, content } = args;
+    const [skillName, fileName] = parsed.args;
+    const content = parsed.content;
 
     if (!skillName) {
         return 'Error: skillName is required';
@@ -39,7 +41,7 @@ export async function action(invocation = {}) {
         return 'Error: fileName is required (e.g., cskill.md, tskill.md, oskill.md)';
     }
     if (content === undefined || content === null) {
-        return 'Error: content is required';
+        return `Error: content is required. Usage: ${usage}`;
     }
 
     // Validate fileName

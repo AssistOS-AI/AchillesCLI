@@ -20,6 +20,9 @@ Common operations:
 {"operation":"buildScopedContext","query":"experiment 1 results","options":{"activeKuId":"ku_..."}}
 ```
 
+Example:
+{"operation":"buildScopedContext","query":"current workspace plan"}
+
 ## Output Format
 Returns JSON text with `ok`, `result`, or `requiresDisambiguation`.
 

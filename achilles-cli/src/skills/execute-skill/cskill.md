@@ -12,6 +12,9 @@ Input: skillName plus optional skillInput text.
 ## Input Format
 Plain text in the form `<skillName> [skillInput]`, or JSON with `skillName`/`name` and optional `input`/`skillInput`.
 
+Example:
+execute-skill demo-skill hello
+
 ## Output Format
 Returns the executed skill result, or an error string when the skill cannot be found or execution fails.
 

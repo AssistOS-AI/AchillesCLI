@@ -10,7 +10,10 @@ Call this before modifying, explaining, validating details, or refining an exist
 Input: skillName.
 
 ## Input Format
-Plain text skill name, or JSON with `skillName` or `name`.
+Plain text skill name.
+
+Example:
+read-skill demo-skill
 
 ## Output Format
 Returns the descriptor file name, path, type, and full content, or an error string.

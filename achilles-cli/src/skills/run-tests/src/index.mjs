@@ -16,39 +16,30 @@ import {
     formatTestResult,
     formatTestList,
 } from '../../../ui/TestResultFormatter.mjs';
+import { parsePositionalInput } from '../../../lib/skillInputParser.mjs';
 
 /**
  * Parse input to extract target and options
  */
 function parseInput(prompt) {
-    if (!prompt) {
-        return { target: null, options: {} };
+    const parsed = parsePositionalInput(prompt || '', {
+        usage: 'run-tests [target] [verbose] [timeoutMs]',
+        maxArgs: 3,
+    });
+    if (parsed.error) {
+        return { target: null, options: {}, error: parsed.error };
     }
 
-    if (typeof prompt === 'string') {
-        const trimmed = prompt.trim();
-
-        // Try JSON parse
-        try {
-            const parsed = JSON.parse(trimmed);
-            return {
-                target: parsed.target || parsed.skillName || parsed.name,
-                options: parsed.options || {},
-            };
-        } catch (e) {
-            // Not JSON, treat as skill name or "all"
-            return { target: trimmed, options: {} };
+    const options = {};
+    for (const arg of parsed.args.slice(1)) {
+        if (arg === 'verbose') {
+            options.verbose = true;
+        } else if (/^\d+$/.test(arg)) {
+            options.timeout = Number(arg);
         }
     }
 
-    if (typeof prompt === 'object') {
-        return {
-            target: prompt.target || prompt.skillName || prompt.name,
-            options: prompt.options || {},
-        };
-    }
-
-    return { target: null, options: {} };
+    return { target: parsed.args[0] || null, options, error: null };
 }
 
 /**
@@ -57,7 +48,10 @@ function parseInput(prompt) {
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
     const prompt = invocation.promptText;
-    const { target, options } = parseInput(prompt);
+    const { target, options, error } = parseInput(prompt);
+    if (error) {
+        return error;
+    }
 
     // If no target, list available tests
     if (!target) {

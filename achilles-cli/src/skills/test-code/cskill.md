@@ -7,10 +7,15 @@ Smoke-test generated runtime code for one skill.
 Call this for a quick runtime-code smoke test for one skill. It imports `src/index.mjs`, `src/index.js`, or `src/tskill.generated.mjs` and exercises exported functions.
 
 ## Help
-Input: skillName plus optional testInput.
+Input: `test-code <skillName>` or `test-code <skillName> --begin-input--` followed by test input and `--end-input--`.
 
 ## Input Format
-Plain text skill name plus optional test input, or JSON with `skillName` and optional `testInput`.
+Skill name and optional trailing test input block.
+
+Example:
+test-code demo-skill --begin-input--
+hello
+--end-input--
 
 ## Output Format
 Returns module load status, executed checks, and errors when import or execution fails.

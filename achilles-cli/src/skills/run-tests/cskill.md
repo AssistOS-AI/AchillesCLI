@@ -7,10 +7,13 @@ Run existing skill test files.
 Call this when the user asks to run tests, or after generating/updating tests. It runs existing `.tests.mjs` files and reports pass/fail results.
 
 ## Help
-Input: skillName, all, or JSON { target, options }.
+Input: `run-tests <skillName>`, `run-tests all`, or `run-tests <target> verbose 30000`.
 
 ## Input Format
-Plain text skill name, `all`, or JSON with `target` and optional `options`.
+Optional target skill name or `all`, with optional `verbose` and timeout milliseconds.
+
+Example:
+run-tests demo-skill verbose 30000
 
 ## Output Format
 Returns formatted test results with pass/fail counts and failure details.

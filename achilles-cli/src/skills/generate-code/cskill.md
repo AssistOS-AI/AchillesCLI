@@ -10,7 +10,10 @@ Call this after creating or changing a skill descriptor that needs runtime JavaS
 Input: skillName to generate code for.
 
 ## Input Format
-Plain text skill name, or JSON with `skillName` or `name`.
+Plain text skill name.
+
+Example:
+generate-code demo-skill
 
 ## Output Format
 Returns a generation summary with output paths and optional test results, or an error string.

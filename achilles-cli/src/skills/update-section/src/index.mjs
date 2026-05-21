@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { updateSkillSection } from '../../../schemas/skillSchemas.mjs';
 import { requestWorkspaceSkillsRefresh } from '../../../lib/workspaceSkillRefresh.mjs';
+import { parsePositionalInput } from '../../../lib/skillInputParser.mjs';
 
 /**
  * Check if a generated runtime file exists in the skill directory
@@ -44,19 +45,20 @@ async function triggerCodeRegeneration(skillName, mainAgent) {
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
     const prompt = invocation.promptText;
-    // Parse arguments
-    let args;
-    if (typeof prompt === 'string') {
-        try {
-            args = JSON.parse(prompt);
-        } catch (e) {
-            return `Error: Invalid JSON input. Expected: {skillName, section, content}`;
-        }
-    } else {
-        args = prompt || {};
+    const usage = 'update-section <skillName> <section> --begin-content--\\n<content>\\n--end-content--';
+    const parsed = parsePositionalInput(prompt, {
+        usage,
+        minArgs: 2,
+        maxArgs: 2,
+        block: true,
+        blockRequired: true,
+    });
+    if (parsed.error) {
+        return parsed.error;
     }
 
-    const { skillName, section, content: newContent } = args;
+    const [skillName, section] = parsed.args;
+    const newContent = parsed.content;
 
     if (!skillName) {
         return 'Error: skillName is required';
@@ -65,7 +67,7 @@ export async function action(invocation = {}) {
         return 'Error: section is required (e.g., "Description", "Instructions")';
     }
     if (newContent === undefined || newContent === null) {
-        return 'Error: content is required';
+        return `Error: content is required. Usage: ${usage}`;
     }
 
     // Use getSkillRecord to locate the skill

@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { requestWorkspaceSkillsRefresh } from '../../../lib/workspaceSkillRefresh.mjs';
+import { parseSingleArgInput } from '../../../lib/skillInputParser.mjs';
 
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
@@ -17,13 +18,11 @@ export async function action(invocation = {}) {
 
     const skillsDir = path.join(startDir, 'skills');
 
-    // Parse skill name
-    let skillName = null;
-    if (typeof prompt === 'string' && prompt.trim()) {
-        skillName = prompt.trim();
-    } else if (prompt && typeof prompt === 'object') {
-        skillName = prompt.skillName || prompt.name;
+    const parsed = parseSingleArgInput(prompt, 'delete-skill <skillName>');
+    if (parsed.error) {
+        return parsed.error;
     }
+    const skillName = parsed.value;
 
     if (!skillName) {
         return 'Error: skillName is required. Usage: delete-skill <skillName>';

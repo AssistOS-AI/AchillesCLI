@@ -20,6 +20,9 @@ rm unwanted-file.txt
 git status
 ```
 
+Example:
+bash git status
+
 JSON command:
 
 ```json

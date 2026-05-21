@@ -15,24 +15,16 @@ import { runTestFile } from '../../../lib/testDiscovery.mjs';
 import { formatTestResult } from '../../../ui/TestResultFormatter.mjs';
 import { SKILL_TYPE_NAMES, FILE_NAMES, TIERS, RESPONSE_SHAPES } from '../../../lib/constants.mjs';
 import { requestWorkspaceSkillsRefresh } from '../../../lib/workspaceSkillRefresh.mjs';
+import { parseSingleArgInput } from '../../../lib/skillInputParser.mjs';
 
 const SUPPORTED_TYPES = [SKILL_TYPE_NAMES.TSKILL, SKILL_TYPE_NAMES.CSKILL];
 
-/**
- * Parse skill name from prompt (handles string and object inputs)
- */
 function parseSkillName(prompt) {
-    if (typeof prompt === 'string') {
-        try {
-            const parsed = JSON.parse(prompt);
-            return parsed.skillName || parsed.name || null;
-        } catch (e) {
-            return prompt.trim() || null;
-        }
-    } else if (prompt && typeof prompt === 'object') {
-        return prompt.skillName || prompt.name || null;
+    const parsed = parseSingleArgInput(prompt, 'generate-code <skillName>');
+    if (parsed.error) {
+        return { error: parsed.error, skillName: null };
     }
-    return null;
+    return { error: null, skillName: parsed.value };
 }
 
 /**
@@ -120,7 +112,11 @@ export async function action(invocation = {}) {
     // Get llmAgent from the mainAgent
     const llmAgent = mainAgent?.llmAgent;
 
-    const skillName = parseSkillName(prompt);
+    const parsedSkillName = parseSkillName(prompt);
+    if (parsedSkillName.error) {
+        return parsedSkillName.error;
+    }
+    const skillName = parsedSkillName.skillName;
 
     if (!skillName) {
         return 'Error: skillName is required. Usage: generate-code <skillName>';

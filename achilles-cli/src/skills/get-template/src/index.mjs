@@ -3,17 +3,16 @@
  */
 
 import { SKILL_TYPES, SKILL_TEMPLATES } from '../../../schemas/skillSchemas.mjs';
+import { parseSingleArgInput } from '../../../lib/skillInputParser.mjs';
 
 export async function action(invocation = {}) {
     const mainAgent = invocation.mainAgent;
     const prompt = invocation.promptText;
-    // Parse skill type
-    let skillType = null;
-    if (typeof prompt === 'string' && prompt.trim()) {
-        skillType = prompt.trim().toLowerCase();
-    } else if (prompt && typeof prompt === 'object') {
-        skillType = (prompt.skillType || prompt.type || '').toLowerCase();
+    const parsed = parseSingleArgInput(prompt, 'get-template <skillType>');
+    if (parsed.error) {
+        return parsed.error;
     }
+    const skillType = parsed.value.toLowerCase();
 
     const availableTypes = Object.keys(SKILL_TEMPLATES);
 
