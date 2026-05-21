@@ -36,13 +36,11 @@ Ploinky integration boundary:
 4. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI slash commands are provided through a dedicated MCP catalog tool that returns a structured command/sub-command payload and does not execute chat prompts. That catalog tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill.
 5. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
 6. The webchat interactive mode must treat `@open-interpreter` and other
-   `@agent`-shaped tokens as ordinary chat text. AchillesCLI no longer accepts
-   `--research-tags`, `--tag-relay`, `--tag-relay-agent`,
-   `--tag-relay-submit-tool`, `--tag-relay-list-tool`, `--tag-relay-tags`, or
-   `--tag-relay-timeout-ms` as provider dispatch controls. Ploinky WebChat
-   remains only the envelope and invocation-token transport.
-7. Generic WebChat envelope and resource helpers live in AchillesCLI, not in a
-   tag-relay module. These helpers normalize envelope text, extract the
+   `@agent`-shaped tokens as ordinary chat text. Provider dispatch is semantic
+   and launcher-driven; Ploinky WebChat remains only the envelope and
+   invocation-token transport.
+7. Generic WebChat envelope and resource helpers live in AchillesCLI. These
+   helpers normalize envelope text, extract the
    invocation token, and materialize browser attachments or workspace
    references only from supported WebChat storage: legacy shared blob ids under
    the configured shared root and Ploinky session-upload paths under the active
@@ -55,8 +53,9 @@ Ploinky integration boundary:
    `launch-open-interpreter` or `launch-web-search`. Launchers receive the
    normalized prompt, safe WebChat context, and current invocation token through
    the AchillesCLI skill execution context. Launchers must call external
-   provider execution only through `researchRelay.research_task_submit` via
-   router-mediated MCP. Provider-specific launchers may perform a bounded
+   provider execution only through
+   `copilotProviderRelay.copilot_provider_task_submit` via router-mediated MCP.
+   Provider-specific launchers may perform a bounded
    provider-owned status probe through router-mediated MCP before submitting the
    task so unavailable provider routes fail with an explicit user-facing
    message instead of a later relay submission error. Directory and other
@@ -65,8 +64,8 @@ Ploinky integration boundary:
 9. The Explorer Copilot launcher may consume runtime plugin metadata from
    `file-exp:copilot-launch-extension` to add generic WebChat launch query
    parameters such as `forward-envelope=1` and `workspace-dir`. It must not add
-   tag-relay flags, provider backend tags, provider agent ids, or provider MCP
-   tool names to the WebChat URL; the visible Explorer action remains the
+   provider backend ids, provider agent ids, or provider MCP tool names to the
+   WebChat URL; the visible Explorer action remains the
    normal `Open Copilot here` action.
 10. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
 11. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.

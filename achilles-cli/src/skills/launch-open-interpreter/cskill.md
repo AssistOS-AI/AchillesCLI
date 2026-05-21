@@ -1,7 +1,7 @@
 # Launch Open Interpreter
 
 Dispatch an execution-oriented Copilot task to the Open Interpreter provider
-through the Research Relay.
+through the Copilot Provider Relay.
 
 ## Backend
 open-interpreter
@@ -49,7 +49,7 @@ Returns a structured object:
 
 ## Constraints
 - Never call `openInterpreterAgent` directly.
-- Always dispatch through `researchRelay.research_task_submit`.
+- Always dispatch through `copilotProviderRelay.copilot_provider_task_submit`.
 - Require the current router invocation token for delegated MCP.
 - Treat `@open-interpreter` as ordinary chat text, not a dispatch token.
 - Never serve Open Interpreter execution from AKU cache.
