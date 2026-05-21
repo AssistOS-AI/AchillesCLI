@@ -884,6 +884,7 @@ function updateWebchatContextForMessage(context, normalizedMessage, { workingDir
     context.webchatPaths = materialized.paths;
     context.webchatResourceWarnings = materialized.warnings;
     context.webchatOrigin = {
+        ...((normalizedMessage?.origin && typeof normalizedMessage.origin === 'object') ? normalizedMessage.origin : {}),
         type: 'semantic-copilot',
         surface: 'webchat',
         agent: 'achilles-cli',

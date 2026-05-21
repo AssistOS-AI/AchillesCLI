@@ -69,6 +69,11 @@ Ploinky integration boundary:
    normal `Open Copilot here` action.
 10. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
 11. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
+12. In webchat runtime mode, AchillesCLI preserves the sanitized
+    `origin.publicBaseUrl` field from forwarded WebChat envelopes in launcher
+    context. Launcher skills may use this same-origin router base for
+    user-facing browser links, while ignoring malformed or non-HTTP origin
+    hints.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.

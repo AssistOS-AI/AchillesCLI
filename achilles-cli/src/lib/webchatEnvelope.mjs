@@ -29,19 +29,51 @@ export function normalizeWebchatReferences(rawReferences) {
     return out;
 }
 
+export function normalizeWebchatOrigin(rawOrigin) {
+    if (!rawOrigin || typeof rawOrigin !== 'object') {
+        return {};
+    }
+    const candidates = [
+        rawOrigin.publicBaseUrl,
+        rawOrigin.public_base_url,
+        rawOrigin.origin,
+        rawOrigin.baseUrl,
+        rawOrigin.base_url,
+        rawOrigin.routerUrl,
+        rawOrigin.router_url,
+        rawOrigin.url,
+    ];
+    for (const candidate of candidates) {
+        const raw = typeof candidate === 'string' ? candidate.trim() : '';
+        if (!raw) {
+            continue;
+        }
+        try {
+            const parsed = new URL(raw);
+            if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname) {
+                return { publicBaseUrl: parsed.origin };
+            }
+        } catch {
+            // Ignore malformed origin hints.
+        }
+    }
+    return {};
+}
+
 export function normalizeWebchatMessage(raw) {
     const text = String(raw || '').trim();
     if (!text) {
-        return { text: '', rawText: '', attachments: [], references: [], invocationToken: '' };
+        return { text: '', rawText: '', attachments: [], references: [], invocationToken: '', origin: {} };
     }
     try {
         const parsed = JSON.parse(text);
         if (!parsed || typeof parsed !== 'object' || !parsed.__webchatMessage) {
-            return { text, rawText: text, attachments: [], references: [], invocationToken: '' };
+            return { text, rawText: text, attachments: [], references: [], invocationToken: '', origin: {} };
         }
         const messageText = typeof parsed.text === 'string' ? parsed.text : '';
         const attachments = Array.isArray(parsed.attachments) ? parsed.attachments : [];
         const references = normalizeWebchatReferences(parsed.references);
+        const origin = normalizeWebchatOrigin(parsed.origin);
         const invocationToken = typeof parsed.invocation?.token === 'string'
             ? parsed.invocation.token
             : '';
@@ -72,8 +104,9 @@ export function normalizeWebchatMessage(raw) {
             attachments,
             references,
             invocationToken,
+            origin,
         };
     } catch {
-        return { text, rawText: text, attachments: [], references: [], invocationToken: '' };
+        return { text, rawText: text, attachments: [], references: [], invocationToken: '', origin: {} };
     }
 }
