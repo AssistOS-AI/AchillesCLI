@@ -622,12 +622,13 @@ async function runWebchatInteractive(agent, options) {
                         context.providerLauncherResults = [];
                     }
                     const launcherResultStart = context.providerLauncherResults.length;
-                    let result = await agent.executeSkill('copilot-router', akuPrompt.prompt, {
+                    let result = await agent.executePrompt(akuPrompt.prompt, {
                         signal: activeAbortController.signal,
                         context,
                         supervisor: agent.supervisor || null,
                         model: slashState.pinnedModel || undefined,
                         tier: slashState.activeTier,
+                        systemPrompt: buildOrchestratorSystemPrompt(),
                     });
                     await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });
                     result = formatExecutionResult(result, debug);
