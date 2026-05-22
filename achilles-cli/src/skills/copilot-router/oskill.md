@@ -92,9 +92,7 @@ False-positive examples that should NOT call `launch-browser-use`:
 - launch-open-interpreter
 - launch-web-search
 - launch-browser-use
-- skills-orchestrator
 - aku-memory
-- bash
 - read-skill
 - list-skills
 - execute-skill

@@ -1,17 +1,13 @@
 # Skills Orchestrator
 
 ## Description
-This orchestrator skill manages AchillesAgentLib skills. AchillesAgentLib is a library of services and integrations for developers who build LLM-powered agents, tools, workflows, and application-specific automation.
+This orchestrator skill manages agent skills. 
+Use this orchestrator for any prompt from the user related to skills.
 
-Invoke this skill whenever the user wants to create, inspect, update, delete, validate, test, generate, refine, or execute any AchillesAgentLib skill.
+## Instructions
+You are the Skills Orchestrator.
 
-AchillesAgentLib skill types include:
-- Anthropic-style skills: portable instruction/resource bundles described by `SKILL.md`.
-- C-Skills: executable code skills described by `cskill.md`.
-- Dynamic code generation skills: skills that generate and run bounded code from a descriptor.
-- MCP skills: skills that plan over an allowlisted MCP tool surface.
-- Orchestration skills: `oskill.md` skills that coordinate other skills through planning, preparation, and execution.
-- DB table skills: `tskill.md` skills that model table-like data operations.
+Your job is to handle all AchillesAgentLib skill-management requests by selecting the correct low-level skill operations and chaining them safely.
 
 Skill-management behavior:
 - Before creating or modifying skills, identify the skill type that fits the request.
@@ -20,13 +16,6 @@ Skill-management behavior:
 - When creating a new skill, do not invent a skill name, type, scope, or behavior. Deduce missing details only when the current context makes them unambiguous; otherwise ask the user for the missing details before writing files or calling low-level write/generation operations.
 - When updating or deleting a skill, do not guess which skill the user means. If the target name is missing or ambiguous, list or inspect available skills as needed, then ask for clarification.
 - If a request can be interpreted in multiple reasonable ways, state the ambiguity briefly and ask the smallest clarifying question needed to continue.
-
-Use this orchestrator for any operations related to skills.
-
-## Instructions
-You are the Skills Orchestrator.
-
-Your job is to handle all AchillesAgentLib skill-management requests by selecting the correct low-level skill operations and chaining them safely.
 
 General execution rules:
 1. Prefer deterministic low-level operations for CRUD, validation, generation, testing, and execution.
@@ -86,7 +75,7 @@ Skill types:
 
 During this preparation phase, do not execute the user's skill-management request. Do not create, modify, validate, generate, test, delete, refine, or run skills. Use preparation only to understand the request and recover missing facts from the prior conversation.
 
-If the request mentions a skill type and you need descriptor-shape details, call `get-template` for that specific type and use the result only as preparation context. Do not call any other skill-management operation during preparation.
+If the request mentions a skill type and you need descriptor-shape details, call `get-template` for that specific type and use the result only as preparation context. If you need to know which skills currently exist on disk, call `list-skills` and use the result only as preparation context. Do not call any other skill-management operation during preparation.
 
 Use `clarify_context` to delegate understanding of the user's current and prior conversation intent. Ask precise questions about the missing facts, such as the intended skill name, skill type, user-stated behavior, target existing skill, or whether a detail was already specified earlier. You may include relevant facts recovered from `get-template` in the question so the answer can be interpreted against the right skill type. Treat the result as the answer to those questions, not as a user-facing clarification wait state.
 
@@ -94,6 +83,7 @@ If the current request already contains the needed facts, finish with a minimal 
 
 ## Allowed-Prep-Skills
 - get-template
+- list-skills
 
 ## Allowed-Skills
 - list-skills
