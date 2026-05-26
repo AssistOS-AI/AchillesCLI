@@ -100,8 +100,7 @@ export function startIntroSkill(agent, options = {}) {
             context: {
                 ...context,
                 introStartup: true,
-            },
-            tier: 'fast',
+            }
         });
         const text = extractSkillResultText(result);
         if (!text) {

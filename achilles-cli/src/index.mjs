@@ -80,7 +80,7 @@ async function main() {
     let prompt = null;
     let verbose = false;
     let debug = false;
-    let mode = 'deep';
+    let selectedModel = 'deep';
     let renderMarkdown = true;
     let uiStyle = process.env.ACHILLES_CLI_UI || 'claude-code'; // Default UI style
     let skipBashPermissions = false; // Skip bash command permission prompts
@@ -115,9 +115,9 @@ async function main() {
         } else if (arg === '--debug') {
             debug = true;
         } else if (arg === '--fast') {
-            mode = 'fast';
+            selectedModel = 'fast';
         } else if (arg === '--deep') {
-            mode = 'deep';
+            selectedModel = 'deep';
         } else if (arg === '--no-markdown' || arg === '--raw') {
             renderMarkdown = false;
         } else if (arg === '--ui-minimal') {
@@ -276,7 +276,7 @@ async function main() {
 
             let result = await agent.executePrompt(akuPrompt.prompt, {
                 context,
-                mode,
+                model: selectedModel,
                 systemPrompt: buildOrchestratorSystemPrompt(),
             });
             await drainWorkspaceSkillsRefresh(agent, { logger });
@@ -626,8 +626,7 @@ async function runWebchatInteractive(agent, options) {
                         signal: activeAbortController.signal,
                         context,
                         supervisor: agent.supervisor || null,
-                        model: slashState.pinnedModel || undefined,
-                        tier: slashState.activeTier,
+                        model: slashState.pinnedModel || slashState.activeTier,
                         systemPrompt: buildOrchestratorSystemPrompt(),
                     });
                     await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });

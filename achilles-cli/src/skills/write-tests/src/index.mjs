@@ -371,7 +371,7 @@ export async function action(invocation = {}) {
     try {
         let generatedTests = await llmAgent.executePrompt(testGenPrompt, {
             responseShape: RESPONSE_SHAPES.CODE,
-            mode: TIERS.CODE,
+            model: TIERS.CODE,
         });
 
         // Clean up response - remove markdown code blocks if present

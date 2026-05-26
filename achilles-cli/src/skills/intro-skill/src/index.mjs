@@ -76,8 +76,7 @@ export async function action(invocation = {}) {
     const payload = parsePayload(invocation.promptText);
     const prompt = buildPrompt(payload);
     const response = await llmAgent.executePrompt(prompt, {
-        tier: 'fast',
-        mode: 'fast',
+        model: 'fast',
     });
 
     if (response === null || response === undefined) {

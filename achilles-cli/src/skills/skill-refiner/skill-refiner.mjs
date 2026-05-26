@@ -274,7 +274,7 @@ function buildTools(mainAgent, skillName, skillRecord, requirements, specsConten
                 try {
                     const response = await llmAgent.executePrompt(evalPrompt, {
                         responseShape: RESPONSE_SHAPES.JSON,
-                        mode: TIERS.FAST,
+                        model: TIERS.FAST,
                     });
 
                     const evaluation = typeof response === 'string' ? JSON.parse(response) : response;
@@ -357,7 +357,7 @@ export async function action(invocation = {}) {
         options: {
             maxStepsPerTurn: maxIterations * 4, // Allow multiple tool calls per iteration
             maxErrors: 5,
-            mode: TIERS.CODE,
+            model: TIERS.CODE,
             systemPrompt,
         }
     });

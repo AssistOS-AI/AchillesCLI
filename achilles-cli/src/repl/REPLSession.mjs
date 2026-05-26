@@ -277,13 +277,10 @@ export class REPLSession {
 
         this._logEnvSnapshot('process-prompt');
         const execOpts = {
-            tier: this.activeTier,
+            model: this.pinnedModel || this.activeTier,
             systemPrompt: buildOrchestratorSystemPrompt(),
             ...restOptions,
         };
-        if (this.pinnedModel) {
-            execOpts.model = this.pinnedModel;
-        }
         let result;
         try {
             result = await this.agent.executePrompt(userPrompt, execOpts);
