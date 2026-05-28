@@ -6,7 +6,7 @@ Ploinky-agent layer for AchillesCLI under AssistOSExplorer. The outer `../CLAUDE
 
 - `src/index.mjs` - CLI arg parsing, single-shot vs REPL mode detection, logger config.
 - `bin/achilles-cli` - binary wrapper.
-- `manifest.json` - Ploinky agent declaration.
+- `manifest.json` - Ploinky agent declaration using the shared `docker.io/assistos/ploinky-node:24-bookworm-tools` runtime image.
 
 ## Module layout
 

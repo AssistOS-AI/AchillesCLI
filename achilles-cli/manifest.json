@@ -1,5 +1,5 @@
 {
-  "container": "docker.io/library/node:24.15.0-alpine",
+  "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
   "install": "",
   "lite-sandbox": true,
   "env": [
