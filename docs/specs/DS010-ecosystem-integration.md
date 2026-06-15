@@ -51,7 +51,10 @@ Ploinky integration boundary:
    internals, and preserve the same byte caps as other forwarded resources.
 8. Non-slash WebChat turns are routed through the built-in `copilot-router`
    oskill. The router may call deterministic launcher cskills such as
-   `launch-open-interpreter` or `launch-web-search`. Launchers receive the
+   `launch-open-interpreter`, `launch-web-search`, or `launch-opencode`.
+   When the user explicitly names `opencode` or `opencodeAgent`, the router
+   must select `launch-opencode` before generic execution launchers so the
+   named provider intent is preserved. Launchers receive the
    normalized prompt, safe WebChat context, and current invocation token through
    the AchillesCLI skill execution context. Launchers must call external
    provider execution only through
@@ -106,6 +109,14 @@ Provider launcher discovery:
    WebChat toggle. A launcher may report that its relay backend or provider
    route is unavailable, but it must not tell the user to run an enable-research
    command to make the provider selectable.
+6. `launch-opencode` is the bounded exception for direct named-agent
+   delegation. It calls the allowlisted `opencodeAgent.execute-task` MCP tool
+   through the router, uses the hardcoded model
+   `xai/grok-4.20-0309-non-reasoning`, returns plain text, and must not accept
+   arbitrary target agent names or bypass Ploinky MCP authorization.
+7. The AchillesCLI Ploinky manifest must enable
+   `copilot-agents/opencodeAgent global` so OpenCode runs in the same workspace
+   context as Copilot.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

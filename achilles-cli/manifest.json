@@ -9,15 +9,12 @@
     "ACHILLES_MODEL_CODE",
     "ACHILLES_DEBUG"
   ],
+  "enable": [
+    "copilot-agents/opencodeAgent global"
+  ],
   "webchat": {
     "auth": "static"
   },
   "cli": "node /code/src/index.mjs",
-  "about": "Achilles CLI for managing, generating, and testing skill definition files in skills directories.",
-  "expose": [
-    {
-      "name": "ACHILLES_DEBUG",
-      "value": "true"
-    }
-  ]
+  "about": "Achilles CLI for managing, generating, and testing skill definition files in skills directories."
 }

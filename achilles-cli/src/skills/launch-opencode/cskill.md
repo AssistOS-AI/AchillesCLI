@@ -1,0 +1,11 @@
+# Launch OpenCode
+
+Delegate a natural-language task to the agent `opencodeAgent` / opencode. 
+Use when opencode/opencodeAgent is mentioned to execute a task
+
+## Input Format
+Accepts plain prompt text describing the task.
+
+## Output Format
+Returns plain text. Successful runs return `OpenCode task completed.` Failed
+runs return the agent error text or an MCP failure message.
