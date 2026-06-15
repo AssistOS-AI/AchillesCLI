@@ -20,11 +20,18 @@ The skill returns plain text only. Successful runs return
 `opencodeAgent.execute-task` when that field is non-empty. Failed runs return
 the agent error text or an MCP failure message.
 
-The call path must remain Ploinky-mediated. When the runtime has agent
-credentials and the bundled Ploinky agent client is available, the skill uses
-that native client so Agent Assertion and router MCP policy authorize the
-operation. When running from WebChat context without direct agent-client
-access, it falls back to AchillesCLI's invocation-token MCP helper.
+When `execute-task` is registered as an async MCP tool and returns a task id,
+the skill must poll the agent task-status endpoint until the task completes,
+fails, or times out. New bounded `logTail` content from the task queue may be
+emitted through the invocation progress writer or supervisor output writer as
+intermediate progress. The final user-visible return value remains plain text.
+
+The call path must remain Ploinky-mediated through Ploinky
+`AgentMcpClient.mjs`. The skill imports that client directly from the mounted
+`/Agent/client/AgentMcpClient.mjs` path with a normal static ESM import. The
+client must call `opencodeAgent` through the router at `/opencodeAgent/mcp` and
+poll `/opencodeAgent/task`; the skill must not use AchillesCLI's legacy MCP
+helper or any local path fallback.
 
 ## Decisions & Questions
 
@@ -35,3 +42,5 @@ access, it falls back to AchillesCLI's invocation-token MCP helper.
 3. The model is hardcoded to `xai/grok-4.20-0309-non-reasoning` so the launcher
    behavior is stable and does not depend on session or environment model
    configuration.
+4. Async polling uses the task id returned by AgentServer metadata, not the
+   human-readable queued-task message.

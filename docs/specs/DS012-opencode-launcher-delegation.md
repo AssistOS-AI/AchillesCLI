@@ -36,12 +36,22 @@ The skill returns plain text only. Successful runs return
 agent returns it. Failed runs return the agent error text or an MCP failure
 message.
 
-The call path must remain Ploinky-mediated. When the AchillesCLI runtime has
-agent credentials and the bundled Ploinky agent client is available, the skill
-may use that client so agent assertions and router policy decide authorization.
-When running from WebChat context without direct agent-client access, it may use
-the AchillesCLI MCP helper with the current invocation token. In both cases,
-the router remains the public and authorization boundary.
+If the target tool is registered as an async MCP tool and the call returns
+AgentServer task metadata, the skill must poll the returned task id through the
+Ploinky-mediated task-status path until completion, failure, cancellation, or
+timeout. The skill may forward newly observed bounded `logTail` chunks through
+the runtime progress writer or supervisor output writer so users can see
+OpenCode activity while the tool call is still pending. The final response to
+the user remains plain text and is derived from the completed task result.
+
+The call path must remain Ploinky-mediated through Ploinky
+`AgentMcpClient.mjs`. The AchillesCLI runtime must have `PLOINKY_AGENT_ID` and
+`PLOINKY_AGENT_SECRET`, and the skill must import the Ploinky client directly
+from `/Agent/client/AgentMcpClient.mjs` with a normal static ESM import. That
+client must call
+`/opencodeAgent/mcp` and poll `/opencodeAgent/task` through the router. The
+skill must not use AchillesCLI's legacy invocation-token MCP helper or a local
+path fallback for this delegation.
 
 The `copilot-router` oskill must select `launch-opencode` before the more
 general execution-provider launchers when the user explicitly asks for
@@ -65,6 +75,12 @@ Response: The requested user interface is intentionally minimal:
 task description only. The model is fixed to
 `xai/grok-4.20-0309-non-reasoning` so the launcher behavior is stable and does
 not depend on session or environment model configuration.
+
+### Question #3: Why use async task polling instead of returning immediately?
+Response: OpenCode tasks can run long enough that callers need progress
+visibility. AgentServer already owns async MCP task state, bounded log tails,
+and final results, so the launcher uses the returned task id and keeps the
+OpenCode delegation behind the same router-mediated authorization path.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users

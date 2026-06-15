@@ -12,7 +12,7 @@ function resolveRouterUrl(env = process.env) {
 
 export async function callAgentTool(agent, toolName, input = {}, options = {}) {
     const base = resolveRouterUrl(options.env || process.env);
-    const url = new URL(`/mcps/${encodeURIComponent(agent)}/mcp`, base);
+    const url = new URL(`/${encodeURIComponent(agent)}/mcp`, base);
     const payload = {
         jsonrpc: '2.0',
         id: Date.now(),
