@@ -33,24 +33,6 @@ test('action calls opencodeAgent execute-task with hardcoded model', async () =>
     }]);
 });
 
-test('action does not use legacy callAgentTool fallback', async () => {
-    const result = await action({
-        promptText: 'build artifacts',
-        mainAgent: { startDir: '/workspace/project' },
-        agentClient: {
-            callTool: async (toolName, payload) => {
-                assert.equal(toolName, 'execute-task');
-                return { ok: true, projectDir: payload.projectDir, model: payload.model };
-            },
-        },
-        callAgentTool: async () => {
-            throw new Error('legacy helper must not be used');
-        },
-    });
-
-    assert.equal(result, 'OpenCode task completed.');
-});
-
 test('action fails clearly when Ploinky AgentMcpClient credentials are unavailable', async () => {
     const oldId = process.env.PLOINKY_AGENT_ID;
     const oldSecret = process.env.PLOINKY_AGENT_SECRET;
@@ -104,42 +86,28 @@ test('action returns successful opencode output as plain text', async () => {
     assert.equal(result, 'OpenCode task completed.\n\ncreated files\nran tests');
 });
 
-test('action polls async opencode task and emits progress', async () => {
+test('action forwards task updates from callback and completes on final tool response', async () => {
     const progress = [];
-    const statuses = [
-        {
-            id: 'task-1',
-            status: 'running',
-            logTail: '[opencode stdout] first\n',
-            logSeq: 1,
-        },
-        {
-            id: 'task-1',
-            status: 'completed',
-            logTail: '[opencode stdout] first\n[opencode stdout] done\n',
-            logSeq: 2,
-            result: {
-                content: [{
-                    type: 'text',
-                    text: JSON.stringify({ ok: true, outputText: 'final output' }),
-                }],
-            },
-        },
-    ];
-
     const result = await action({
         promptText: 'build artifacts',
         mainAgent: { startDir: '/workspace/project' },
-        pollIntervalMs: 0,
         progressWriter: { write: (entry) => progress.push(entry) },
         agentClient: {
-            callTool: async () => ({
-                content: [{ type: 'text', text: "Task 'execute-task' queued with id task-1" }],
-                metadata: { taskId: 'task-1', status: 'running' },
-            }),
-            getTaskStatus: async (taskId) => {
-                assert.equal(taskId, 'task-1');
-                return statuses.shift();
+            callTool: async (_toolName, _payload, { onTaskUpdate }) => {
+                onTaskUpdate({
+                    status: 'running',
+                    logTail: '[opencode stdout] first\n',
+                    logSeq: 1,
+                });
+                onTaskUpdate({
+                    status: 'completed',
+                    logTail: '[opencode stdout] first\n[opencode stdout] done\n',
+                    logSeq: 2,
+                });
+                return {
+                    ok: true,
+                    outputText: 'final output',
+                };
             },
         },
     });
@@ -151,25 +119,24 @@ test('action polls async opencode task and emits progress', async () => {
     assert.match(progress[1].reason, /done/);
 });
 
-test('action reports failed async opencode task as plain text', async () => {
+test('action reports failed async opencode task errors', async () => {
+    const error = new Error('opencode failed in queue');
+    error.task = {
+        error: 'opencode failed in queue',
+        logTail: '[opencode stderr] details\n',
+        status: 'failed',
+    };
+
     const result = await action({
         promptText: 'build artifacts',
-        pollIntervalMs: 0,
         agentClient: {
-            callTool: async () => ({
-                metadata: { taskId: 'task-fail', status: 'running' },
-            }),
-            getTaskStatus: async () => ({
-                id: 'task-fail',
-                status: 'failed',
-                error: 'opencode failed in queue',
-                logTail: '[opencode stderr] details\n',
-                logSeq: 1,
-            }),
+            callTool: async () => {
+                throw error;
+            },
         },
     });
 
-    assert.equal(result, 'opencode failed in queue\n\n[opencode stderr] details');
+    assert.equal(result, 'OpenCode task failed: opencode failed in queue\n\n[opencode stderr] details');
 });
 
 test('action uses process cwd only without mainAgent.startDir', async () => {
@@ -222,4 +189,5 @@ test('AchillesCLI manifest enables opencodeAgent globally', async () => {
 
     assert.ok(Array.isArray(manifest.enable));
     assert.ok(manifest.enable.includes('copilot-agents/opencodeAgent global'));
+    assert.ok(manifest.enable.includes('copilot-agents/piAgent global'));
 });

@@ -1,16 +1,157 @@
-import { createAgentClient } from '/Agent/client/AgentMcpClient.mjs';
+function trim(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+const PROGRESS_CHUNK_LIMIT = 3000;
+
+function limitProgressText(text) {
+    const trimmed = trim(text);
+    if (!trimmed) {
+        return '';
+    }
+    if (trimmed.length <= PROGRESS_CHUNK_LIMIT) {
+        return trimmed;
+    }
+    return trimmed.slice(trimmed.length - PROGRESS_CHUNK_LIMIT);
+}
+
+function getProgressWriter(invocation = {}) {
+    if (invocation.progressWriter?.write) {
+        return invocation.progressWriter;
+    }
+    if (invocation.context?.progressWriter?.write) {
+        return invocation.context.progressWriter;
+    }
+    const supervisorWriter = invocation.mainAgent?.supervisor?.getOutputWriter?.();
+    if (supervisorWriter?.write) {
+        return supervisorWriter;
+    }
+    return null;
+}
+
+function emitProgress(invocation, text, { tool = 'launch-opencode' } = {}) {
+    const reason = limitProgressText(text);
+    if (!reason) {
+        return;
+    }
+    const writer = getProgressWriter(invocation);
+    if (!writer) {
+        return;
+    }
+    try {
+        writer.write({
+            type: 'tool_reason',
+            tool,
+            reason,
+        });
+    } catch {
+    }
+}
+
+function makeTaskUpdateReporter(invocation, toolName = 'launch-opencode') {
+    let lastLogSeq = -1;
+    let lastLogTail = '';
+
+    return (task) => {
+        if (!task || typeof task !== 'object') {
+            return;
+        }
+
+        const logTail = trim(task.logTail);
+        const logSeqValue = Number(task.logSeq);
+        const logSeq = Number.isFinite(logSeqValue) ? logSeqValue : null;
+        if (!logTail) {
+            return;
+        }
+
+        if (logSeq === null ? logTail !== lastLogTail : logSeq !== lastLogSeq) {
+            const reason = lastLogTail && logTail.startsWith(lastLogTail) ? logTail.slice(lastLogTail.length) : logTail;
+            emitProgress(invocation, reason, { tool: toolName });
+            lastLogTail = logTail;
+            if (logSeq !== null) {
+                lastLogSeq = logSeq;
+            }
+        }
+    };
+}
+
+async function resolveAgentClient(agentName, invocation = {}) {
+    if (invocation.agentClient && typeof invocation.agentClient.callTool === 'function') {
+        return invocation.agentClient;
+    }
+
+    if (!process.env.PLOINKY_AGENT_ID || !process.env.PLOINKY_AGENT_SECRET) {
+        throw new Error('Ploinky agent credentials are required for task delegation.');
+    }
+
+    const module = await import('/Agent/client/AgentMcpClient.mjs');
+    if (!module?.createAgentClient || typeof module.createAgentClient !== 'function') {
+        throw new Error('Ploinky AgentMcpClient is unavailable in this runtime.');
+    }
+
+    return module.createAgentClient(agentName, {
+        userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
+    });
+}
+
+function parseTaskResult(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return { ok: true };
+    }
+
+    const content = Array.isArray(payload.result?.content)
+        ? payload.result.content
+        : Array.isArray(payload.content)
+            ? payload.content
+            : [];
+    const text = trim(content.find((entry) => entry?.type === 'text' && typeof entry.text === 'string')?.text);
+
+    try {
+        if (!text) {
+            throw new Error('no mcp text');
+        }
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+            return {
+                ...payload,
+                ...parsed,
+            };
+        }
+        return {
+            ...payload,
+            ok: true,
+            outputText: text,
+        };
+    } catch {
+        if (text) {
+            return {
+                ...payload,
+                ok: true,
+                outputText: text,
+            };
+        }
+    }
+
+    const hasStatus = typeof payload.status === 'string' || typeof payload.logTail === 'string' || typeof payload.logSeq !== 'undefined' || payload?.result;
+    const hasMetadata = payload?.metadata || payload?.result?.metadata;
+    if (payload.outputText !== undefined || payload.ok !== undefined || typeof payload.error === 'string' || hasStatus || hasMetadata) {
+        return payload;
+    }
+
+    return { ok: true };
+}
+
+async function callAgentTool(agentName, toolName, payload, invocation = {}) {
+    const client = await resolveAgentClient(agentName, invocation);
+    return client.callTool(toolName, payload, {
+        userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
+        onTaskUpdate: invocation.onTaskUpdate,
+    });
+}
 
 export const TARGET_AGENT = 'opencodeAgent';
 export const TOOL_NAME = 'execute-task';
 export const HARDCODED_MODEL = 'xai/grok-4.20-0309-non-reasoning';
-
-const DEFAULT_TIMEOUT_MS = 450000;
-const DEFAULT_POLL_INTERVAL_MS = 1000;
-const PROGRESS_CHUNK_LIMIT = 3000;
-
-function trim(value) {
-    return typeof value === 'string' ? value.trim() : '';
-}
 
 function normalizePrompt(invocation = {}) {
     if (typeof invocation.prompt === 'string') {
@@ -35,49 +176,6 @@ function resolveProjectDir(invocation = {}) {
     return trim(invocation.mainAgent?.startDir) || process.cwd();
 }
 
-async function createPloinkyAgentClient(agentName) {
-    if (!process.env.PLOINKY_AGENT_ID || !process.env.PLOINKY_AGENT_SECRET) {
-        throw new Error('Ploinky agent credentials are required for OpenCode delegation.');
-    }
-    return createAgentClient(agentName);
-}
-
-async function resolveAgentClient(invocation = {}) {
-    if (invocation.agentClient && typeof invocation.agentClient.callTool === 'function') {
-        return invocation.agentClient;
-    }
-    if (!process.env.PLOINKY_AGENT_ID || !process.env.PLOINKY_AGENT_SECRET) {
-        throw new Error('Ploinky agent credentials are required for OpenCode delegation.');
-    }
-    return createPloinkyAgentClient(TARGET_AGENT);
-}
-
-async function callExecuteTask(payload, invocation = {}) {
-    const client = await resolveAgentClient(invocation);
-    return client.callTool(TOOL_NAME, payload, {
-        userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
-    });
-}
-
-function extractTaskId(payload) {
-    return trim(payload?.metadata?.taskId || payload?.result?.metadata?.taskId || payload?.taskId);
-}
-
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function limitProgressText(text) {
-    const trimmed = trim(text);
-    if (!trimmed) {
-        return '';
-    }
-    if (trimmed.length <= PROGRESS_CHUNK_LIMIT) {
-        return trimmed;
-    }
-    return trimmed.slice(trimmed.length - PROGRESS_CHUNK_LIMIT);
-}
-
 function formatFailurePayload(payload) {
     const errorText = trim(payload.error);
     const outputText = trim(payload.outputText);
@@ -90,106 +188,9 @@ function formatFailurePayload(payload) {
     return `${errorText}\n\n${outputText}`;
 }
 
-function getProgressWriter(invocation = {}) {
-    if (invocation.progressWriter?.write) {
-        return invocation.progressWriter;
-    }
-    if (invocation.context?.progressWriter?.write) {
-        return invocation.context.progressWriter;
-    }
-    const supervisorWriter = invocation.mainAgent?.supervisor?.getOutputWriter?.();
-    if (supervisorWriter?.write) {
-        return supervisorWriter;
-    }
-    return null;
-}
-
-function emitProgress(invocation, text) {
-    const reason = limitProgressText(text);
-    if (!reason) {
-        return;
-    }
-    const writer = getProgressWriter(invocation);
-    if (!writer) {
-        return;
-    }
-    try {
-        writer.write({
-            type: 'tool_reason',
-            tool: 'launch-opencode',
-            reason,
-        });
-    } catch {
-    }
-}
-
-async function getTaskStatus(invocation, taskId) {
-    const client = await resolveAgentClient(invocation);
-    if (typeof client.getTaskStatus !== 'function') {
-        throw new Error('Ploinky AgentMcpClient does not provide getTaskStatus.');
-    }
-    return client.getTaskStatus(taskId);
-}
-
-function parseTaskResult(task) {
-    const content = Array.isArray(task?.result?.content) ? task.result.content : [];
-    const text = trim(content.find((entry) => entry?.type === 'text' && typeof entry.text === 'string')?.text);
-    if (!text) {
-        return { ok: true };
-    }
-    try {
-        const parsed = JSON.parse(text);
-        return parsed && typeof parsed === 'object' ? parsed : { ok: true, outputText: text };
-    } catch {
-        return { ok: true, outputText: text };
-    }
-}
-
-async function pollTask(taskId, invocation = {}) {
-    const timeoutMs = Number(invocation.timeoutMs) || DEFAULT_TIMEOUT_MS;
-    const pollIntervalMs = Number.isFinite(Number(invocation.pollIntervalMs))
-        ? Math.max(0, Number(invocation.pollIntervalMs))
-        : DEFAULT_POLL_INTERVAL_MS;
-    const signal = invocation.signal || invocation.context?.signal;
-    const startedAt = Date.now();
-    let lastLogSeq = -1;
-    let lastLogTail = '';
-
-    while (Date.now() - startedAt <= timeoutMs) {
-        if (signal?.aborted) {
-            throw new Error('OpenCode task polling aborted.');
-        }
-
-        const task = await getTaskStatus(invocation, taskId);
-        const logTail = typeof task?.logTail === 'string' ? task.logTail : '';
-        const logSeq = Number.isFinite(Number(task?.logSeq)) ? Number(task.logSeq) : lastLogSeq;
-        if (logTail && (logSeq !== lastLogSeq || logTail !== lastLogTail)) {
-            const delta = logTail.startsWith(lastLogTail) ? logTail.slice(lastLogTail.length) : logTail;
-            emitProgress(invocation, delta);
-            lastLogTail = logTail;
-            lastLogSeq = logSeq;
-        }
-
-        if (task?.status === 'completed') {
-            return parseTaskResult(task);
-        }
-        if (task?.status === 'failed' || task?.status === 'cancelled') {
-            return {
-                ok: false,
-                error: trim(task.error) || `OpenCode task ${task.status}.`,
-                outputText: logTail,
-            };
-        }
-
-        await sleep(pollIntervalMs);
-    }
-
-    throw new Error(`OpenCode task ${taskId} did not finish within ${timeoutMs}ms.`);
-}
-
 function normalizeAnswer(payload) {
     if (!payload || typeof payload !== 'object') {
-        return 'OpenCode completed without a response.';
+        return 'OpenCode task completed without a response.';
     }
     if (payload.ok === false && payload.error) {
         return formatFailurePayload(payload);
@@ -214,13 +215,18 @@ export async function action(invocation = {}) {
     };
 
     try {
-        let result = await callExecuteTask(payload, invocation);
-        const taskId = extractTaskId(result);
-        if (taskId) {
-            result = await pollTask(taskId, invocation);
-        }
+        const result = parseTaskResult(await callAgentTool(TARGET_AGENT, TOOL_NAME, payload, {
+            onTaskUpdate: makeTaskUpdateReporter(invocation),
+            agentClient: invocation.agentClient,
+            userDelegationToken: invocation.userDelegationToken,
+            context: invocation.context,
+        }));
         return normalizeAnswer(result);
     } catch (error) {
+        if (error?.task) {
+            const failed = parseTaskResult(error.task);
+            return `OpenCode task failed: ${formatFailurePayload(failed)}`;
+        }
         return `OpenCode task failed: ${error?.message || 'delegated task failed'}`;
     }
 }

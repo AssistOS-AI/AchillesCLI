@@ -20,9 +20,9 @@ The skill returns plain text only. Successful runs return
 `opencodeAgent.execute-task` when that field is non-empty. Failed runs return
 the agent error text or an MCP failure message.
 
-When `execute-task` is registered as an async MCP tool and returns a task id,
-the skill must poll the agent task-status endpoint until the task completes,
-fails, or times out. New bounded `logTail` content from the task queue may be
+When `execute-task` is registered as an async MCP tool and returns a task id, the
+skill passes `onTaskUpdate` to `AgentMcpClient.callTool`, which handles polling
+internally (5 seconds). New bounded `logTail` content from the task queue is
 emitted through the invocation progress writer or supervisor output writer as
 intermediate progress. The final user-visible return value remains plain text.
 
