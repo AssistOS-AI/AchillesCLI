@@ -32,8 +32,9 @@ AchillesCLI session working directory. `model` is hardcoded to
 `xai/grok-4.20-0309-non-reasoning`.
 
 The skill returns plain text only. Successful runs return
-`OpenCode task completed.` Failed runs return the agent error text or an MCP
-failure message.
+`OpenCode task completed.` and append bounded final OpenCode output when the
+agent returns it. Failed runs return the agent error text or an MCP failure
+message.
 
 The call path must remain Ploinky-mediated. When the AchillesCLI runtime has
 agent credentials and the bundled Ploinky agent client is available, the skill

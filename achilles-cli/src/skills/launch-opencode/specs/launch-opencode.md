@@ -16,8 +16,9 @@ directory, and uses the hardcoded model
 `prompt`, `projectDir`, and `model`.
 
 The skill returns plain text only. Successful runs return
-`OpenCode task completed.` Failed runs return the agent error text or an MCP
-failure message.
+`OpenCode task completed.` and append the bounded `outputText` returned by
+`opencodeAgent.execute-task` when that field is non-empty. Failed runs return
+the agent error text or an MCP failure message.
 
 The call path must remain Ploinky-mediated. When the runtime has agent
 credentials and the bundled Ploinky agent client is available, the skill uses

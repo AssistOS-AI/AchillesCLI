@@ -7,5 +7,6 @@ Use when opencode/opencodeAgent is mentioned to execute a task
 Accepts plain prompt text describing the task.
 
 ## Output Format
-Returns plain text. Successful runs return `OpenCode task completed.` Failed
-runs return the agent error text or an MCP failure message.
+Returns plain text. Successful runs return `OpenCode task completed.` and, when
+OpenCode produced bounded final output, append that output after a blank line.
+Failed runs return the agent error text or an MCP failure message.

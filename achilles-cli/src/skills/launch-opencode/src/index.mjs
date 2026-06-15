@@ -79,6 +79,10 @@ function normalizeAnswer(payload) {
     if (payload.ok === false && payload.error) {
         return String(payload.error).trim();
     }
+    const outputText = trim(payload.outputText);
+    if (outputText) {
+        return `OpenCode task completed.\n\n${outputText}`;
+    }
     return 'OpenCode task completed.';
 }
 

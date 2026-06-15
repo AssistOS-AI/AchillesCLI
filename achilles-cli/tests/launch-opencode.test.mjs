@@ -48,6 +48,19 @@ test('action uses mainAgent.startDir as the current AchillesCLI working director
     assert.equal(calls[0].payload.model, HARDCODED_MODEL);
 });
 
+test('action returns successful opencode output as plain text', async () => {
+    const result = await action({
+        promptText: 'build artifacts',
+        mainAgent: { startDir: '/workspace/project' },
+        callAgentTool: async () => ({
+            ok: true,
+            outputText: 'created files\nran tests',
+        }),
+    });
+
+    assert.equal(result, 'OpenCode task completed.\n\ncreated files\nran tests');
+});
+
 test('action falls back to process cwd only without mainAgent.startDir', async () => {
     const calls = [];
     await action({
