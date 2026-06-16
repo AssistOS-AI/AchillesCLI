@@ -9,6 +9,9 @@
     "ACHILLES_MODEL_CODE",
     "ACHILLES_DEBUG"
   ],
+  "repos": {
+    "copilot-agents": "https://github.com/AssistOS-AI/copilot-agents.git"
+  },
   "enable": [
     "copilot-agents/opencodeAgent global"
   ],
