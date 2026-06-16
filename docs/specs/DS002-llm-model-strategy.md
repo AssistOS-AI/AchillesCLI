@@ -31,6 +31,7 @@ Model selection behavior:
 1. Runtime configuration may provide provider defaults and tier maps.
 2. Manual configuration overrides are applied before environment-derived defaults.
 3. Missing mandatory model/provider details must produce explicit errors.
+4. The current hosted Soul Gateway fallback through an explicit `SOUL_GATEWAY_API_KEY` is temporary and not canonical AchillesCLI model strategy. It exists only for the migration period in which `soul.axiologic.dev` is still required; the canonical future path is AchillesAgentLib using generated Ploinky credentials against the local Soul Gateway deployment.
 
 Task metadata requirements:
 1. Routing-sensitive operations must carry explicit tags.
@@ -40,6 +41,13 @@ Task metadata requirements:
 Safety and visibility:
 1. Debug logging may expose routing details only in debug mode.
 2. User-facing responses in normal mode must avoid leaking internal prompts, stack traces, and credentials.
+
+## Decisions & Questions
+
+### Question #1: Why is hosted Soul Gateway fallback allowed for now?
+
+Response:
+AchillesCLI currently needs to run from Explorer workspaces whose nearest parent `.env` may carry a hosted `SOUL_GATEWAY_API_KEY`. Letting that explicit key configure the initial LLM provider keeps startup working during the migration window, but it is not the canonical model-routing rule. DS010 records the exact manifest offset for this temporary agent-level opt-in.
 
 ## Conclusion
 All LLM execution in AchillesCLI must remain centralized through `LLMAgent`, governed by explicit tier/model policy, and controllable through session-aware runtime commands.

@@ -34,13 +34,14 @@ Ploinky integration boundary:
 2. Startup assumptions must avoid hardcoded machine-specific paths in core runtime logic.
 3. Session/webchat runtime paths should keep durable-state assumptions aligned with orchestrated process lifecycles.
 4. The Ploinky agent manifest should use the shared `docker.io/assistos/ploinky-node:24-bookworm-tools` image so Explorer cold starts reuse the same Node 24 glibc runtime and preinstalled dependency-cache tools as the rest of the default agent graph.
-4. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI slash commands are provided through a dedicated MCP catalog tool that returns a structured command/sub-command payload and does not execute chat prompts. That catalog tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill.
-5. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
-6. The webchat interactive mode must treat `@open-interpreter` and other
+5. The Ploinky agent manifest temporarily declares `SOUL_GATEWAY_API_KEY` as a `sharedGeneratedSecret` with `explicitOverride: true` so Explorer-launched AchillesCLI can honor a hosted Soul Gateway key from parent `.env` files. This is not canonical AchillesCLI integration behavior and must be removed when the local deployed Soul Gateway is the only supported provider path.
+6. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI slash commands are provided through a dedicated MCP catalog tool that returns a structured command/sub-command payload and does not execute chat prompts. That catalog tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill.
+7. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
+8. The webchat interactive mode must treat `@open-interpreter` and other
    `@agent`-shaped tokens as ordinary chat text. Provider dispatch is semantic
    and launcher-driven; Ploinky WebChat remains only the envelope and
    invocation-token transport.
-7. Generic WebChat envelope and resource helpers live in AchillesCLI. These
+9. Generic WebChat envelope and resource helpers live in AchillesCLI. These
    helpers normalize envelope text, extract the
    invocation token, and materialize browser attachments or workspace
    references only from supported WebChat storage: legacy shared blob ids under
@@ -49,7 +50,7 @@ Ploinky integration boundary:
    upload paths must stay inside the working directory after realpath
    resolution, reject traversal, `.secrets`/`*.secrets`, and upload metadata
    internals, and preserve the same byte caps as other forwarded resources.
-8. Non-slash WebChat turns are routed through the built-in `copilot-router`
+10. Non-slash WebChat turns are routed through the built-in `copilot-router`
    oskill. The router may call deterministic launcher cskills such as
    `launch-open-interpreter`, `launch-web-search`, or `launch-opencode`.
    When the user explicitly names `opencode` or `opencodeAgent`, the router
@@ -65,15 +66,15 @@ Ploinky integration boundary:
    message instead of a later relay submission error. Directory and other
    non-file workspace references may be represented in Copilot prompt context,
    but launchers must forward only file path strings in relay `paths` payloads.
-9. The Explorer Copilot launcher may consume runtime plugin metadata from
+11. The Explorer Copilot launcher may consume runtime plugin metadata from
    `file-exp:copilot-launch-extension` to add generic WebChat launch query
    parameters such as `forward-envelope=1` and `workspace-dir`. It must not add
    provider backend ids, provider agent ids, or provider MCP tool names to the
    WebChat URL; the visible Explorer action remains the
    normal `Open Copilot here` action.
-10. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
-11. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
-12. In webchat runtime mode, AchillesCLI preserves the sanitized
+12. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
+13. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
+14. In webchat runtime mode, AchillesCLI preserves the sanitized
     `origin.publicBaseUrl` field from forwarded WebChat envelopes in launcher
     context. Launcher skills may use this same-origin router base for
     user-facing browser links, while ignoring malformed or non-HTTP origin
@@ -117,6 +118,19 @@ Provider launcher discovery:
 7. The AchillesCLI Ploinky manifest must enable
    `copilot-agents/opencodeAgent global` so OpenCode runs in the same workspace
    context as Copilot.
+
+## Decisions & Questions
+
+### Question #1: Why does the manifest temporarily opt `SOUL_GATEWAY_API_KEY` into explicit override?
+
+Response:
+Explorer launches AchillesCLI from selected workspace folders, and current workspaces may carry a hosted Soul Gateway key in a parent `.env`. The manifest opt-in lets Ploinky expose that explicit hosted key to AchillesAgentLib during startup while preserving generated Ploinky agent credentials for the canonical local route. This is a temporary compatibility bridge, not the long-term ecosystem contract.
+
+Temporary implementation offset:
+
+```text
+achilles-cli/manifest.json:L6-L10
+```
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.
