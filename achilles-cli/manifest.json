@@ -3,7 +3,11 @@
   "install": "",
   "lite-sandbox": true,
   "env": [
-    "SOUL_GATEWAY_API_KEY",
+    {
+      "name": "SOUL_GATEWAY_API_KEY",
+      "sharedGeneratedSecret": true,
+      "explicitOverride": true
+    },
     "WORKSPACE_PATH",
     "ACHILLES_MODEL_PLAN",
     "ACHILLES_MODEL_CODE",
