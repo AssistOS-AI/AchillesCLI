@@ -29,7 +29,7 @@ function getProgressWriter(invocation = {}) {
     return null;
 }
 
-function emitProgress(invocation, text, { tool = 'launch-opencode' } = {}) {
+function emitProgress(invocation, text, { tool = 'launch-pi' } = {}) {
     const reason = limitProgressText(text);
     if (!reason) {
         return;
@@ -48,7 +48,7 @@ function emitProgress(invocation, text, { tool = 'launch-opencode' } = {}) {
     }
 }
 
-function makeTaskUpdateReporter(invocation, toolName = 'launch-opencode') {
+function makeTaskUpdateReporter(invocation, toolName = 'launch-pi') {
     let lastLogSeq = -1;
     let lastLogTail = '';
 
@@ -149,7 +149,7 @@ async function callAgentTool(agentName, toolName, payload, invocation = {}) {
     });
 }
 
-export const TARGET_AGENT = 'opencodeAgent';
+export const TARGET_AGENT = 'piAgent';
 export const TOOL_NAME = 'execute-task';
 export const HARDCODED_MODEL = 'xai/grok-4.20-0309-non-reasoning';
 
@@ -165,25 +165,26 @@ function parseModelTaskText(text) {
 }
 
 function normalizePrompt(invocation = {}) {
-    if (typeof invocation.prompt === 'string') {
-        return parseModelTaskText(invocation.prompt);
+    const candidate = typeof invocation.promptText === 'string'
+        ? invocation.promptText
+        : typeof invocation.prompt === 'string'
+        ? invocation.prompt
+        : '';
+    const text = trim(candidate);
+    if (!text) {
+        return { prompt: '', model: '' };
     }
-    if (typeof invocation.promptText === 'string') {
-        const text = trim(invocation.promptText);
-        if (!text) return { prompt: '', model: '' };
-        try {
-            const parsed = JSON.parse(text);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                return {
-                    prompt: trim(parsed.prompt || parsed.task || parsed.taskDescription),
-                    model: trim(parsed.model || parsed.agentModel || parsed.llm),
-                };
-            }
-        } catch {
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return {
+                prompt: trim(parsed.prompt || parsed.task || parsed.taskDescription),
+                model: trim(parsed.model || parsed.agentModel || parsed.llm),
+            };
         }
-        return parseModelTaskText(text);
+    } catch {
     }
-    return { prompt: '', model: '' };
+    return parseModelTaskText(text);
 }
 
 function resolvePromptModel(invocation = {}) {
@@ -202,7 +203,7 @@ function formatFailurePayload(payload) {
     const errorText = trim(payload.error);
     const outputText = trim(payload.outputText || payload.logTail);
     if (!errorText) {
-        return outputText || 'OpenCode task failed.';
+        return outputText || 'PI task failed.';
     }
     if (!outputText || outputText === errorText) {
         return errorText;
@@ -212,22 +213,22 @@ function formatFailurePayload(payload) {
 
 function normalizeAnswer(payload) {
     if (!payload || typeof payload !== 'object') {
-        return 'OpenCode task completed without a response.';
+        return 'PI task completed without a response.';
     }
     if (payload.ok === false && payload.error) {
         return formatFailurePayload(payload);
     }
     const outputText = trim(payload.outputText);
     if (outputText) {
-        return `OpenCode task completed.\n\n${outputText}`;
+        return `PI task completed.\n\n${outputText}`;
     }
-    return 'OpenCode task completed.';
+    return 'PI task completed.';
 }
 
 export async function action(invocation = {}) {
     const { prompt, model } = resolvePromptModel(invocation);
     if (!prompt) {
-        return 'OpenCode needs a natural-language task to run.';
+        return 'PI needs a natural-language task to run.';
     }
 
     const payload = {
@@ -247,9 +248,9 @@ export async function action(invocation = {}) {
     } catch (error) {
         if (error?.task) {
             const failed = parseTaskResult(error.task);
-            return `OpenCode task failed: ${formatFailurePayload(failed)}`;
+            return `PI task failed: ${formatFailurePayload(failed)}`;
         }
-        return `OpenCode task failed: ${error?.message || 'delegated task failed'}`;
+        return `PI task failed: ${error?.message || 'delegated task failed'}`;
     }
 }
 

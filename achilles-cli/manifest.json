@@ -13,7 +13,8 @@
     "copilot-agents": "https://github.com/AssistOS-AI/copilot-agents.git"
   },
   "enable": [
-    "copilot-agents/opencodeAgent global"
+    "copilot-agents/opencodeAgent global",
+    "copilot-agents/piAgent global"
   ],
   "webchat": {
     "auth": "static"

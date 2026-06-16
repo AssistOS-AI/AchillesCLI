@@ -2,18 +2,19 @@
 
 ## Core Content
 
-The `launch-opencode` C-Skill delegates a plain natural-language task to the
+The `launch-opencode` C-Skill delegates a natural-language task to the
 workspace `opencodeAgent` by calling its `execute-task` MCP tool. The public
-input is task text only. The agent name is intentionally not part of the public
-grammar because OpenCode is a named provider launcher, not a generic
-agent-dispatch utility.
+input is task text, optionally prefixed as `model: <model> task: <task text>`.
+The agent name is intentionally not part of the public grammar because OpenCode
+is a named provider launcher, not a generic agent-dispatch utility.
 
 The skill maps the task text into the `prompt` argument required by
 `opencodeAgent.execute-task`. It resolves `projectDir` from
 `invocation.mainAgent.startDir`, which is the AchillesCLI session working
 directory, and uses the hardcoded model
-`xai/grok-4.20-0309-non-reasoning`. The resulting MCP payload must contain
-`prompt`, `projectDir`, and `model`.
+`xai/grok-4.20-0309-non-reasoning` unless the input provides an explicit model
+override. The resulting MCP payload must contain `prompt`, `projectDir`, and
+`model`.
 
 The skill returns plain text only. Successful runs return
 `OpenCode task completed.` and append the bounded `outputText` returned by
@@ -39,8 +40,7 @@ helper or any local path fallback.
    `launch-open-interpreter` and `launch-web-search` provider-launcher pattern.
 2. `opencodeAgent` is fixed internally for this version. A future generic
    agent caller would be a separate skill with a different security contract.
-3. The model is hardcoded to `xai/grok-4.20-0309-non-reasoning` so the launcher
-   behavior is stable and does not depend on session or environment model
-   configuration.
+3. The default model is `xai/grok-4.20-0309-non-reasoning`; callers may override
+   it with the explicit `model: <model> task: <task text>` input form.
 4. Async polling uses the task id returned by AgentServer metadata, not the
    human-readable queued-task message.

@@ -9,7 +9,7 @@ import { action, HARDCODED_MODEL } from '../src/skills/launch-opencode/src/index
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(TEST_DIR, '..');
 
-test('action calls opencodeAgent execute-task with hardcoded model', async () => {
+test('action calls opencodeAgent execute-task with default model', async () => {
     const calls = [];
     const result = await action({
         promptText: 'build artifacts',
@@ -31,6 +31,43 @@ test('action calls opencodeAgent execute-task with hardcoded model', async () =>
             model: HARDCODED_MODEL,
         },
     }]);
+});
+
+test('action accepts text input with model and task fields', async () => {
+    const calls = [];
+    const result = await action({
+        promptText: 'model: anthropic/claude-test task: build artifacts: include tests',
+        mainAgent: { startDir: '/workspace/project' },
+        agentClient: {
+            callTool: async (toolName, payload) => {
+                calls.push({ toolName, payload });
+                return { ok: true };
+            },
+        },
+    });
+
+    assert.equal(result, 'OpenCode task completed.');
+    assert.equal(calls[0].payload.model, 'anthropic/claude-test');
+    assert.equal(calls[0].payload.prompt, 'build artifacts: include tests');
+});
+
+test('action accepts JSON input with model override', async () => {
+    const calls = [];
+    await action({
+        promptText: JSON.stringify({
+            task: 'run checks',
+            model: 'openrouter/model',
+        }),
+        agentClient: {
+            callTool: async (toolName, payload) => {
+                calls.push({ toolName, payload });
+                return { ok: true };
+            },
+        },
+    });
+
+    assert.equal(calls[0].payload.model, 'openrouter/model');
+    assert.equal(calls[0].payload.prompt, 'run checks');
 });
 
 test('action fails clearly when Ploinky AgentMcpClient credentials are unavailable', async () => {
