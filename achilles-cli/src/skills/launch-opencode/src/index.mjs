@@ -151,7 +151,6 @@ async function callAgentTool(agentName, toolName, payload, invocation = {}) {
 
 export const TARGET_AGENT = 'opencodeAgent';
 export const TOOL_NAME = 'execute-task';
-export const DEFAULT_OPENCODE_MODEL = 'xai/grok-4.20-0309-non-reasoning';
 
 function parseModelTaskText(text) {
     const match = trim(text).match(/^model\s*:\s*(\S+)\s+task\s*:\s*([\s\S]+)$/i);
@@ -190,7 +189,7 @@ function resolvePromptModel(invocation = {}) {
     const parsed = normalizePrompt(invocation);
     return {
         prompt: trim(parsed.prompt),
-        model: trim(parsed.model || invocation.model || DEFAULT_OPENCODE_MODEL),
+        model: trim(parsed.model || invocation.model),
     };
 }
 
