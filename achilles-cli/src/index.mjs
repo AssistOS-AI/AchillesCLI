@@ -167,7 +167,7 @@ async function main() {
         error: (msg) => console.error(`[ERROR] ${msg}`),
     };
 
-    // User skills directory (do not create automatically)
+    fs.mkdirSync(workingDir, { recursive: true });
     const nodeModulesSkillRoots = collectNodeModulesSkillRoots(__dirname, logger);
     const ploinkyRepoSkillRoots = collectPloinkyRepoSkillRoots(workingDir, process.env, logger);
     const webchatRuntime = !prompt && isWebchatRuntime();
