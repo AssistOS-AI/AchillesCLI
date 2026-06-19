@@ -5,8 +5,7 @@
   "env": [
     {
       "name": "SOUL_GATEWAY_API_KEY",
-      "sharedGeneratedSecret": true,
-      "explicitOverride": true
+      "sharedGeneratedSecret": true
     },
     "WORKSPACE_PATH",
     "ACHILLES_MODEL_PLAN",
