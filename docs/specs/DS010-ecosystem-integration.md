@@ -84,6 +84,7 @@ AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
 2. AchillesCLI documentation must remain explicit about what is native to CLI vs what belongs to IDE/router hosts.
 3. Shared conventions (safe user output, debug gating, deterministic command behavior) must remain compatible across ecosystem tools.
+4. AchillesCLI may ship IDE menu plugins through `achilles-cli/IDE-plugins/` for workspace skill-management affordances. The `edit-skills-manifest` plugin contributes only to Explorer folder context menus, uses Explorer's existing file read/write tools, and persists `ploinky-skills-manifest.json` as a JSON array of skill repository URLs in the selected folder. It must not add new router routes, MCP tools, or privileged policy surfaces.
 
 Cross-repository invariants:
 1. No repository should assume hidden runtime side effects from another without documented contracts.
@@ -131,6 +132,11 @@ Temporary implementation offset:
 ```text
 achilles-cli/manifest.json:L6-L10
 ```
+
+### Question #2: Why is the skills manifest editor shipped by AchillesCLI instead of Explorer?
+
+Response:
+The editor changes AchillesCLI-owned skill-management workflow configuration while using Explorer only as the host surface for folder context menus and file persistence. Keeping the plugin under `achilles-cli/IDE-plugins/` lets AchillesCLI own the UX and manifest contract without adding Explorer-specific routes, tools, or policy behavior.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.
