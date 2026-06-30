@@ -19,7 +19,7 @@
     "copilot-agents/opencodeAgent global",
     "copilot-agents/piAgent global",
     "copilot-agents/codexAgent global no-wait",
-    "copilot-agents/GPTResearcher"
+    "copilot-agents/GPTResearcher no-wait"
   ],
   "webchat": {
     "auth": "static"

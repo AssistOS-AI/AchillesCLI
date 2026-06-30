@@ -119,6 +119,10 @@ Provider launcher discovery:
 7. The AchillesCLI Ploinky manifest must enable
    `copilot-agents/opencodeAgent global` so OpenCode runs in the same workspace
    context as Copilot.
+8. The AchillesCLI Ploinky manifest must keep `copilot-agents/GPTResearcher`
+   as a `no-wait` dependency so GPTResearcher runtime setup failures do not
+   block Explorer startup while the Python package installation path remains a
+   temporary integration.
 
 ## Decisions & Questions
 
