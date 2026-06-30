@@ -1,0 +1,14 @@
+{
+    "pluginCategory": "application",
+    "id": "gpt-researcher-settings",
+    "component": "gpt-researcher-settings",
+    "location": [],
+    "label": "GPTResearcher",
+    "tooltip": "GPTResearcher settings",
+    "icon": "./icon.svg",
+    "presenter": "GPTResearcherSettings",
+    "type": "global",
+    "autoPin": false,
+    "dependencies": [],
+    "settings": "gpt-researcher-settings"
+}

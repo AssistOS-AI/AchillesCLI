@@ -1,0 +1,82 @@
+<div class="gptr-settings-modal">
+    <div class="modal-header">
+        <div class="modal-title">GPTResearcher Settings</div>
+        <div class="close" data-local-action="closeModal" aria-label="Close">
+            <img class="close-icon" src="./assets/icons/x-mark.svg" alt="close">
+        </div>
+    </div>
+
+    <div class="modal-body gptr-settings-body">
+        <nav class="gptr-tabs marketplace-tabs settings-tabs" role="tablist" aria-label="GPTResearcher settings sections">
+            <button id="gptrModelsTab" class="gptr-tab marketplace-tab settings-tab active" type="button" data-local-action="showTab models" data-tab="models" role="tab" aria-selected="true">Models</button>
+            <button id="gptrProvidersTab" class="gptr-tab marketplace-tab settings-tab" type="button" data-local-action="showTab providers" data-tab="providers" role="tab" aria-selected="false">Providers</button>
+        </nav>
+
+        <section id="gptrModelsPanel" class="gptr-panel active" role="tabpanel">
+            <div class="gptr-settings-grid">
+                <label class="form-item">
+                    <span class="form-label">Fast LLM</span>
+                    <input id="gptrFastLlm" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">Smart LLM</span>
+                    <input id="gptrSmartLlm" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">Strategic LLM</span>
+                    <input id="gptrStrategicLlm" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">Embedding</span>
+                    <input id="gptrEmbedding" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">Retriever</span>
+                    <input id="gptrRetriever" class="form-input" type="text" spellcheck="false">
+                </label>
+            </div>
+        </section>
+
+        <section id="gptrProvidersPanel" class="gptr-panel" role="tabpanel" hidden>
+            <div class="gptr-settings-grid">
+                <label class="form-item">
+                    <span class="form-label">OLLAMA_BASE_URL</span>
+                    <input id="gptrEnvOllamaBaseUrl" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">OPENAI_BASE_URL</span>
+                    <input id="gptrEnvOpenaiBaseUrl" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">AZURE_OPENAI_ENDPOINT</span>
+                    <input id="gptrEnvAzureOpenaiEndpoint" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">AZURE_OPENAI_API_VERSION</span>
+                    <input id="gptrEnvAzureOpenaiApiVersion" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">MISTRAL_BASE_URL</span>
+                    <input id="gptrEnvMistralBaseUrl" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">OPENROUTER_LIMIT_RPS</span>
+                    <input id="gptrEnvOpenrouterLimitRps" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">VLLM_OPENAI_API_BASE</span>
+                    <input id="gptrEnvVllmOpenaiApiBase" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label">AIMLAPI_BASE_URL</span>
+                    <input id="gptrEnvAimlapiBaseUrl" class="form-input" type="text" spellcheck="false">
+                </label>
+            </div>
+        </section>
+
+        <div class="gptr-settings-actions">
+            <button id="gptrSaveSettings" type="button" class="general-button" data-local-action="saveSettings">Save</button>
+        </div>
+        <div id="gptrSettingsStatus" class="gptr-settings-status" role="status" aria-live="polite"></div>
+    </div>
+</div>

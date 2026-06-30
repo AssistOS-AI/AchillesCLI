@@ -1,0 +1,21 @@
+{
+    "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
+    "lite-sandbox": true,
+    "about": "PI coding agent. Executes delegated prompt tasks through the `pi` binary and returns bounded command output.",
+    "profiles": {
+        "default": {
+            "install": "sh /code/scripts/install-pi.sh"
+        }
+    },
+    "cli": "/usr/local/bin/pi",
+    "env": [
+        "PLOINKY_WORKSPACE_ROOT",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "XAI_API_KEY",
+        "OPENCODE_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY"
+    ]
+}

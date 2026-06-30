@@ -1,0 +1,87 @@
+{
+    "tools": [
+        {
+            "name": "start_research",
+            "title": "Start GPTResearcher Research",
+            "description": "Runs a GPT Researcher Python research task and returns the report, sources, costs, and collected context.",
+            "command": "/opt/gpt-researcher-venv/bin/python",
+            "args": ["/code/scripts/start-research.py"],
+            "cwd": "/code",
+            "async": true,
+            "timeoutMs": 600000,
+            "tags": ["internal"],
+            "inputSchema": {
+                "query": {
+                    "type": "string",
+                    "description": "Research question to send to GPTResearcher.",
+                    "minLength": 1,
+                    "optional": false
+                },
+                "moreContext": {
+                    "type": "string",
+                    "description": "Optional extra context or instructions for GPTResearcher.",
+                    "optional": true
+                },
+                "reportType": {
+                    "type": "string",
+                    "description": "GPT Researcher report type. Defaults to research_report.",
+                    "optional": true
+                }
+            }
+        },
+        {
+            "name": "gpt_researcher_get_settings",
+            "title": "Get GPTResearcher Settings",
+            "description": "Returns persisted non-secret GPT Researcher provider and model settings.",
+            "command": "/usr/local/bin/node",
+            "args": ["/code/scripts/get-settings.mjs"],
+            "cwd": "/code",
+            "timeoutMs": 30000,
+            "tags": ["authenticated"],
+            "inputSchema": {}
+        },
+        {
+            "name": "gpt_researcher_update_settings",
+            "title": "Update GPTResearcher Settings",
+            "description": "Persists non-secret GPT Researcher provider and model settings.",
+            "command": "/usr/local/bin/node",
+            "args": ["/code/scripts/update-settings.mjs"],
+            "cwd": "/code",
+            "timeoutMs": 30000,
+            "tags": ["authenticated"],
+            "inputSchema": {
+                "fastLlm": {
+                    "type": "string",
+                    "description": "FAST_LLM value such as ollama:llama3.1.",
+                    "optional": true
+                },
+                "smartLlm": {
+                    "type": "string",
+                    "description": "SMART_LLM value such as ollama:llama3.1.",
+                    "optional": true
+                },
+                "strategicLlm": {
+                    "type": "string",
+                    "description": "STRATEGIC_LLM value such as ollama:llama3.1.",
+                    "optional": true
+                },
+                "embedding": {
+                    "type": "string",
+                    "description": "EMBEDDING value such as ollama:nomic-embed-text.",
+                    "optional": true
+                },
+                "retriever": {
+                    "type": "string",
+                    "description": "RETRIEVER value such as duckduckgo or tavily.",
+                    "optional": true
+                },
+                "env": {
+                    "type": "object",
+                    "description": "Allowlisted non-secret provider environment values.",
+                    "optional": true,
+                    "additionalProperties": true
+                }
+            }
+        }
+    ]
+}

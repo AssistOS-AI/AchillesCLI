@@ -1,0 +1,16 @@
+{
+    "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
+    "lite-sandbox": true,
+    "about": "Codex CLI agent. Installs the official OpenAI Codex CLI and exposes it as a direct Ploinky CLI command in the current workspace directory.",
+    "profiles": {
+        "default": {
+            "install": "sh /code/scripts/install-codex.sh"
+        }
+    },
+    "cli": "/usr/local/bin/codex",
+    "env": {
+        "OPENAI_API_KEY": {
+            "name": "OPENAI_API_KEY"
+        }
+    }
+}

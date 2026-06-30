@@ -12,14 +12,11 @@
     "ACHILLES_MODEL_CODE",
     "ACHILLES_DEBUG"
   ],
-  "repos": {
-    "copilot-agents": "https://github.com/AssistOS-AI/copilot-agents.git"
-  },
   "enable": [
-    "copilot-agents/opencodeAgent global",
-    "copilot-agents/piAgent global",
-    "copilot-agents/codexAgent global no-wait",
-    "copilot-agents/GPTResearcher no-wait"
+    "opencodeAgent global",
+    "piAgent global",
+    "codexAgent global no-wait",
+    "GPTResearcher no-wait"
   ],
   "webchat": {
     "auth": "static"

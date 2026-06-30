@@ -1,0 +1,32 @@
+{
+    "tools": [
+        {
+            "name": "execute-task",
+            "title": "Execute OpenCode Task",
+            "description": "Execute a one-shot opencode build task from a caller-supplied prompt and model. Sets up the skills symlink and runs opencode in the supplied project directory. Returns success or failure only; artifacts are written to disk by opencode.",
+            "command": "/usr/local/bin/node",
+            "args": ["/code/scripts/execute-task.mjs"],
+            "cwd": "/code",
+            "async": true,
+            "timeoutMs": 300000,
+            "tags": ["internal"],
+            "inputSchema": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Prompt to execute with opencode. The caller owns prompt construction and inclusion of any task data.",
+                    "optional": false
+                },
+                "projectDir": {
+                    "type": "string",
+                    "description": "Directory where opencode will run. A .opencode/skills symlink is created here pointing to /code/skills. Task-specific skills may create subdirectories as needed inside this directory.",
+                    "optional": false
+                },
+                "model": {
+                    "type": "string",
+                    "description": "OpenCode model identifier selected by the caller.",
+                    "optional": true
+                }
+            }
+        }
+    ]
+}

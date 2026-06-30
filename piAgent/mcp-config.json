@@ -1,0 +1,32 @@
+{
+    "tools": [
+        {
+            "name": "execute-task",
+            "title": "Execute PI Task",
+            "description": "Execute a one-shot PI coding task from a caller-supplied prompt and model.",
+            "command": "/usr/local/bin/node",
+            "args": ["/code/scripts/execute-task.mjs"],
+            "cwd": "/code",
+            "async": true,
+            "timeoutMs": 300000,
+            "tags": ["internal"],
+            "inputSchema": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Prompt to execute with PI. The caller builds the final prompt and optional model.",
+                    "optional": false
+                },
+                "projectDir": {
+                    "type": "string",
+                    "description": "Directory where PI will run.",
+                    "optional": false
+                },
+                "model": {
+                    "type": "string",
+                    "description": "PI model identifier selected by the caller.",
+                    "optional": true
+                }
+            }
+        }
+    ]
+}
