@@ -26,6 +26,11 @@
                     "type": "string",
                     "description": "GPT Researcher report type. Defaults to research_report.",
                     "optional": true
+                },
+                "workingDir": {
+                    "type": "string",
+                    "description": "Optional working directory inside WORKSPACE_PATH. Direct child files are listed into context and the final Markdown report is saved there.",
+                    "optional": true
                 }
             }
         },

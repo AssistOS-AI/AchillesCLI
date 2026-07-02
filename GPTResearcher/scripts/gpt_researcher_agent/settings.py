@@ -28,10 +28,12 @@ DEFAULT_SETTINGS = {
 ALLOWED_ENV_KEYS = set(DEFAULT_SETTINGS["env"].keys())
 
 
-def build_research_query(query, more_context):
-    if not more_context:
+def build_research_query(query, more_context, files_context=""):
+    context_parts = [part for part in [more_context, files_context] if part]
+    if not context_parts:
         return query
-    return f"{query}\n\nAdditional context:\n{more_context}"
+    joined_context = "\n\n".join(context_parts)
+    return f"{query}\n\nAdditional context:\n{joined_context}"
 
 
 def normalize_settings(value):

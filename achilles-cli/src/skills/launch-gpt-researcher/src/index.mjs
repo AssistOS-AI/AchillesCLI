@@ -163,6 +163,7 @@ function normalizeInput(invocation = {}) {
             prompt: trim(invocation.prompt),
             context: trim(invocation.context),
             reportType: trim(invocation.reportType),
+            workingDir: '',
         };
     }
     try {
@@ -172,6 +173,7 @@ function normalizeInput(invocation = {}) {
                 prompt: trim(parsed.prompt || parsed.query || parsed.task || parsed.taskDescription),
                 context: trim(parsed.context || parsed.moreContext),
                 reportType: trim(parsed.reportType || parsed.report_type),
+                workingDir: trim(parsed.workingDir || parsed.working_dir),
             };
         }
     } catch {
@@ -180,10 +182,11 @@ function normalizeInput(invocation = {}) {
         prompt: text,
         context: trim(invocation.context),
         reportType: trim(invocation.reportType),
+        workingDir: '',
     };
 }
 
-function buildPayload({ prompt, context, reportType }) {
+function buildPayload({ prompt, context, reportType, workingDir }) {
     const payload = {
         query: prompt,
     };
@@ -192,6 +195,9 @@ function buildPayload({ prompt, context, reportType }) {
     }
     if (reportType) {
         payload.reportType = reportType;
+    }
+    if (workingDir) {
+        payload.workingDir = workingDir;
     }
     return payload;
 }
@@ -225,7 +231,9 @@ function normalizeAnswer(payload) {
     }
     const report = trim(payload.report);
     if (report) {
-        return `GPTResearcher task completed.\n\n${report}`;
+        const reportPath = trim(payload.reportPath);
+        const savedLine = reportPath ? `\n\nSaved report: ${reportPath}` : '';
+        return `GPTResearcher task completed.${savedLine}\n\n${report}`;
     }
     const outputText = trim(payload.outputText);
     if (outputText) {

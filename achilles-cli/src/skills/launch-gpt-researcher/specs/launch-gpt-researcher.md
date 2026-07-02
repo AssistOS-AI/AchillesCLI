@@ -6,8 +6,9 @@ The `launch-gpt-researcher` C-Skill delegates a research request to the workspac
 `GPTResearcher` agent by calling its `start_research` MCP tool.
 
 The public input is plain research prompt text or JSON containing `prompt`,
-optional `context`, and optional `reportType`. The skill maps these to the agent
-payload as `query`, `moreContext`, and `reportType`.
+optional `context`, optional `reportType`, and optional `workingDir`. The skill
+maps these to the agent payload as `query`, `moreContext`, `reportType`, and
+`workingDir`.
 
 The skill returns plain text only. Successful runs return
 `GPTResearcher task completed.` and append the generated `report` when present.
