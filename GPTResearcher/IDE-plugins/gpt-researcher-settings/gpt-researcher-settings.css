@@ -29,6 +29,22 @@
     gap: 6px;
 }
 
+.gptr-provider-label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+}
+
+.gptr-env-note {
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.2;
+    white-space: normal;
+}
+
 .gptr-retriever-help {
     min-height: 1rem;
     color: var(--text-soft);

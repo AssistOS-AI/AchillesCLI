@@ -69,15 +69,15 @@
         <section id="gptrProvidersPanel" class="gptr-panel" role="tabpanel" hidden>
             <div class="gptr-settings-grid">
                 <label class="form-item">
-                    <span class="form-label">OLLAMA_BASE_URL</span>
+                    <span class="form-label gptr-provider-label">OLLAMA_BASE_URL <span class="gptr-env-note">(no API key required)</span></span>
                     <input id="gptrEnvOllamaBaseUrl" class="form-input" type="text" spellcheck="false">
                 </label>
                 <label class="form-item">
-                    <span class="form-label">OPENAI_BASE_URL</span>
+                    <span class="form-label gptr-provider-label">OPENAI_BASE_URL <span class="gptr-env-note">(requires OPENAI_API_KEY in env)</span></span>
                     <input id="gptrEnvOpenaiBaseUrl" class="form-input" type="text" spellcheck="false">
                 </label>
                 <label class="form-item">
-                    <span class="form-label">AZURE_OPENAI_ENDPOINT</span>
+                    <span class="form-label gptr-provider-label">AZURE_OPENAI_ENDPOINT <span class="gptr-env-note">(requires AZURE_OPENAI_API_KEY in env)</span></span>
                     <input id="gptrEnvAzureOpenaiEndpoint" class="form-input" type="text" spellcheck="false">
                 </label>
                 <label class="form-item">
@@ -85,7 +85,7 @@
                     <input id="gptrEnvAzureOpenaiApiVersion" class="form-input" type="text" spellcheck="false">
                 </label>
                 <label class="form-item">
-                    <span class="form-label">MISTRAL_BASE_URL</span>
+                    <span class="form-label gptr-provider-label">MISTRAL_BASE_URL <span class="gptr-env-note">(requires MISTRAL_API_KEY in env)</span></span>
                     <input id="gptrEnvMistralBaseUrl" class="form-input" type="text" spellcheck="false">
                 </label>
                 <label class="form-item">
@@ -93,12 +93,16 @@
                     <input id="gptrEnvOpenrouterLimitRps" class="form-input" type="text" spellcheck="false">
                 </label>
                 <label class="form-item">
-                    <span class="form-label">VLLM_OPENAI_API_BASE</span>
+                    <span class="form-label gptr-provider-label">VLLM_OPENAI_API_BASE <span class="gptr-env-note">(requires OPENAI_API_KEY in env)</span></span>
                     <input id="gptrEnvVllmOpenaiApiBase" class="form-input" type="text" spellcheck="false">
                 </label>
                 <label class="form-item">
-                    <span class="form-label">AIMLAPI_BASE_URL</span>
+                    <span class="form-label gptr-provider-label">AIMLAPI_BASE_URL <span class="gptr-env-note">(requires AIMLAPI_API_KEY in env)</span></span>
                     <input id="gptrEnvAimlapiBaseUrl" class="form-input" type="text" spellcheck="false">
+                </label>
+                <label class="form-item">
+                    <span class="form-label gptr-provider-label">SOUL_GATEWAY_BASE_URL <span class="gptr-env-note">(requires SOUL_GATEWAY_API_KEY in env)</span></span>
+                    <input id="gptrEnvSoulGatewayBaseUrl" class="form-input" type="text" spellcheck="false">
                 </label>
             </div>
         </section>

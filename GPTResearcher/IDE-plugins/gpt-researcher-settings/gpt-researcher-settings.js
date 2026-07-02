@@ -12,7 +12,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         MISTRAL_BASE_URL: '',
         OPENROUTER_LIMIT_RPS: '',
         VLLM_OPENAI_API_BASE: '',
-        AIMLAPI_BASE_URL: ''
+        AIMLAPI_BASE_URL: '',
+        SOUL_GATEWAY_BASE_URL: ''
     })
 });
 
@@ -24,7 +25,8 @@ const ENV_INPUTS = Object.freeze({
     MISTRAL_BASE_URL: 'gptrEnvMistralBaseUrl',
     OPENROUTER_LIMIT_RPS: 'gptrEnvOpenrouterLimitRps',
     VLLM_OPENAI_API_BASE: 'gptrEnvVllmOpenaiApiBase',
-    AIMLAPI_BASE_URL: 'gptrEnvAimlapiBaseUrl'
+    AIMLAPI_BASE_URL: 'gptrEnvAimlapiBaseUrl',
+    SOUL_GATEWAY_BASE_URL: 'gptrEnvSoulGatewayBaseUrl'
 });
 
 const RETRIEVER_META = Object.freeze({

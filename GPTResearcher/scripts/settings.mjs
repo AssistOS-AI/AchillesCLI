@@ -17,7 +17,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
         MISTRAL_BASE_URL: '',
         OPENROUTER_LIMIT_RPS: '',
         VLLM_OPENAI_API_BASE: '',
-        AIMLAPI_BASE_URL: ''
+        AIMLAPI_BASE_URL: '',
+        SOUL_GATEWAY_BASE_URL: ''
     })
 });
 

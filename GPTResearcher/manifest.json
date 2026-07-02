@@ -19,7 +19,8 @@
         "DEEPSEEK_API_KEY",
         "XAI_API_KEY",
         "MISTRAL_API_KEY",
-        "GOOGLE_API_KEY"
+        "GOOGLE_API_KEY",
+        "SOUL_GATEWAY_API_KEY"
     ],
     "ideSettings": [
         {
