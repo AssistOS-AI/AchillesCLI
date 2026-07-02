@@ -231,6 +231,13 @@ export class GPTResearcherSettings {
         this.renderTabs();
     }
 
+    openResearcherUi() {
+        const { protocol, port } = window.location;
+        const portPart = port ? `:${port}` : '';
+        const url = `${protocol}//gptresearcher.localhost${portPart}/`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
     renderTabs() {
         Object.entries(this.tabs || {}).forEach(([key, tab]) => {
             const active = key === this.state.activeTab;

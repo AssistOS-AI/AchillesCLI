@@ -58,6 +58,10 @@
     gap: 10px;
 }
 
+.gptr-secondary-button {
+    opacity: 0.88;
+}
+
 .gptr-settings-status {
     min-height: 1.2rem;
     color: var(--text-soft);

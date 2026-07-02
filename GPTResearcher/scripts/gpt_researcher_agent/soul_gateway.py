@@ -109,7 +109,13 @@ class SoulGatewayLLM:
         yield SimpleNamespace(content=result.content)
 
 
-class SoulGatewayEmbeddings:
+try:
+    from langchain_core.embeddings import Embeddings
+except ImportError:
+    Embeddings = object
+
+
+class SoulGatewayEmbeddings(Embeddings):
     def __init__(self, model, base_url, api_key):
         if not model:
             raise RuntimeError("Soul Gateway embeddings require a model name.")

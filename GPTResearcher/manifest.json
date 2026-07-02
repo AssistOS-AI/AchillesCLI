@@ -5,11 +5,30 @@
     "readiness": {
         "protocol": "mcp"
     },
-    "profiles": {
-        "default": {
-            "install": "sh /code/scripts/install-gpt-researcher.sh"
+    "health": {
+        "readiness": {
+            "script": "readiness.sh",
+            "interval": 1,
+            "timeout": 5,
+            "failureThreshold": 180,
+            "successThreshold": 1
         }
     },
+    "agent": "sh /code/scripts/start-gpt-researcher.sh",
+    "profiles": {
+        "default": {
+            "install": "sh /code/scripts/install-gpt-researcher.sh",
+            "additionalServerPort": 8000
+        }
+    },
+    "httpServices": [
+        {
+            "slug": "gpt-researcher",
+            "externalPrefix": "/services/gpt-researcher/",
+            "internalPrefix": "/",
+            "access": "authenticated"
+        }
+    ],
     "env": [
         "OPENAI_API_KEY",
         "TAVILY_API_KEY",
@@ -20,7 +39,8 @@
         "XAI_API_KEY",
         "MISTRAL_API_KEY",
         "GOOGLE_API_KEY",
-        "SOUL_GATEWAY_API_KEY"
+        "SOUL_GATEWAY_API_KEY",
+        "OPENAI_BASE_URL"
     ],
     "ideSettings": [
         {
