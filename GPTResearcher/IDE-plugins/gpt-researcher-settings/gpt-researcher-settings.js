@@ -27,6 +27,30 @@ const ENV_INPUTS = Object.freeze({
     AIMLAPI_BASE_URL: 'gptrEnvAimlapiBaseUrl'
 });
 
+const RETRIEVER_META = Object.freeze({
+    duckduckgo: 'No API key required. Uses the ddgs package.',
+    tavily: 'Requires TAVILY_API_KEY.',
+    brave: 'Requires BRAVE_API_KEY.',
+    serper: 'Requires SERPER_API_KEY.',
+    serpapi: 'Requires SERPAPI_API_KEY.',
+    bing: 'Requires BING_API_KEY.',
+    google: 'Requires GOOGLE_API_KEY and Google search configuration.',
+    exa: 'Requires EXA_API_KEY.',
+    searchapi: 'Requires SEARCHAPI_API_KEY.',
+    arxiv: 'No API key required. Academic papers from arXiv.',
+    semantic_scholar: 'Semantic Scholar search. API key may be required for higher limits.',
+    pubmed_central: 'No API key required. Biomedical literature.',
+    openalex: 'No API key required. Academic metadata search.',
+    mcp: 'Requires MCP server configuration in GPT Researcher settings.',
+    custom: 'Requires custom retriever implementation.',
+    crw: 'Advanced retriever.',
+    groundroute: 'Advanced retriever.',
+    xquik: 'Advanced retriever.',
+    mock: 'Testing only.'
+});
+
+const KNOWN_RETRIEVERS = Object.freeze(new Set(Object.keys(RETRIEVER_META)));
+
 const LOG_PREFIX = '[GPTResearcher Settings]';
 
 function trim(value) {
@@ -113,7 +137,7 @@ function normalizeSettings(value = {}) {
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        retriever: trim(input.retriever) || DEFAULT_SETTINGS.retriever,
+        retriever: KNOWN_RETRIEVERS.has(trim(input.retriever)) ? trim(input.retriever) : DEFAULT_SETTINGS.retriever,
         env
     };
 }
@@ -167,6 +191,8 @@ export class GPTResearcherSettings {
             retriever: this.element.querySelector('#gptrRetriever'),
             env: {}
         };
+        this.retrieverHelp = this.element.querySelector('#gptrRetrieverHelp');
+        this.inputs.retriever?.addEventListener('change', () => this.renderRetrieverHelp());
         Object.entries(ENV_INPUTS).forEach(([key, id]) => {
             this.inputs.env[key] = this.element.querySelector(`#${id}`);
         });
@@ -223,6 +249,7 @@ export class GPTResearcherSettings {
         if (this.inputs?.strategicLlm) this.inputs.strategicLlm.value = settings.strategicLlm;
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
         if (this.inputs?.retriever) this.inputs.retriever.value = settings.retriever;
+        this.renderRetrieverHelp();
         Object.keys(DEFAULT_SETTINGS.env).forEach((key) => {
             if (this.inputs?.env?.[key]) {
                 this.inputs.env[key].value = settings.env[key] || '';
@@ -243,6 +270,14 @@ export class GPTResearcherSettings {
             retriever: this.inputs?.retriever?.value,
             env
         });
+    }
+
+    renderRetrieverHelp() {
+        if (!this.retrieverHelp) {
+            return;
+        }
+        const retriever = trim(this.inputs?.retriever?.value) || DEFAULT_SETTINGS.retriever;
+        this.retrieverHelp.textContent = RETRIEVER_META[retriever] || '';
     }
 
     setStatus(message, type = '') {

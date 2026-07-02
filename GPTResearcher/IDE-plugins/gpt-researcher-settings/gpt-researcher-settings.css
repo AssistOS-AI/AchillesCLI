@@ -29,6 +29,13 @@
     gap: 6px;
 }
 
+.gptr-retriever-help {
+    min-height: 1rem;
+    color: var(--text-soft);
+    font-size: 0.86rem;
+    line-height: 1.35;
+}
+
 .gptr-settings-actions {
     display: flex;
     flex-wrap: wrap;

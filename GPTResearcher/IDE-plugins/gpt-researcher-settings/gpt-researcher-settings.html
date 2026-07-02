@@ -32,7 +32,36 @@
                 </label>
                 <label class="form-item">
                     <span class="form-label">Retriever</span>
-                    <input id="gptrRetriever" class="form-input" type="text" spellcheck="false">
+                    <select id="gptrRetriever" class="form-input">
+                        <optgroup label="General web">
+                            <option value="duckduckgo">DuckDuckGo - no API key</option>
+                            <option value="tavily">Tavily - requires TAVILY_API_KEY</option>
+                            <option value="brave">Brave - requires BRAVE_API_KEY</option>
+                            <option value="serper">Serper - requires SERPER_API_KEY</option>
+                            <option value="serpapi">SerpAPI - requires SERPAPI_API_KEY</option>
+                            <option value="bing">Bing - requires BING_API_KEY</option>
+                            <option value="google">Google - requires GOOGLE_API_KEY</option>
+                            <option value="exa">Exa - requires EXA_API_KEY</option>
+                            <option value="searchapi">SearchAPI - requires SEARCHAPI_API_KEY</option>
+                        </optgroup>
+                        <optgroup label="Academic">
+                            <option value="arxiv">arXiv - no API key</option>
+                            <option value="semantic_scholar">Semantic Scholar - optional API key</option>
+                            <option value="pubmed_central">PubMed Central - no API key</option>
+                            <option value="openalex">OpenAlex - no API key</option>
+                        </optgroup>
+                        <optgroup label="MCP">
+                            <option value="mcp">MCP - requires MCP server settings</option>
+                        </optgroup>
+                        <optgroup label="Advanced">
+                            <option value="custom">Custom - requires custom retriever code</option>
+                            <option value="crw">CRW - advanced</option>
+                            <option value="groundroute">GroundRoute - advanced</option>
+                            <option value="xquik">XQuik - advanced</option>
+                            <option value="mock">Mock - testing only</option>
+                        </optgroup>
+                    </select>
+                    <span id="gptrRetrieverHelp" class="form-help gptr-retriever-help"></span>
                 </label>
             </div>
         </section>

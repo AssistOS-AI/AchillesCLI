@@ -32,6 +32,26 @@ DEFAULT_SETTINGS = {
 ALLOWED_ENV_KEYS = set(DEFAULT_SETTINGS["env"].keys())
 
 
+class LiveLogTee(io.TextIOBase):
+    def __init__(self, buffer, stream):
+        self.buffer = buffer
+        self.stream = stream
+
+    def writable(self):
+        return True
+
+    def write(self, value):
+        text = str(value)
+        self.buffer.write(text)
+        self.stream.write(text)
+        self.stream.flush()
+        return len(text)
+
+    def flush(self):
+        self.buffer.flush()
+        self.stream.flush()
+
+
 def parse_input(raw):
     text = (raw or "").strip()
     if not text:
@@ -51,6 +71,11 @@ def normalize_string(value):
 
 def write_json(payload):
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, default=str))
+
+
+def log_line(message):
+    sys.stderr.write(f"{message}\n")
+    sys.stderr.flush()
 
 
 def build_research_query(query, more_context):
@@ -97,6 +122,48 @@ def apply_settings(settings):
                 os.environ.pop(key, None)
 
 
+def should_force_chat_completions(kwargs):
+    model = kwargs.get("model") or kwargs.get("model_name")
+    base_url = (
+        kwargs.get("openai_api_base")
+        or kwargs.get("base_url")
+        or kwargs.get("baseURL")
+        or os.environ.get("OPENAI_BASE_URL", "")
+    )
+    return (
+        isinstance(model, str)
+        and model.startswith("codex-api/")
+        and isinstance(base_url, str)
+        and "soul-gateway" in base_url
+    )
+
+
+def patch_soul_gateway_codex_chat_completions():
+    from gpt_researcher.llm_provider.generic.base import GenericLLMProvider
+
+    if getattr(GenericLLMProvider, "_ploinky_codex_chat_patch", False):
+        return
+
+    original_from_provider = GenericLLMProvider.from_provider.__func__
+
+    @classmethod
+    def from_provider(cls, provider, chat_log=None, verbose=True, **kwargs):
+        if provider == "openai" and should_force_chat_completions(kwargs):
+            kwargs.setdefault("use_responses_api", False)
+            kwargs.pop("max_tokens", None)
+            kwargs.pop("max_completion_tokens", None)
+        return original_from_provider(
+            cls,
+            provider,
+            chat_log=chat_log,
+            verbose=verbose,
+            **kwargs,
+        )
+
+    GenericLLMProvider.from_provider = from_provider
+    GenericLLMProvider._ploinky_codex_chat_patch = True
+
+
 def optional_call(obj, name):
     method = getattr(obj, name, None)
     if not callable(method):
@@ -126,12 +193,25 @@ async def run_research(payload):
     try:
         settings = load_settings()
         apply_settings(settings)
+        log_line(
+            "[GPTResearcher/start_research] start "
+            f"queryChars={len(query)} reportType={report_type} "
+            f"fastLlm={settings['fastLlm']} smartLlm={settings['smartLlm']} "
+            f"strategicLlm={settings['strategicLlm']} embedding={settings['embedding']} "
+            f"retriever={settings['retriever']}"
+        )
+        patch_soul_gateway_codex_chat_completions()
         from gpt_researcher import GPTResearcher
 
         researcher = GPTResearcher(query=effective_query, report_type=report_type)
-        with contextlib.redirect_stdout(log_buffer), contextlib.redirect_stderr(log_buffer):
+        live_logs = LiveLogTee(log_buffer, sys.stderr)
+        with contextlib.redirect_stdout(live_logs), contextlib.redirect_stderr(live_logs):
+            log_line("[GPTResearcher/start_research] conduct_research started")
             await researcher.conduct_research()
+            log_line("[GPTResearcher/start_research] conduct_research completed")
+            log_line("[GPTResearcher/start_research] write_report started")
             report = await researcher.write_report()
+            log_line("[GPTResearcher/start_research] write_report completed")
 
         write_json({
             "ok": True,
