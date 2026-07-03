@@ -11,8 +11,9 @@ The input may also be JSON containing:
 - `prompt`: research question, required.
 - `context`: additional context or instructions, optional.
 - `reportType`: GPT Researcher report type, optional. Defaults to the agent default.
-- `workingDir`: optional directory inside the GPTResearcher agent workspace. Files in
-  this directory are provided as local context and the report is saved there.
+- `workingDir`: optional directory. If omitted, the skill uses the current
+  AchillesCLI working directory. Files in this directory are provided as local
+  context and the report is saved there.
 
 ## Output Format
 Returns plain text. Successful runs return `GPTResearcher task completed.` and

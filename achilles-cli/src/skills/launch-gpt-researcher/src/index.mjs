@@ -163,7 +163,7 @@ function normalizeInput(invocation = {}) {
             prompt: trim(invocation.prompt),
             context: trim(invocation.context),
             reportType: trim(invocation.reportType),
-            workingDir: '',
+            workingDir: trim(invocation.workingDir),
         };
     }
     try {
@@ -182,7 +182,7 @@ function normalizeInput(invocation = {}) {
         prompt: text,
         context: trim(invocation.context),
         reportType: trim(invocation.reportType),
-        workingDir: '',
+        workingDir: trim(invocation.workingDir),
     };
 }
 

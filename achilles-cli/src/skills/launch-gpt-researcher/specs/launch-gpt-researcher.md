@@ -8,7 +8,8 @@ The `launch-gpt-researcher` C-Skill delegates a research request to the workspac
 The public input is plain research prompt text or JSON containing `prompt`,
 optional `context`, optional `reportType`, and optional `workingDir`. The skill
 maps these to the agent payload as `query`, `moreContext`, `reportType`, and
-`workingDir`.
+`workingDir`. If the input omits `workingDir`, the skill sends the current
+AchillesCLI working directory from the invocation context.
 
 The skill returns plain text only. Successful runs return
 `GPTResearcher task completed.` and append the generated `report` when present.
