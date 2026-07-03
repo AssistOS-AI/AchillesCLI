@@ -7,28 +7,39 @@
     </div>
 
     <div class="modal-body gptr-settings-body">
-        <nav class="gptr-tabs marketplace-tabs settings-tabs" role="tablist" aria-label="GPTResearcher settings sections">
-            <button id="gptrModelsTab" class="gptr-tab marketplace-tab settings-tab active" type="button" data-local-action="showTab models" data-tab="models" role="tab" aria-selected="true">Models</button>
-            <button id="gptrProvidersTab" class="gptr-tab marketplace-tab settings-tab" type="button" data-local-action="showTab providers" data-tab="providers" role="tab" aria-selected="false">Providers</button>
-        </nav>
-
-        <section id="gptrModelsPanel" class="gptr-panel active" role="tabpanel">
+        <section id="gptrModelsPanel" class="gptr-panel active">
             <div class="gptr-settings-grid">
                 <label class="form-item">
                     <span class="form-label">Fast LLM</span>
-                    <input id="gptrFastLlm" class="form-input" type="text" spellcheck="false">
+                    <div class="gptr-model-combobox" data-model-field="fastLlm">
+                        <input id="gptrFastLlm" class="form-input gptr-model-input" type="text" spellcheck="false" autocomplete="off">
+                        <button class="gptr-model-toggle" type="button" data-model-toggle="fastLlm" aria-label="Show Fast LLM models">⌄</button>
+                        <div class="gptr-model-options" data-options-for="fastLlm"></div>
+                    </div>
                 </label>
                 <label class="form-item">
                     <span class="form-label">Smart LLM</span>
-                    <input id="gptrSmartLlm" class="form-input" type="text" spellcheck="false">
+                    <div class="gptr-model-combobox" data-model-field="smartLlm">
+                        <input id="gptrSmartLlm" class="form-input gptr-model-input" type="text" spellcheck="false" autocomplete="off">
+                        <button class="gptr-model-toggle" type="button" data-model-toggle="smartLlm" aria-label="Show Smart LLM models">⌄</button>
+                        <div class="gptr-model-options" data-options-for="smartLlm"></div>
+                    </div>
                 </label>
                 <label class="form-item">
                     <span class="form-label">Strategic LLM</span>
-                    <input id="gptrStrategicLlm" class="form-input" type="text" spellcheck="false">
+                    <div class="gptr-model-combobox" data-model-field="strategicLlm">
+                        <input id="gptrStrategicLlm" class="form-input gptr-model-input" type="text" spellcheck="false" autocomplete="off">
+                        <button class="gptr-model-toggle" type="button" data-model-toggle="strategicLlm" aria-label="Show Strategic LLM models">⌄</button>
+                        <div class="gptr-model-options" data-options-for="strategicLlm"></div>
+                    </div>
                 </label>
                 <label class="form-item">
                     <span class="form-label">Embedding</span>
-                    <input id="gptrEmbedding" class="form-input" type="text" spellcheck="false">
+                    <div class="gptr-model-combobox" data-model-field="embedding">
+                        <input id="gptrEmbedding" class="form-input gptr-model-input" type="text" spellcheck="false" autocomplete="off">
+                        <button class="gptr-model-toggle" type="button" data-model-toggle="embedding" aria-label="Show embedding models">⌄</button>
+                        <div class="gptr-model-options" data-options-for="embedding"></div>
+                    </div>
                 </label>
                 <label class="form-item">
                     <span class="form-label">Retriever</span>
@@ -62,47 +73,6 @@
                         </optgroup>
                     </select>
                     <span id="gptrRetrieverHelp" class="form-help gptr-retriever-help"></span>
-                </label>
-            </div>
-        </section>
-
-        <section id="gptrProvidersPanel" class="gptr-panel" role="tabpanel" hidden>
-            <div class="gptr-settings-grid">
-                <label class="form-item">
-                    <span class="form-label gptr-provider-label">OLLAMA_BASE_URL <span class="gptr-env-note">(no API key required)</span></span>
-                    <input id="gptrEnvOllamaBaseUrl" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label gptr-provider-label">OPENAI_BASE_URL <span class="gptr-env-note">(requires OPENAI_API_KEY in env)</span></span>
-                    <input id="gptrEnvOpenaiBaseUrl" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label gptr-provider-label">AZURE_OPENAI_ENDPOINT <span class="gptr-env-note">(requires AZURE_OPENAI_API_KEY in env)</span></span>
-                    <input id="gptrEnvAzureOpenaiEndpoint" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label">AZURE_OPENAI_API_VERSION</span>
-                    <input id="gptrEnvAzureOpenaiApiVersion" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label gptr-provider-label">MISTRAL_BASE_URL <span class="gptr-env-note">(requires MISTRAL_API_KEY in env)</span></span>
-                    <input id="gptrEnvMistralBaseUrl" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label">OPENROUTER_LIMIT_RPS</span>
-                    <input id="gptrEnvOpenrouterLimitRps" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label gptr-provider-label">VLLM_OPENAI_API_BASE <span class="gptr-env-note">(requires OPENAI_API_KEY in env)</span></span>
-                    <input id="gptrEnvVllmOpenaiApiBase" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label gptr-provider-label">AIMLAPI_BASE_URL <span class="gptr-env-note">(requires AIMLAPI_API_KEY in env)</span></span>
-                    <input id="gptrEnvAimlapiBaseUrl" class="form-input" type="text" spellcheck="false">
-                </label>
-                <label class="form-item">
-                    <span class="form-label gptr-provider-label">SOUL_GATEWAY_BASE_URL <span class="gptr-env-note">(requires SOUL_GATEWAY_API_KEY in env)</span></span>
-                    <input id="gptrEnvSoulGatewayBaseUrl" class="form-input" type="text" spellcheck="false">
                 </label>
             </div>
         </section>

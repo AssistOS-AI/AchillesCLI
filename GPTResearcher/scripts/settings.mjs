@@ -4,37 +4,15 @@ import path from 'node:path';
 export const SETTINGS_PATH = path.join(process.env.WORKSPACE_PATH, 'gpt-researcher-settings.json');
 
 export const DEFAULT_SETTINGS = Object.freeze({
-    fastLlm: 'ollama:llama3.1',
-    smartLlm: 'ollama:llama3.1',
-    strategicLlm: 'ollama:llama3.1',
-    embedding: 'ollama:nomic-embed-text',
-    retriever: 'duckduckgo',
-    env: Object.freeze({
-        OLLAMA_BASE_URL: 'http://host.containers.internal:11434',
-        OPENAI_BASE_URL: '',
-        AZURE_OPENAI_ENDPOINT: '',
-        AZURE_OPENAI_API_VERSION: '',
-        MISTRAL_BASE_URL: '',
-        OPENROUTER_LIMIT_RPS: '',
-        VLLM_OPENAI_API_BASE: '',
-        AIMLAPI_BASE_URL: '',
-        SOUL_GATEWAY_BASE_URL: ''
-    })
+    fastLlm: 'codex-api/gpt-5.4-mini',
+    smartLlm: 'codex-api/gpt-5.5',
+    strategicLlm: 'codex-api/gpt-5.4-mini',
+    embedding: 'codestral-embed',
+    retriever: 'duckduckgo'
 });
-
-export const ALLOWED_ENV_KEYS = Object.freeze(new Set(Object.keys(DEFAULT_SETTINGS.env)));
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeEnv(value = {}) {
-    const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const env = {};
-    for (const key of ALLOWED_ENV_KEYS) {
-        env[key] = trim(input[key] ?? DEFAULT_SETTINGS.env[key]);
-    }
-    return env;
 }
 
 export function normalizeSettings(value = {}) {
@@ -44,8 +22,7 @@ export function normalizeSettings(value = {}) {
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        retriever: trim(input.retriever) || DEFAULT_SETTINGS.retriever,
-        env: normalizeEnv(input.env)
+        retriever: trim(input.retriever) || DEFAULT_SETTINGS.retriever
     };
 }
 

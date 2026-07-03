@@ -223,24 +223,23 @@ smartLlm
 strategicLlm
 embedding
 retriever
-env
 ```
 
-Campul `env` contine doar valori non-secret, cum ar fi base URL-uri pentru provideri.
-
-Cheile API nu sunt salvate in acest fisier. Ele trebuie furnizate prin environment-ul agentului.
+Fisierul nu contine provider base URLs si nu contine chei API.
 
 ## Provider Configuration
 
-GPTResearcher poate folosi mai multi provideri prin setarile persistente.
+GPTResearcher foloseste exclusiv providerul local Soul Gateway.
 
-Modelele principale sunt:
+Setarile persistente contin model IDs brute, fara prefixul `soul_gateway:`.
+
+La runtime, scriptul Python transforma automat aceste valori in:
 
 ```text
-FAST_LLM
-SMART_LLM
-STRATEGIC_LLM
-EMBEDDING
+FAST_LLM=soul_gateway:<fastLlm>
+SMART_LLM=soul_gateway:<smartLlm>
+STRATEGIC_LLM=soul_gateway:<strategicLlm>
+EMBEDDING=soul_gateway:<embedding>
 ```
 
 Retrieverul este configurat prin:
@@ -251,57 +250,30 @@ RETRIEVER
 
 Setarile sunt aplicate la runtime de scriptul Python inainte ca instanta `GPTResearcher` sa fie creata.
 
-Providerii pot folosi variabile non-secret precum:
-
-```text
-OLLAMA_BASE_URL
-OPENAI_BASE_URL
-AZURE_OPENAI_ENDPOINT
-AZURE_OPENAI_API_VERSION
-MISTRAL_BASE_URL
-OPENROUTER_LIMIT_RPS
-VLLM_OPENAI_API_BASE
-AIMLAPI_BASE_URL
-SOUL_GATEWAY_BASE_URL
-```
-
-Cheile API raman variabile de mediu ale agentului, de exemplu:
-
-```text
-OPENAI_API_KEY
-TAVILY_API_KEY
-MISTRAL_API_KEY
-SOUL_GATEWAY_API_KEY
-```
+Nu exista fallback catre OpenAI, Ollama, Mistral, Azure, OpenRouter sau un Soul Gateway remote configurat manual.
 
 ## Soul Gateway Provider
 
 Agentul include un provider custom Python pentru Soul Gateway.
 
-Modelele Soul Gateway sunt configurate cu prefixul:
+Exemple de model IDs salvate in settings:
 
 ```text
-soul_gateway:
-```
-
-Exemple:
-
-```text
-soul_gateway:codex-api/gpt-5.5
-soul_gateway:codex-api/gpt-5.4-mini
-soul_gateway:codestral-embed
+codex-api/gpt-5.5
+codex-api/gpt-5.4-mini
+codestral-embed
 ```
 
 Providerul custom trimite cereri OpenAI-compatible catre:
 
 ```text
-SOUL_GATEWAY_BASE_URL
+${PLOINKY_ROUTER_URL}/services/soul-gateway/v1
 ```
 
 si foloseste:
 
 ```text
-SOUL_GATEWAY_API_KEY
+PLOINKY_AGENT_API_KEY
 ```
 
 pentru headerul `Authorization`.
@@ -339,8 +311,6 @@ Strategic LLM
 Embedding
 Retriever
 ```
-
-si a base URL-urilor non-secret pentru provideri.
 
 Pluginul include si un buton pentru deschiderea UI-ului oficial GPT Researcher:
 
@@ -405,27 +375,19 @@ WORKSPACE_PATH
 Directorul persistent in care se salveaza `gpt-researcher-settings.json`.
 
 ```text
-SOUL_GATEWAY_BASE_URL
-```
-
-Base URL-ul non-secret pentru providerul custom Soul Gateway.
-
-```text
-SOUL_GATEWAY_API_KEY
-```
-
-Cheia folosita de providerul custom Soul Gateway.
-
-```text
-OPENAI_API_KEY
 TAVILY_API_KEY
-MISTRAL_API_KEY
+BRAVE_API_KEY
+SERPER_API_KEY
+SERPAPI_API_KEY
+BING_API_KEY
 GOOGLE_API_KEY
+EXA_API_KEY
+SEARCHAPI_API_KEY
 ```
 
-Chei folosite de providerii si retrieverele GPT Researcher, in functie de configuratie.
+Chei folosite doar de retrieverele GPT Researcher, in functie de retrieverul selectat.
 
-Aceste variabile nu schimba arhitectura sistemului, ci doar providerii si comportamentul operational al research-ului.
+Providerul LLM nu este configurabil prin environment; el este intotdeauna Soul Gateway local prin credentialele Ploinky generate.
 
 ## Separation of Responsibilities
 

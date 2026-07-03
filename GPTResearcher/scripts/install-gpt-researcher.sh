@@ -23,22 +23,11 @@ SETTINGS_PATH="$WORKSPACE_PATH/gpt-researcher-settings.json"
 if [ ! -f "$SETTINGS_PATH" ]; then
     cat > "$SETTINGS_PATH" <<'EOF'
 {
-  "fastLlm": "ollama:llama3.1",
-  "smartLlm": "ollama:llama3.1",
-  "strategicLlm": "ollama:llama3.1",
-  "embedding": "ollama:nomic-embed-text",
-  "retriever": "duckduckgo",
-  "env": {
-    "OLLAMA_BASE_URL": "http://host.containers.internal:11434",
-    "OPENAI_BASE_URL": "",
-    "AZURE_OPENAI_ENDPOINT": "",
-    "AZURE_OPENAI_API_VERSION": "",
-    "MISTRAL_BASE_URL": "",
-    "OPENROUTER_LIMIT_RPS": "",
-    "VLLM_OPENAI_API_BASE": "",
-    "AIMLAPI_BASE_URL": "",
-    "SOUL_GATEWAY_BASE_URL": ""
-  }
+  "fastLlm": "codex-api/gpt-5.4-mini",
+  "smartLlm": "codex-api/gpt-5.5",
+  "strategicLlm": "codex-api/gpt-5.4-mini",
+  "embedding": "codestral-embed",
+  "retriever": "duckduckgo"
 }
 EOF
 fi

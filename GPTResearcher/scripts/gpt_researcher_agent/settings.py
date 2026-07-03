@@ -7,25 +7,12 @@ from .io_utils import normalize_string
 SETTINGS_PATH = os.path.join(os.environ["WORKSPACE_PATH"], "gpt-researcher-settings.json")
 
 DEFAULT_SETTINGS = {
-    "fastLlm": "ollama:llama3.1",
-    "smartLlm": "ollama:llama3.1",
-    "strategicLlm": "ollama:llama3.1",
-    "embedding": "ollama:nomic-embed-text",
+    "fastLlm": "codex-api/gpt-5.4-mini",
+    "smartLlm": "codex-api/gpt-5.5",
+    "strategicLlm": "codex-api/gpt-5.4-mini",
+    "embedding": "codestral-embed",
     "retriever": "duckduckgo",
-    "env": {
-        "OLLAMA_BASE_URL": "http://host.containers.internal:11434",
-        "OPENAI_BASE_URL": "",
-        "AZURE_OPENAI_ENDPOINT": "",
-        "AZURE_OPENAI_API_VERSION": "",
-        "MISTRAL_BASE_URL": "",
-        "OPENROUTER_LIMIT_RPS": "",
-        "VLLM_OPENAI_API_BASE": "",
-        "AIMLAPI_BASE_URL": "",
-        "SOUL_GATEWAY_BASE_URL": "",
-    },
 }
-
-ALLOWED_ENV_KEYS = set(DEFAULT_SETTINGS["env"].keys())
 
 
 def build_research_query(query, more_context, files_context=""):
@@ -38,17 +25,12 @@ def build_research_query(query, more_context, files_context=""):
 
 def normalize_settings(value):
     source = value if isinstance(value, dict) else {}
-    env_source = source.get("env") if isinstance(source.get("env"), dict) else {}
     return {
         "fastLlm": normalize_string(source.get("fastLlm")) or DEFAULT_SETTINGS["fastLlm"],
         "smartLlm": normalize_string(source.get("smartLlm")) or DEFAULT_SETTINGS["smartLlm"],
         "strategicLlm": normalize_string(source.get("strategicLlm")) or DEFAULT_SETTINGS["strategicLlm"],
         "embedding": normalize_string(source.get("embedding")) or DEFAULT_SETTINGS["embedding"],
         "retriever": normalize_string(source.get("retriever")) or DEFAULT_SETTINGS["retriever"],
-        "env": {
-            key: normalize_string(env_source.get(key)) or DEFAULT_SETTINGS["env"].get(key, "")
-            for key in ALLOWED_ENV_KEYS
-        },
     }
 
 
@@ -61,14 +43,8 @@ def load_settings():
 
 
 def apply_settings(settings):
-    os.environ["FAST_LLM"] = settings["fastLlm"]
-    os.environ["SMART_LLM"] = settings["smartLlm"]
-    os.environ["STRATEGIC_LLM"] = settings["strategicLlm"]
-    os.environ["EMBEDDING"] = settings["embedding"]
+    os.environ["FAST_LLM"] = f"soul_gateway:{settings['fastLlm']}"
+    os.environ["SMART_LLM"] = f"soul_gateway:{settings['smartLlm']}"
+    os.environ["STRATEGIC_LLM"] = f"soul_gateway:{settings['strategicLlm']}"
+    os.environ["EMBEDDING"] = f"soul_gateway:{settings['embedding']}"
     os.environ["RETRIEVER"] = settings["retriever"]
-    for key, value in settings["env"].items():
-        if key in ALLOWED_ENV_KEYS:
-            if value:
-                os.environ[key] = value
-            else:
-                os.environ.pop(key, None)

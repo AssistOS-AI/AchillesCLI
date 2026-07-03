@@ -37,54 +37,56 @@
         {
             "name": "gpt_researcher_get_settings",
             "title": "Get GPTResearcher Settings",
-            "description": "Returns persisted non-secret GPT Researcher provider and model settings.",
+            "description": "Returns persisted GPT Researcher model and retriever settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/get-settings.mjs"],
             "cwd": "/code",
             "timeoutMs": 30000,
-            "tags": ["authenticated"],
+            "inputSchema": {}
+        },
+        {
+            "name": "gpt_researcher_list_models",
+            "title": "List Soul Gateway Models",
+            "description": "Returns Soul Gateway /v1/models metadata for GPTResearcher settings.",
+            "command": "/usr/local/bin/node",
+            "args": ["/code/scripts/list-soul-gateway-models.mjs"],
+            "cwd": "/code",
+            "timeoutMs": 30000,
             "inputSchema": {}
         },
         {
             "name": "gpt_researcher_update_settings",
             "title": "Update GPTResearcher Settings",
-            "description": "Persists non-secret GPT Researcher provider and model settings.",
+            "description": "Persists GPT Researcher model and retriever settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/update-settings.mjs"],
             "cwd": "/code",
             "timeoutMs": 30000,
-            "tags": ["authenticated"],
             "inputSchema": {
                 "fastLlm": {
                     "type": "string",
-                    "description": "FAST_LLM value such as ollama:llama3.1.",
+                    "description": "Soul Gateway model id for FAST_LLM, without the soul_gateway: prefix.",
                     "optional": true
                 },
                 "smartLlm": {
                     "type": "string",
-                    "description": "SMART_LLM value such as ollama:llama3.1.",
+                    "description": "Soul Gateway model id for SMART_LLM, without the soul_gateway: prefix.",
                     "optional": true
                 },
                 "strategicLlm": {
                     "type": "string",
-                    "description": "STRATEGIC_LLM value such as ollama:llama3.1.",
+                    "description": "Soul Gateway model id for STRATEGIC_LLM, without the soul_gateway: prefix.",
                     "optional": true
                 },
                 "embedding": {
                     "type": "string",
-                    "description": "EMBEDDING value such as ollama:nomic-embed-text.",
+                    "description": "Soul Gateway embedding model id, without the soul_gateway: prefix.",
                     "optional": true
                 },
                 "retriever": {
                     "type": "string",
                     "description": "RETRIEVER value such as duckduckgo or tavily.",
                     "optional": true
-                },
-                "env": {
-                    "type": "object",
-                    "description": "Allowlisted non-secret provider environment values.",
-                    "optional": true,
-                    "additionalProperties": true
                 }
             }
         }

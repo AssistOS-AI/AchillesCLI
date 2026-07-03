@@ -1,32 +1,9 @@
 const DEFAULT_SETTINGS = Object.freeze({
-    fastLlm: 'ollama:llama3.1',
-    smartLlm: 'ollama:llama3.1',
-    strategicLlm: 'ollama:llama3.1',
-    embedding: 'ollama:nomic-embed-text',
-    retriever: 'duckduckgo',
-    env: Object.freeze({
-        OLLAMA_BASE_URL: 'http://host.containers.internal:11434',
-        OPENAI_BASE_URL: '',
-        AZURE_OPENAI_ENDPOINT: '',
-        AZURE_OPENAI_API_VERSION: '',
-        MISTRAL_BASE_URL: '',
-        OPENROUTER_LIMIT_RPS: '',
-        VLLM_OPENAI_API_BASE: '',
-        AIMLAPI_BASE_URL: '',
-        SOUL_GATEWAY_BASE_URL: ''
-    })
-});
-
-const ENV_INPUTS = Object.freeze({
-    OLLAMA_BASE_URL: 'gptrEnvOllamaBaseUrl',
-    OPENAI_BASE_URL: 'gptrEnvOpenaiBaseUrl',
-    AZURE_OPENAI_ENDPOINT: 'gptrEnvAzureOpenaiEndpoint',
-    AZURE_OPENAI_API_VERSION: 'gptrEnvAzureOpenaiApiVersion',
-    MISTRAL_BASE_URL: 'gptrEnvMistralBaseUrl',
-    OPENROUTER_LIMIT_RPS: 'gptrEnvOpenrouterLimitRps',
-    VLLM_OPENAI_API_BASE: 'gptrEnvVllmOpenaiApiBase',
-    AIMLAPI_BASE_URL: 'gptrEnvAimlapiBaseUrl',
-    SOUL_GATEWAY_BASE_URL: 'gptrEnvSoulGatewayBaseUrl'
+    fastLlm: 'codex-api/gpt-5.4-mini',
+    smartLlm: 'codex-api/gpt-5.5',
+    strategicLlm: 'codex-api/gpt-5.4-mini',
+    embedding: 'codestral-embed',
+    retriever: 'duckduckgo'
 });
 
 const RETRIEVER_META = Object.freeze({
@@ -54,6 +31,7 @@ const RETRIEVER_META = Object.freeze({
 const KNOWN_RETRIEVERS = Object.freeze(new Set(Object.keys(RETRIEVER_META)));
 
 const LOG_PREFIX = '[GPTResearcher Settings]';
+const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding']);
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -117,6 +95,9 @@ function parseToolPayload(result) {
         const parsed = JSON.parse(text);
         return parsed && typeof parsed === 'object' ? parsed : null;
     } catch (error) {
+        if (text.startsWith('MCP error')) {
+            throw new Error(text);
+        }
         console.error(`${LOG_PREFIX} Failed to parse MCP tool JSON payload.`, {
             text,
             result,
@@ -129,19 +110,79 @@ function parseToolPayload(result) {
 
 function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const envInput = input.env && typeof input.env === 'object' && !Array.isArray(input.env) ? input.env : {};
-    const env = {};
-    Object.keys(DEFAULT_SETTINGS.env).forEach((key) => {
-        env[key] = trim(envInput[key] ?? DEFAULT_SETTINGS.env[key]);
-    });
     return {
         fastLlm: trim(input.fastLlm) || DEFAULT_SETTINGS.fastLlm,
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        retriever: KNOWN_RETRIEVERS.has(trim(input.retriever)) ? trim(input.retriever) : DEFAULT_SETTINGS.retriever,
-        env
+        retriever: KNOWN_RETRIEVERS.has(trim(input.retriever)) ? trim(input.retriever) : DEFAULT_SETTINGS.retriever
     };
+}
+
+function normalizeModel(value = {}) {
+    const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const id = trim(input.id);
+    if (!id) return null;
+    return {
+        id,
+        label: trim(input.label) || id,
+        providerKey: trim(input.providerKey) || 'soul-gateway',
+        providerLabel: trim(input.providerLabel) || trim(input.providerKey) || 'soul-gateway',
+        providerModelId: trim(input.providerModelId),
+        tags: Array.isArray(input.tags) ? input.tags.map((tag) => trim(tag)).filter(Boolean) : [],
+        capabilities: input.capabilities && typeof input.capabilities === 'object' && !Array.isArray(input.capabilities)
+            ? input.capabilities
+            : {},
+        isEmbedding: input.isEmbedding === true
+    };
+    model.searchText = [
+        model.id,
+        model.label,
+        model.providerKey,
+        model.providerLabel,
+        model.providerModelId,
+        ...model.tags
+    ].join(' ').toLowerCase();
+    return model;
+}
+
+function normalizeModelPayload(value = {}) {
+    const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const models = Array.isArray(input.models) ? input.models.map(normalizeModel).filter(Boolean) : [];
+    const chatModels = Array.isArray(input.chatModels)
+        ? input.chatModels.map(normalizeModel).filter(Boolean)
+        : models.filter((model) => !model.isEmbedding);
+    const embeddingModels = Array.isArray(input.embeddingModels)
+        ? input.embeddingModels.map(normalizeModel).filter(Boolean)
+        : models.filter((model) => model.isEmbedding);
+    return { models, chatModels, embeddingModels };
+}
+
+function searchTextForModel(model) {
+    return model.searchText || model.id.toLowerCase();
+}
+
+function modelMatchesSearch(model, query) {
+    const terms = trim(query).toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    const haystack = searchTextForModel(model);
+    return terms.every((term) => haystack.includes(term));
+}
+
+function groupModelsByProvider(models) {
+    const groups = new Map();
+    for (const model of models) {
+        const key = model.providerKey || 'soul-gateway';
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                label: model.providerLabel || key,
+                models: []
+            });
+        }
+        groups.get(key).models.push(model);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 export class GPTResearcherSettings {
@@ -149,13 +190,15 @@ export class GPTResearcherSettings {
         this.element = element;
         this.invalidate = invalidate;
         this.state = {
-            activeTab: 'models',
             settings: normalizeSettings(),
+            models: normalizeModelPayload(),
             status: '',
             statusType: ''
         };
         this.mcpClient = null;
         this.mcpClientPromise = null;
+        this.modelOptionsPointerDown = new Set();
+        this.boundModelEvents = false;
         this.invalidate();
     }
 
@@ -168,37 +211,71 @@ export class GPTResearcherSettings {
     afterRender() {
         this.cacheElements();
         this.syncInputsFromState();
-        this.renderTabs();
         this.renderStatus();
-        void this.reloadSettings().catch((error) => {
-            logError('Unhandled settings load failure.', error);
-            this.setStatus(getErrorMessage(error, 'Load failed.'), 'error');
-        });
+        void this.loadInitialData();
     }
 
     cacheElements() {
-        this.tabs = {
-            models: this.element.querySelector('#gptrModelsTab'),
-            providers: this.element.querySelector('#gptrProvidersTab')
-        };
-        this.panels = {
-            models: this.element.querySelector('#gptrModelsPanel'),
-            providers: this.element.querySelector('#gptrProvidersPanel')
-        };
         this.inputs = {
             fastLlm: this.element.querySelector('#gptrFastLlm'),
             smartLlm: this.element.querySelector('#gptrSmartLlm'),
             strategicLlm: this.element.querySelector('#gptrStrategicLlm'),
             embedding: this.element.querySelector('#gptrEmbedding'),
-            retriever: this.element.querySelector('#gptrRetriever'),
-            env: {}
+            retriever: this.element.querySelector('#gptrRetriever')
         };
+        this.modelOptionLists = {
+            fastLlm: this.element.querySelector('[data-options-for="fastLlm"]'),
+            smartLlm: this.element.querySelector('[data-options-for="smartLlm"]'),
+            strategicLlm: this.element.querySelector('[data-options-for="strategicLlm"]'),
+            embedding: this.element.querySelector('[data-options-for="embedding"]')
+        };
+        this.modelToggles = {
+            fastLlm: this.element.querySelector('[data-model-toggle="fastLlm"]'),
+            smartLlm: this.element.querySelector('[data-model-toggle="smartLlm"]'),
+            strategicLlm: this.element.querySelector('[data-model-toggle="strategicLlm"]'),
+            embedding: this.element.querySelector('[data-model-toggle="embedding"]')
+        };
+        for (const field of MODEL_FIELDS) {
+            this.bindModelCombobox(field);
+        }
         this.retrieverHelp = this.element.querySelector('#gptrRetrieverHelp');
         this.inputs.retriever?.addEventListener('change', () => this.renderRetrieverHelp());
-        Object.entries(ENV_INPUTS).forEach(([key, id]) => {
-            this.inputs.env[key] = this.element.querySelector(`#${id}`);
-        });
         this.statusElement = this.element.querySelector('#gptrSettingsStatus');
+    }
+
+    bindModelCombobox(field) {
+        const input = this.inputs?.[field];
+        const options = this.modelOptionLists?.[field];
+        if (!input) return;
+        input.addEventListener('focus', () => this.renderModelOptions(field, true, { showAll: true }));
+        input.addEventListener('input', () => this.renderModelOptions(field, true));
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.closeModelOptions(field);
+            }
+        });
+        input.addEventListener('blur', () => {
+            window.setTimeout(() => {
+                if (!this.modelOptionsPointerDown.has(field)) {
+                    this.closeModelOptions(field);
+                }
+            }, 120);
+        });
+        options?.addEventListener('mousedown', () => {
+            this.modelOptionsPointerDown.add(field);
+        });
+        this.modelToggles?.[field]?.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            if (document.activeElement !== input) {
+                input.focus();
+                return;
+            }
+            this.renderModelOptions(field, true, { showAll: true });
+        });
+        if (!this.boundModelEvents) {
+            this.boundModelEvents = true;
+            window.addEventListener('mouseup', () => this.modelOptionsPointerDown.clear());
+        }
     }
 
     async ensureMcpClient() {
@@ -226,11 +303,6 @@ export class GPTResearcherSettings {
         }
     }
 
-    showTab(_target, tabName) {
-        this.state.activeTab = tabName === 'providers' ? 'providers' : 'models';
-        this.renderTabs();
-    }
-
     openResearcherUi() {
         const { protocol, port } = window.location;
         const portPart = port ? `:${port}` : '';
@@ -238,17 +310,26 @@ export class GPTResearcherSettings {
         window.open(url, '_blank', 'noopener,noreferrer');
     }
 
-    renderTabs() {
-        Object.entries(this.tabs || {}).forEach(([key, tab]) => {
-            const active = key === this.state.activeTab;
-            tab?.classList.toggle('active', active);
-            tab?.setAttribute('aria-selected', active ? 'true' : 'false');
-        });
-        Object.entries(this.panels || {}).forEach(([key, panel]) => {
-            const active = key === this.state.activeTab;
-            panel?.classList.toggle('active', active);
-            if (panel) panel.hidden = !active;
-        });
+    async loadInitialData() {
+        this.setStatus('Loading...');
+        const [settingsResult, modelsResult] = await Promise.allSettled([
+            this.reloadSettings({ quiet: true }),
+            this.reloadModels({ quiet: true })
+        ]);
+        const errors = [];
+        if (settingsResult.status === 'rejected') {
+            logError('Unhandled settings load failure.', settingsResult.reason);
+            errors.push(getErrorMessage(settingsResult.reason, 'Settings load failed.'));
+        }
+        if (modelsResult.status === 'rejected') {
+            logError('Unhandled model list load failure.', modelsResult.reason);
+            errors.push(getErrorMessage(modelsResult.reason, 'Model list load failed.'));
+        }
+        if (errors.length) {
+            this.setStatus(errors.join(' '), 'error');
+            return;
+        }
+        this.setStatus('');
     }
 
     syncInputsFromState() {
@@ -259,25 +340,18 @@ export class GPTResearcherSettings {
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
         if (this.inputs?.retriever) this.inputs.retriever.value = settings.retriever;
         this.renderRetrieverHelp();
-        Object.keys(DEFAULT_SETTINGS.env).forEach((key) => {
-            if (this.inputs?.env?.[key]) {
-                this.inputs.env[key].value = settings.env[key] || '';
-            }
-        });
+        for (const field of MODEL_FIELDS) {
+            this.closeModelOptions(field);
+        }
     }
 
     collectSettingsFromInputs() {
-        const env = {};
-        Object.keys(DEFAULT_SETTINGS.env).forEach((key) => {
-            env[key] = trim(this.inputs?.env?.[key]?.value);
-        });
         return normalizeSettings({
             fastLlm: this.inputs?.fastLlm?.value,
             smartLlm: this.inputs?.smartLlm?.value,
             strategicLlm: this.inputs?.strategicLlm?.value,
             embedding: this.inputs?.embedding?.value,
-            retriever: this.inputs?.retriever?.value,
-            env
+            retriever: this.inputs?.retriever?.value
         });
     }
 
@@ -287,6 +361,76 @@ export class GPTResearcherSettings {
         }
         const retriever = trim(this.inputs?.retriever?.value) || DEFAULT_SETTINGS.retriever;
         this.retrieverHelp.textContent = RETRIEVER_META[retriever] || '';
+    }
+
+    getModelsForField(field) {
+        if (field === 'embedding') {
+            return this.state.models.embeddingModels || [];
+        }
+        return this.state.models.chatModels || [];
+    }
+
+    closeModelOptions(field) {
+        const options = this.modelOptionLists?.[field];
+        if (!options) return;
+        options.classList.remove('open');
+        const anyOpen = MODEL_FIELDS.some((item) => this.modelOptionLists?.[item]?.classList.contains('open'));
+        this.element.classList.toggle('gptr-model-menu-open', anyOpen);
+    }
+
+    renderModelOptions(field, open = false, optionsState = {}) {
+        const input = this.inputs?.[field];
+        const options = this.modelOptionLists?.[field];
+        if (!input || !options) return;
+        if (!open) {
+            this.closeModelOptions(field);
+            return;
+        }
+        options.textContent = '';
+        const query = optionsState.showAll ? '' : input.value;
+        const models = this.getModelsForField(field).filter((model) => modelMatchesSearch(model, query));
+        if (!models.length) {
+            const empty = document.createElement('div');
+            empty.className = 'gptr-model-empty';
+            empty.textContent = field === 'embedding'
+                ? 'No matching embedding models.'
+                : 'No matching models.';
+            options.appendChild(empty);
+            options.classList.toggle('open', open);
+            return;
+        }
+        const groups = groupModelsByProvider(models);
+        const fragment = document.createDocumentFragment();
+        for (const group of groups) {
+            const groupElement = document.createElement('div');
+            groupElement.className = 'gptr-model-group';
+            const title = document.createElement('div');
+            title.className = 'gptr-model-group-title';
+            title.textContent = group.label;
+            groupElement.appendChild(title);
+            for (const model of group.models) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'gptr-model-option';
+                if (model.id === trim(input.value)) {
+                    button.classList.add('selected');
+                }
+                button.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    input.value = model.id;
+                    this.closeModelOptions(field);
+                });
+                const main = document.createElement('span');
+                main.className = 'gptr-model-option-main';
+                main.textContent = model.id;
+                button.append(main);
+                groupElement.appendChild(button);
+            }
+            fragment.appendChild(groupElement);
+        }
+        options.appendChild(fragment);
+        options.classList.toggle('open', open);
+        this.element.classList.toggle('gptr-model-menu-open', open);
     }
 
     setStatus(message, type = '') {
@@ -304,8 +448,8 @@ export class GPTResearcherSettings {
         this.statusElement.classList.toggle('success', this.state.statusType === 'success');
     }
 
-    async reloadSettings() {
-        this.setStatus('Loading...');
+    async reloadSettings({ quiet = false } = {}) {
+        if (!quiet) this.setStatus('Loading...');
         try {
             const client = await this.ensureMcpClient();
             console.info(`${LOG_PREFIX} Calling gpt_researcher_get_settings.`);
@@ -318,10 +462,34 @@ export class GPTResearcherSettings {
             }
             this.state.settings = normalizeSettings(payload.settings);
             this.syncInputsFromState();
-            this.setStatus('');
+            if (!quiet) this.setStatus('');
         } catch (error) {
             logError('Failed to load settings.', error);
-            this.setStatus(getErrorMessage(error, 'Load failed.'), 'error');
+            if (!quiet) this.setStatus(getErrorMessage(error, 'Load failed.'), 'error');
+            throw error;
+        }
+    }
+
+    async reloadModels({ quiet = false } = {}) {
+        if (!quiet) this.setStatus('Loading models...');
+        try {
+            const client = await this.ensureMcpClient();
+            console.info(`${LOG_PREFIX} Calling gpt_researcher_list_models.`);
+            const result = await client.callTool('gpt_researcher_list_models', {});
+            console.info(`${LOG_PREFIX} Raw list models MCP result.`, result);
+            const payload = parseToolPayload(result);
+            console.info(`${LOG_PREFIX} Parsed list models payload.`, payload);
+            if (!payload?.ok) {
+                throw new Error(payload?.error || `Invalid models payload: ${stringifyForLog(payload)}`);
+            }
+            this.state.models = normalizeModelPayload(payload);
+            for (const field of MODEL_FIELDS) {
+                this.closeModelOptions(field);
+            }
+            if (!quiet) this.setStatus('');
+        } catch (error) {
+            logError('Failed to load Soul Gateway models.', error);
+            if (!quiet) this.setStatus(getErrorMessage(error, 'Model load failed.'), 'error');
             throw error;
         }
     }

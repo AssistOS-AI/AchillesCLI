@@ -8,7 +8,7 @@ from .io_utils import normalize_string
 def normalize_soul_gateway_base_url(value):
     base_url = normalize_string(value)
     if not base_url:
-        raise RuntimeError("Soul Gateway provider requires SOUL_GATEWAY_BASE_URL to be set.")
+        raise RuntimeError("Soul Gateway provider requires PLOINKY_ROUTER_URL to be set.")
     return base_url.rstrip("/")
 
 
@@ -32,6 +32,20 @@ def resolve_soul_gateway_embeddings_url(base_url):
     if trimmed.endswith("/v1"):
         return f"{trimmed}/embeddings"
     return f"{trimmed}/v1/embeddings"
+
+
+def soul_gateway_router_base_url():
+    router_url = normalize_string(os.environ.get("PLOINKY_ROUTER_URL"))
+    if not router_url:
+        raise RuntimeError("Soul Gateway local provider requires PLOINKY_ROUTER_URL.")
+    return f"{router_url.rstrip('/')}/services/soul-gateway/v1"
+
+
+def soul_gateway_api_key():
+    api_key = normalize_string(os.environ.get("PLOINKY_AGENT_API_KEY"))
+    if not api_key:
+        raise RuntimeError("Soul Gateway local provider requires PLOINKY_AGENT_API_KEY.")
+    return api_key
 
 
 def message_to_openai(message):
@@ -183,8 +197,8 @@ def patch_gpt_researcher_llm_providers():
             return cls(
                 SoulGatewayLLM(
                     model=model,
-                    base_url=os.environ.get("SOUL_GATEWAY_BASE_URL", ""),
-                    api_key=os.environ.get("SOUL_GATEWAY_API_KEY", ""),
+                    base_url=soul_gateway_router_base_url(),
+                    api_key=soul_gateway_api_key(),
                 ),
                 chat_log,
                 verbose=verbose,
@@ -201,8 +215,8 @@ def patch_gpt_researcher_llm_providers():
         if embedding_provider == "soul_gateway":
             self._embeddings = SoulGatewayEmbeddings(
                 model=model,
-                base_url=os.environ.get("SOUL_GATEWAY_BASE_URL", ""),
-                api_key=os.environ.get("SOUL_GATEWAY_API_KEY", ""),
+                base_url=soul_gateway_router_base_url(),
+                api_key=soul_gateway_api_key(),
             )
             return
         original_memory_init(self, embedding_provider, model, **embedding_kwargs)
