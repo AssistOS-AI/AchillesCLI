@@ -1,270 +1,107 @@
 # GPTResearcher Agent Architecture
 
-## Overview
+## Rolul agentului
 
-GPTResearcher este un agent Ploinky care ruleaza GPT Researcher prin doua suprafete diferite.
+GPTResearcher este un agent Ploinky care ruleaza GPT Researcher si il integreaza cu infrastructura locala a workspace-ului.
 
-Prima suprafata este UI-ul oficial GPT Researcher, folosit de oameni din browser pentru a porni si urmari research-uri vizuale. A doua suprafata este MCP, folosita de Ploinky si de alti agenti pentru a porni research-uri controlate prin tool-uri.
+Agentul are doua moduri principale de folosire:
 
-Agentul ruleaza intr-un singur container. In container exista doua servere HTTP si un environment Python:
+- UI-ul oficial GPT Researcher, pentru interactiune vizuala din browser.
+- Tool-uri MCP, pentru apeluri controlate din alti agenti Ploinky.
 
-Python virtual environment contine pachetul `gpt-researcher` si dependintele folosite de tool-urile MCP.
+In ambele cazuri, modelele LLM si embeddings sunt trimise prin Soul Gateway, iar web search-ul este trimis prin SearchAgent. Agentul nu foloseste direct chei de model in fisiere de configurare.
 
-GPT Researcher App serveste UI-ul oficial si endpoint-urile sale HTTP/WebSocket.
+## Componente
 
-Ploinky AgentServer expune tool-urile finale catre routerul Ploinky.
-
-## Python Environment
-
-Environment-ul Python este creat la instalare in:
+La instalare, agentul creeaza un virtual environment Python in:
 
 ```text
 /opt/gpt-researcher-venv
 ```
 
-Scriptul de instalare instaleaza pachetele principale:
+In acest environment este instalat pachetul `gpt-researcher` impreuna cu dependintele necesare.
 
-```text
-gpt-researcher
-langchain-mcp-adapters
-ddgs
-```
-
-Acest environment este folosit de tool-ul MCP:
-
-```text
-start_research
-```
-
-Tool-ul ruleaza scriptul:
-
-```text
-/code/scripts/start-research.py
-```
-
-care incarca modulele locale din:
-
-```text
-/code/scripts/gpt_researcher_agent
-```
-
-Aceste module gestioneaza input-ul MCP, setarile persistente, integrarea GPT Researcher si providerul custom Soul Gateway.
-
-## GPT Researcher Application
-
-UI-ul oficial GPT Researcher este instalat separat de pachetul Python.
-
-La instalare, agentul cloneaza repository-ul oficial:
-
-```text
-https://github.com/assafelovic/gpt-researcher.git
-```
-
-in directorul:
+Agentul instaleaza si aplicatia oficiala GPT Researcher in:
 
 ```text
 /opt/gpt-researcher-app
 ```
 
-Dependintele aplicatiei sunt instalate din:
+La start, scriptul `/code/scripts/start-gpt-researcher.sh` porneste aplicatia oficiala GPT Researcher si apoi porneste Ploinky AgentServer. AgentServer citeste `mcp-config.json` si expune tool-urile MCP ale agentului.
 
-```text
-/opt/gpt-researcher-app/requirements.txt
-```
+`PYTHONPATH` include `/code/scripts`, astfel incat Python incarca `sitecustomize.py`. Acest hook aplica aceleasi setari si patch-uri GPT Researcher care sunt folosite si de tool-ul MCP `start_research`.
 
-La start, aplicatia este pornita cu:
+## Setari persistente
 
-```text
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-Scriptul de start seteaza:
-
-```text
-PYTHONPATH=/code/scripts
-```
-
-Astfel, Python incarca automat:
-
-```text
-/code/scripts/sitecustomize.py
-```
-
-inainte de initializarea serverului. Acest hook aplica aceleasi setari persistente si aceleasi patch-uri Soul Gateway folosite de tool-ul MCP `start_research`.
-
-GPT Researcher App asculta in container pe portul:
-
-```text
-8000
-```
-
-Acest port nu trebuie folosit ca suprafata publica directa. El este publicat prin mecanismul Ploinky `additionalServerPort` si rutat prin routerul Ploinky.
-
-UI-ul este accesibil din browser la:
-
-```text
-http://gptresearcher.localhost:8080/
-```
-
-Portul `8080` este portul routerului Ploinky din workspace, nu portul containerului.
-
-## Ploinky AgentServer
-
-Ploinky AgentServer este pornit de scriptul:
-
-```text
-/code/scripts/start-gpt-researcher.sh
-```
-
-dupa ce serverul GPT Researcher UI este pornit in background.
-
-AgentServer asculta in container pe portul:
-
-```text
-7000
-```
-
-Aceasta este suprafata oficiala MCP a agentului.
-
-Routerul Ploinky ajunge la AgentServer atunci cand un client foloseste:
-
-```text
-/GPTResearcher/mcp
-```
-
-AgentServer citeste:
-
-```text
-mcp-config.json
-```
-
-identifica tool-urile permise si executa comenzile definite de agent.
-
-## Dashboard Request Flow
-
-Fluxul UI-ului oficial GPT Researcher foloseste host routing.
-
-Browserul acceseaza:
-
-```text
-http://gptresearcher.localhost:8080/
-```
-
-Routerul Ploinky identifica agentul dupa subdomeniul:
-
-```text
-gptresearcher.localhost
-```
-
-si forwardeaza cererea catre `additionalServerPort`, adica serverul GPT Researcher App din container pe portul 8000.
-
-Din perspectiva aplicatiei GPT Researcher, cererile ajung la radacina aplicatiei.
-
-Astfel, endpoint-uri precum:
-
-```text
-/
-/ws
-/static
-```
-
-functioneaza natural, fara prefixul `/services/gpt-researcher`.
-
-UI-ul foloseste si WebSocket pentru status si progres live. Fluxul WebSocket este:
-
-```text
-Browser
-Ploinky Router
-GPT Researcher App pe portul 8000
-```
-
-Conexiunea WebSocket foloseste:
-
-```text
-ws://gptresearcher.localhost:8080/ws
-```
-
-si este proxied de router catre:
-
-```text
-ws://<container>:8000/ws
-```
-
-## MCP Request Flow
-
-Fluxul MCP este separat de UI.
-
-Un agent sau un client Ploinky apeleaza:
-
-```text
-/GPTResearcher/mcp
-```
-
-Routerul aplica autentificarea si politicile MCP.
-
-AgentServer executa tool-ul solicitat.
-
-Pentru research, AgentServer executa:
-
-```text
-/opt/gpt-researcher-venv/bin/python /code/scripts/start-research.py
-```
-
-Scriptul Python citeste setarile persistente, configureaza variabilele GPT Researcher si porneste research-ul prin API-ul Python:
-
-```text
-GPTResearcher(...).conduct_research()
-GPTResearcher(...).write_report()
-```
-
-Tool-ul primeste `query` separat de `moreContext`. `query` este trimis curat catre instanta `GPTResearcher`; nu este concatenat cu lista de fisiere si nu este modificat cu context local. `moreContext` ramane un camp optional rezervat pentru extensii ulterioare si este pastrat in payload-ul de raspuns, dar nu participa in prezent la search.
-
-Scriptul seteaza intotdeauna:
-
-```text
-DOC_PATH=<workingDir>
-```
-
-si creeaza instanta cu valoarea persistata:
-
-```text
-report_source=<reportSource>
-```
-
-Valorile suportate pentru `reportSource` sunt `web`, `local` si `hybrid`. `web` foloseste doar web search si ignora documentele din `DOC_PATH`. `local` foloseste documentele locale prin mecanismul nativ GPT Researcher `DOC_PATH`. `hybrid` combina documentele locale cu web search prin SearchAgent. In toate cazurile, lista de fisiere nu este transformata in query de web search.
-
-Rezultatul este intors catre AgentServer, apoi catre router si client.
-
-## Settings Storage
-
-Setarile non-secret sunt salvate in root-ul persistent al agentului, nu in `/code` si nu in workspace-ul global al userului.
-
-Fisierul folosit este:
+Setarile agentului sunt salvate intr-un singur fisier JSON:
 
 ```text
 $HOME/gpt-researcher-settings.json
 ```
 
-Acest fisier contine:
+In container, `$HOME` este root-ul persistent al agentului (`/root`). In Ploinky, acest root este mapat pe host in:
 
 ```text
-fastLlm
-smartLlm
-strategicLlm
-embedding
-searchProvider
-reportSource
+.data/GPTResearcher
 ```
 
-Fisierul nu contine provider base URLs si nu contine chei API.
+Deci fisierul de settings apare pe host ca:
 
-## Provider Configuration
+```text
+.data/GPTResearcher/gpt-researcher-settings.json
+```
 
-GPTResearcher foloseste Soul Gateway pentru LLM si embeddings si SearchAgent pentru web search.
+Fisierul contine doar setari non-secret:
 
-Setarile persistente contin model IDs brute, fara prefixul `soul_gateway:`.
+```json
+{
+  "fastLlm": "codex-api/gpt-5.4-mini",
+  "smartLlm": "codex-api/gpt-5.5",
+  "strategicLlm": "codex-api/gpt-5.4-mini",
+  "embedding": "codestral-embed",
+  "searchProvider": "duckduckgo",
+  "reportSource": "web"
+}
+```
 
-La runtime, scriptul Python transforma automat aceste valori in:
+Daca fisierul lipseste, codul foloseste valorile default de mai sus. La install, fisierul este creat doar daca nu exista deja.
+
+Cheile API, tokenurile Ploinky si secretele providerilor nu se salveaza in acest fisier.
+
+## Settings UI
+
+Modalul de settings din IDE este implementat de pluginul:
+
+```text
+IDE-plugins/gpt-researcher-settings
+```
+
+Pluginul nu scrie direct pe disk. El apeleaza tool-urile MCP:
+
+- `gpt_researcher_get_settings`
+- `gpt_researcher_update_settings`
+- `gpt_researcher_list_models`
+
+Lista de modele vine din Soul Gateway. Lista de provideri de search vine din SearchAgent. In UI se pot seta:
+
+- Fast LLM
+- Smart LLM
+- Strategic LLM
+- Embedding
+- Search Provider
+- Report Source
+
+`Report Source` poate fi:
+
+- `web`: foloseste doar surse de pe internet prin SearchAgent.
+- `local`: foloseste doar documentele locale din `DOC_PATH`.
+- `hybrid`: combina documentele locale cu web search prin SearchAgent.
+
+## Configurarea GPT Researcher la runtime
+
+Setarile persistente sunt aplicate inainte de crearea instantei GPT Researcher.
+
+Modelele sunt transformate in variabilele asteptate de GPT Researcher:
 
 ```text
 FAST_LLM=soul_gateway:<fastLlm>
@@ -275,227 +112,114 @@ RETRIEVER=search_agent
 SEARCH_AGENT_PROVIDER=<searchProvider>
 ```
 
-Setarile sunt aplicate la runtime de scriptul Python inainte ca instanta `GPTResearcher` sa fie creata.
+Providerul `soul_gateway` este adaugat prin patch local in `soul_gateway.py`. Acest provider trimite chat completions si embeddings catre Soul Gateway prin routerul Ploinky si foloseste `PLOINKY_AGENT_API_KEY` ca autorizare.
 
-Pentru serverul UI oficial, aceleasi setari sunt aplicate la pornirea procesului Python prin `sitecustomize.py`, astfel incat cercetarile lansate din UI si cercetarile lansate prin MCP folosesc aceleasi modele si acelasi provider de search.
+Retrieverul `search_agent` este tot un patch local. El trimite cereri de search catre SearchAgent prin routerul Ploinky. Payload-ul principal este:
 
-Nu exista fallback catre OpenAI, Ollama, Mistral, Azure, OpenRouter sau un Soul Gateway remote configurat manual.
-
-## Soul Gateway Provider
-
-Agentul include un provider custom Python pentru Soul Gateway.
-
-Exemple de model IDs salvate in settings:
-
-```text
-codex-api/gpt-5.5
-codex-api/gpt-5.4-mini
-codestral-embed
-duckduckgo
+```json
+{
+  "provider": "<searchProvider>",
+  "query": "<query>",
+  "maxResults": 5
+}
 ```
 
-Providerul custom trimite cereri OpenAI-compatible catre:
+SearchAgent intoarce rezultate standardizate, iar acest agent le adapteaza la forma asteptata de GPT Researcher (`title`, `href`, `url`, `body`, `content`).
+
+## Search prin SearchAgent
+
+GPTResearcher nu apeleaza direct Tavily, Brave, DuckDuckGo sau alti provideri de search. Pentru web search, agentul foloseste intotdeauna SearchAgent.
+
+Providerul ales in settings (`searchProvider`) este transmis catre SearchAgent la fiecare cautare. SearchAgent este responsabil pentru:
+
+- alegerea providerului concret de search;
+- citirea cheilor de provider din environment-ul lui;
+- apelarea API-ului providerului;
+- normalizarea raspunsului la forma standard `{ results: [...] }`.
+
+GPTResearcher primeste inapoi doar rezultatele normalizate si le transforma in formatul asteptat de libraria `gpt-researcher`.
+
+Query-ul trimis catre SearchAgent este query-ul generat de GPT Researcher in timpul pipeline-ului sau de research. Lista de fisiere locale nu este lipita in acest query. Daca `reportSource=local`, GPT Researcher foloseste documentele din `DOC_PATH`; daca `reportSource=hybrid`, foloseste atat `DOC_PATH`, cat si web search prin SearchAgent.
+
+## Flow-ul tool-ului `start_research`
+
+Tool-ul MCP `start_research` ruleaza:
 
 ```text
-${PLOINKY_ROUTER_URL}/services/soul-gateway/v1
+/opt/gpt-researcher-venv/bin/python /code/scripts/start-research.py
 ```
 
-si foloseste:
+Input-ul important este:
+
+- `query`: cererea de research trimisa curat catre GPT Researcher.
+- `moreContext`: camp optional, pastrat in raspuns, dar nefolosit momentan in query sau search.
+- `reportType`: tipul raportului GPT Researcher; default `research_report`.
+- `workingDir`: director din `WORKSPACE_PATH` unde se cauta documente locale si unde se salveaza raportul.
+
+`workingDir` trebuie sa fie in interiorul `WORKSPACE_PATH`. Daca lipseste, se foloseste radacina `WORKSPACE_PATH`. Directorul este creat daca nu exista.
+
+Inainte de research, agentul seteaza:
 
 ```text
-PLOINKY_AGENT_API_KEY
+DOC_PATH=<workingDir>
 ```
 
-pentru headerul `Authorization`.
+Instanta GPT Researcher este creata cu:
 
-Providerul implementeaza chat completions si embeddings. Search-ul este delegat catre SearchAgent prin providerul selectat in `searchProvider`.
+```python
+GPTResearcher(
+    query=query,
+    report_type=report_type,
+    report_source=settings["reportSource"],
+)
+```
 
-Embeddings raman non-streaming. Chat completions pot necesita tratament special pentru modelele lente, deoarece cererile non-streaming lungi pot expira la gateway sau la Cloudflare.
+Agentul nu concateneaza lista de fisiere locale in query. Query-ul trimis la GPT Researcher ramane query-ul primit de tool. GPT Researcher decide apoi sub-query-urile si apelurile de search conform propriului pipeline.
 
-## Settings Plugin
+## Documente locale si rapoarte
 
-Modalul de configurare din AchillesIDE este furnizat de pluginul GPTResearcher Settings Plugin.
+Documentele locale sunt citite de GPT Researcher prin `DOC_PATH`, care pointeaza la `workingDir`.
 
-Acesta apare in setarile workspace-ului.
+Semantica `reportSource` este:
 
-Pluginul citeste setarile prin tool-ul:
+- `web`: `DOC_PATH` este setat, dar GPT Researcher foloseste doar web search.
+- `local`: GPT Researcher incarca documentele din `DOC_PATH` si foloseste context local.
+- `hybrid`: GPT Researcher incarca documentele din `DOC_PATH` si face si web search.
+
+Raportul final este salvat in `workingDir` cu nume generat din timestamp si query:
 
 ```text
-gpt_researcher_get_settings
+gpt-researcher-<timestamp>-<query-slug>.md
 ```
 
-si le salveaza prin tool-ul:
+Raspunsul tool-ului include raportul, calea fisierului salvat, sursele, costurile daca sunt disponibile, fisierele gasite in `workingDir` si un tail de log.
 
-```text
-gpt_researcher_update_settings
-```
+## Date persistente
 
-Ambele operatii trec prin MCP si prin AgentServer. Pluginul nu scrie direct pe disk.
+Agentul foloseste doua zone diferite de date:
 
-Pluginul permite configurarea modelelor:
+- `$HOME` pentru datele persistente ale agentului. Aici se afla `gpt-researcher-settings.json`, iar pe host corespunde cu `.data/GPTResearcher`.
+- `WORKSPACE_PATH` pentru fisierele de lucru ale utilizatorului. Aici se afla `workingDir`, documentele locale si rapoartele generate.
 
-```text
-Fast LLM
-Smart LLM
-Strategic LLM
-Embedding
-Search Provider
-Report Source
-```
+Aceasta separare este intentionata: setarile agentului sunt date ale agentului, iar rapoartele si documentele sunt date ale workspace-ului de lucru.
 
-Pluginul include si un buton pentru deschiderea UI-ului oficial GPT Researcher:
+## Tool-uri MCP
 
-```text
-http://gptresearcher.localhost:8080/
-```
+Agentul expune urmatoarele tool-uri:
 
-## Exposed MCP Tools
+- `start_research`: porneste un research GPT Researcher si salveaza raportul.
+- `gpt_researcher_get_settings`: citeste setarile persistente.
+- `gpt_researcher_update_settings`: salveaza setarile persistente.
+- `gpt_researcher_list_models`: listeaza modelele Soul Gateway si providerii SearchAgent pentru UI.
 
-AgentServer expune urmatoarele tool-uri MCP:
+`start_research` este marcat `internal`, fiind destinat apelurilor agent-to-agent. Tool-urile de settings sunt folosite de pluginul IDE.
 
-```text
-start_research
-gpt_researcher_get_settings
-gpt_researcher_list_models
-gpt_researcher_update_settings
-```
+## Reguli operationale
 
-Tool-ul:
+Setarile de model si search trebuie schimbate prin fisierul persistent sau prin modalul IDE, nu prin editarea codului.
 
-```text
-start_research
-```
+`moreContext` exista pentru extensii viitoare, dar nu trebuie tratat ca sursa activa de search.
 
-porneste un research GPT Researcher si intoarce raportul, sursele, costurile si contextul colectat.
+Pentru research pe documente locale, foloseste `reportSource=local` sau `reportSource=hybrid`. `reportSource=web` ignora documentele locale chiar daca `DOC_PATH` este setat.
 
-Tool-ul este destinat apelurilor interne agent-to-agent.
-
-Tool-ul:
-
-```text
-gpt_researcher_get_settings
-```
-
-citeste setarile persistente non-secret.
-
-Tool-ul:
-
-```text
-gpt_researcher_update_settings
-```
-
-salveaza setarile persistente non-secret.
-
-Niciun tool nu expune direct chei API.
-
-Orice operatie noua trebuie declarata explicit in:
-
-```text
-mcp-config.json
-```
-
-si trebuie sa respecte modelul de acces al Ploinky.
-
-## Operational Configuration
-
-Urmatoarele variabile modifica comportamentul operational al agentului:
-
-```text
-HOME
-```
-
-Root-ul persistent al agentului in care se salveaza `gpt-researcher-settings.json`. In container este `/root`, mapat pe host la `.data/GPTResearcher`.
-
-Nu sunt injectate chei API pentru retrieverele native GPT Researcher.
-
-Providerul LLM si providerul de search nu sunt configurabile prin environment; ambele sunt intotdeauna Soul Gateway local prin credentialele Ploinky generate.
-
-## Separation of Responsibilities
-
-Separarea responsabilitatilor este intentionata.
-
-Browserul utilizeaza exclusiv GPT Researcher App pentru UI-ul oficial.
-
-Tool-urile utilizeaza exclusiv AgentServer si API-ul Python GPT Researcher pentru acces controlat prin MCP.
-
-Setarile sunt modificate prin MCP, nu prin acces direct la filesystem din UI.
-
-Cheile API sunt furnizate prin environment, nu prin pluginul de setari.
-
-Clientii Ploinky nu comunica direct cu portul 8000 al containerului.
-
-Clientii Ploinky nu comunica direct cu portul 7000 al containerului.
-
-Singurele suprafete externe expuse sunt:
-
-UI-ul GPT Researcher prin routerul Ploinky.
-
-MCP-ul GPTResearcher prin routerul Ploinky.
-
-## Architecture Invariants
-
-Arhitectura respecta cateva reguli fundamentale.
-
-Toate procesele interne ruleaza in acelasi container.
-
-GPT Researcher App ruleaza pe portul intern:
-
-```text
-8000
-```
-
-Ploinky AgentServer ruleaza pe portul intern:
-
-```text
-7000
-```
-
-Portul 8000 nu trebuie publicat direct ca suprafata stabila a hostului.
-
-Portul 7000 este rezervat pentru AgentServer si mecanismele MCP.
-
-UI-ul browser trebuie accesat prin:
-
-```text
-http://gptresearcher.localhost:8080/
-```
-
-MCP-ul trebuie accesat prin:
-
-```text
-/GPTResearcher/mcp
-```
-
-Setarile persistente trebuie salvate in:
-
-```text
-$HOME/gpt-researcher-settings.json
-```
-
-si nu in `/code` sau in workspace-ul global.
-
-Secretele nu trebuie salvate in fisierul de settings.
-
-## Startup Sequence
-
-Ordinea de pornire este obligatorie.
-
-Environment-ul Python este pregatit la instalare.
-
-Repository-ul oficial GPT Researcher este clonat la instalare.
-
-Dependintele aplicatiei GPT Researcher sunt instalate in acelasi venv.
-
-La start, scriptul seteaza `PYTHONPATH=/code/scripts`, astfel incat hook-ul `sitecustomize.py` poate configura runtime-ul GPT Researcher.
-
-GPT Researcher App porneste apoi pe portul 8000.
-
-Ploinky AgentServer porneste dupa aceea pe portul 7000.
-
-Readiness-ul verifica atat AgentServer, cat si UI-ul GPT Researcher.
-
-Daca UI-ul GPT Researcher nu raspunde pe portul 8000, agentul nu este complet functional pentru browser.
-
-Daca AgentServer nu raspunde pe portul 7000, agentul nu este functional pentru MCP.
-
-Daca oricare dintre aceste procese principale se opreste, containerul nu mai reprezinta un GPTResearcher agent functional si trebuie restartat.
+Pentru debugging, logurile importante sunt emise de scriptul `start_research` si includ `queryChars`, `reportType`, `reportSource`, modelele alese si providerul de search.
