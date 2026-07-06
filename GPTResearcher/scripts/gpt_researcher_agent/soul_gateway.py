@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from types import SimpleNamespace
 
 from .io_utils import normalize_string
@@ -178,17 +177,28 @@ class SoulGatewayEmbeddings(Embeddings):
         return self._embed([text])[0]
 
 
-class SoulGatewaySearchRetriever:
-    __name__ = "SoulGatewaySearchRetriever"
+def search_agent_router_base_url():
+    base_url = normalize_string(os.environ.get("PLOINKY_ROUTER_URL"))
+    if not base_url:
+        raise RuntimeError("SearchAgent retriever requires PLOINKY_ROUTER_URL.")
+    return base_url.rstrip("/")
+
+
+def search_agent_headers():
+    return {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+class SearchAgentSearchRetriever:
+    __name__ = "SearchAgentSearchRetriever"
 
     def __init__(self, query, query_domains=None):
         self.query = query
         self.query_domains = query_domains or []
-        self.model = normalize_string(os.environ.get("SOUL_GATEWAY_SEARCH_MODEL"))
-        if not self.model:
-            raise RuntimeError("Soul Gateway retriever requires SOUL_GATEWAY_SEARCH_MODEL.")
-        self.chat_url = resolve_soul_gateway_chat_url(soul_gateway_router_base_url())
-        self.api_key = soul_gateway_api_key()
+        self.provider = normalize_string(os.environ.get("SEARCH_AGENT_PROVIDER")) or "duckduckgo"
+        self.search_url = f"{search_agent_router_base_url()}/services/search-agent/search"
 
     def search(self, max_results=5):
         import httpx
@@ -199,96 +209,39 @@ class SoulGatewaySearchRetriever:
             query = f"{query}\n\nRestrict results to these domains when possible: {domains}"
 
         payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": query}],
-            "stream": False,
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
+            "provider": self.provider,
+            "query": query,
+            "maxResults": max_results,
         }
         with httpx.Client(timeout=None) as client:
-            response = client.post(self.chat_url, headers=headers, json=payload)
+            response = client.post(self.search_url, headers=search_agent_headers(), json=payload)
             if response.status_code >= 400:
                 raise RuntimeError(
-                    f"Soul Gateway search HTTP {response.status_code}: {response.text}"
+                    f"SearchAgent search HTTP {response.status_code}: {response.text}"
                 )
             data = response.json()
 
         if data.get("error"):
             raise RuntimeError(json.dumps(data["error"], ensure_ascii=False))
 
-        content = data.get("choices", [{}])[0].get("message", {}).get("content")
-        if not content:
-            raise RuntimeError(f"Soul Gateway search returned no content: {data}")
+        results = data.get("results")
+        if not isinstance(results, list):
+            raise RuntimeError(f"SearchAgent returned invalid results payload: {data}")
 
-        return parse_soul_gateway_search_results(content, max_results=max_results)
-
-
-def parse_soul_gateway_search_results(content, max_results=5):
-    text = normalize_string(content)
-    if not text:
-        return []
-
-    results = []
-    current = None
-
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        heading = re.match(r"^#{1,4}\s*\[?(\d+)\]?\s*(.+)$", line)
-        numbered = re.match(r"^\d+\.\s+\*\*(.+?)\*\*(?:\s+\(via .+?\))?$", line)
-        if heading or numbered:
-            if current:
-                results.append(current)
-            title = heading.group(2) if heading else numbered.group(1)
-            current = {"title": title.strip(), "href": "", "body": ""}
-            continue
-
-        if current is None:
-            continue
-
-        source_url = ""
-        if line.startswith(">"):
-            source_url = line[1:].strip()
-        elif line.startswith("http://") or line.startswith("https://"):
-            source_url = line
-
-        if source_url:
-            current["href"] = source_url
-            current["url"] = source_url
-            continue
-
-        if (
-            line.startswith("---")
-            or line.lower().startswith("**sources:**")
-            or re.match(r"^\[\d+\]\s+\[.+?\]\(.+?\)$", line)
-        ):
-            continue
-
-        if current["body"]:
-            current["body"] += " "
-        current["body"] += line
-
-    if current:
-        results.append(current)
-
-    if not results:
-        raise RuntimeError(f"Soul Gateway search response had no parseable results: {text[:1000]}")
-
-    normalized = []
-    for result in results[:max_results]:
-        url = result.get("href") or result.get("url") or ""
-        normalized.append({
-            "title": result.get("title") or url or "Soul Gateway search result",
-            "href": url,
-            "url": url,
-            "body": result.get("body") or "",
-            "content": result.get("body") or "",
-        })
-    return normalized
+        normalized = []
+        for result in results[:max_results]:
+            if not isinstance(result, dict):
+                continue
+            url = normalize_string(result.get("url") or result.get("href"))
+            snippet = normalize_string(result.get("snippet") or result.get("body") or result.get("content"))
+            normalized.append({
+                "title": normalize_string(result.get("title")) or url or "SearchAgent result",
+                "href": url,
+                "url": url,
+                "body": snippet,
+                "content": snippet,
+            })
+        return normalized
 
 
 def patch_gpt_researcher_llm_providers():
@@ -351,14 +304,14 @@ def patch_gpt_researcher_retriever():
     original_get_all_retriever_names = retriever_utils.get_all_retriever_names
 
     def get_retriever(retriever):
-        if retriever == "soul_gateway":
-            return SoulGatewaySearchRetriever
+        if retriever == "search_agent":
+            return SearchAgentSearchRetriever
         return original_get_retriever(retriever)
 
     def get_all_retriever_names():
         names = list(original_get_all_retriever_names() or [])
-        if "soul_gateway" not in names:
-            names.append("soul_gateway")
+        if "search_agent" not in names:
+            names.append("search_agent")
         return names
 
     retriever_module.get_retriever = get_retriever

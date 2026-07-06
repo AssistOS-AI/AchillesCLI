@@ -217,6 +217,22 @@ GPTResearcher(...).conduct_research()
 GPTResearcher(...).write_report()
 ```
 
+Tool-ul primeste `query` separat de `moreContext`. `query` este trimis curat catre instanta `GPTResearcher`; nu este concatenat cu lista de fisiere si nu este modificat cu context local. `moreContext` ramane un camp optional rezervat pentru extensii ulterioare si este pastrat in payload-ul de raspuns, dar nu participa in prezent la search.
+
+Scriptul seteaza intotdeauna:
+
+```text
+DOC_PATH=<workingDir>
+```
+
+si creeaza instanta cu valoarea persistata:
+
+```text
+report_source=<reportSource>
+```
+
+Valorile suportate pentru `reportSource` sunt `web`, `local` si `hybrid`. `web` foloseste doar web search si ignora documentele din `DOC_PATH`. `local` foloseste documentele locale prin mecanismul nativ GPT Researcher `DOC_PATH`. `hybrid` combina documentele locale cu web search prin SearchAgent. In toate cazurile, lista de fisiere nu este transformata in query de web search.
+
 Rezultatul este intors catre AgentServer, apoi catre router si client.
 
 ## Settings Storage
@@ -236,14 +252,15 @@ fastLlm
 smartLlm
 strategicLlm
 embedding
-searchModel
+searchProvider
+reportSource
 ```
 
 Fisierul nu contine provider base URLs si nu contine chei API.
 
 ## Provider Configuration
 
-GPTResearcher foloseste exclusiv providerul local Soul Gateway.
+GPTResearcher foloseste Soul Gateway pentru LLM si embeddings si SearchAgent pentru web search.
 
 Setarile persistente contin model IDs brute, fara prefixul `soul_gateway:`.
 
@@ -254,13 +271,13 @@ FAST_LLM=soul_gateway:<fastLlm>
 SMART_LLM=soul_gateway:<smartLlm>
 STRATEGIC_LLM=soul_gateway:<strategicLlm>
 EMBEDDING=soul_gateway:<embedding>
-RETRIEVER=soul_gateway
-SOUL_GATEWAY_SEARCH_MODEL=<searchModel>
+RETRIEVER=search_agent
+SEARCH_AGENT_PROVIDER=<searchProvider>
 ```
 
 Setarile sunt aplicate la runtime de scriptul Python inainte ca instanta `GPTResearcher` sa fie creata.
 
-Pentru serverul UI oficial, aceleasi setari sunt aplicate la pornirea procesului Python prin `sitecustomize.py`, astfel incat cercetarile lansate din UI si cercetarile lansate prin MCP folosesc acelasi provider, aceleasi modele si acelasi model de search.
+Pentru serverul UI oficial, aceleasi setari sunt aplicate la pornirea procesului Python prin `sitecustomize.py`, astfel incat cercetarile lansate din UI si cercetarile lansate prin MCP folosesc aceleasi modele si acelasi provider de search.
 
 Nu exista fallback catre OpenAI, Ollama, Mistral, Azure, OpenRouter sau un Soul Gateway remote configurat manual.
 
@@ -274,7 +291,7 @@ Exemple de model IDs salvate in settings:
 codex-api/gpt-5.5
 codex-api/gpt-5.4-mini
 codestral-embed
-duckduckgo/search-duckduckgo
+duckduckgo
 ```
 
 Providerul custom trimite cereri OpenAI-compatible catre:
@@ -291,7 +308,7 @@ PLOINKY_AGENT_API_KEY
 
 pentru headerul `Authorization`.
 
-Providerul implementeaza atat chat completions, cat si embeddings.
+Providerul implementeaza chat completions si embeddings. Search-ul este delegat catre SearchAgent prin providerul selectat in `searchProvider`.
 
 Embeddings raman non-streaming. Chat completions pot necesita tratament special pentru modelele lente, deoarece cererile non-streaming lungi pot expira la gateway sau la Cloudflare.
 
@@ -322,7 +339,8 @@ Fast LLM
 Smart LLM
 Strategic LLM
 Embedding
-Search Model
+Search Provider
+Report Source
 ```
 
 Pluginul include si un buton pentru deschiderea UI-ului oficial GPT Researcher:

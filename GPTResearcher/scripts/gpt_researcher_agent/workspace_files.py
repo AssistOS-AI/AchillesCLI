@@ -43,21 +43,6 @@ def list_working_dir_files(working_dir):
     return entries
 
 
-def build_files_context(files):
-    if not files:
-        return ""
-    lines = [
-        "Local files available in the working directory:",
-        "",
-    ]
-    lines.extend(f"- {path}" for path in files)
-    lines.extend([
-        "",
-        "Use these local file paths as relevant workspace context for the research task.",
-    ])
-    return "\n".join(lines)
-
-
 def slugify_filename(value):
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", normalize_string(value).lower()).strip("-")
     return slug[:64] or "research-report"

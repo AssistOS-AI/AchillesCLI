@@ -19,7 +19,7 @@
                 },
                 "moreContext": {
                     "type": "string",
-                    "description": "Optional extra context or instructions for GPTResearcher.",
+                    "description": "Optional reserved extra context. It is preserved in the response payload but is not injected into the GPTResearcher search query.",
                     "optional": true
                 },
                 "reportType": {
@@ -29,7 +29,7 @@
                 },
                 "workingDir": {
                     "type": "string",
-                    "description": "Optional working directory inside WORKSPACE_PATH. Direct child files are listed into context and the final Markdown report is saved there.",
+                    "description": "Optional working directory inside WORKSPACE_PATH. Direct child files are exposed to GPTResearcher through DOC_PATH and the final Markdown report is saved there.",
                     "optional": true
                 }
             }
@@ -37,7 +37,7 @@
         {
             "name": "gpt_researcher_get_settings",
             "title": "Get GPTResearcher Settings",
-            "description": "Returns persisted GPT Researcher model and Soul Gateway search settings.",
+            "description": "Returns persisted GPT Researcher model, SearchAgent provider, and report source settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/get-settings.mjs"],
             "cwd": "/code",
@@ -46,8 +46,8 @@
         },
         {
             "name": "gpt_researcher_list_models",
-            "title": "List Soul Gateway Models",
-            "description": "Returns Soul Gateway /v1/models metadata for GPTResearcher settings.",
+            "title": "List GPTResearcher Model Options",
+            "description": "Returns Soul Gateway model metadata and SearchAgent providers for GPTResearcher settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/list-soul-gateway-models.mjs"],
             "cwd": "/code",
@@ -57,7 +57,7 @@
         {
             "name": "gpt_researcher_update_settings",
             "title": "Update GPTResearcher Settings",
-            "description": "Persists GPT Researcher model and Soul Gateway search settings.",
+            "description": "Persists GPT Researcher model, SearchAgent provider, and report source settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/update-settings.mjs"],
             "cwd": "/code",
@@ -83,9 +83,14 @@
                     "description": "Soul Gateway embedding model id, without the soul_gateway: prefix.",
                     "optional": true
                 },
-                "searchModel": {
+                "searchProvider": {
                     "type": "string",
-                    "description": "Soul Gateway search model id.",
+                    "description": "SearchAgent provider key.",
+                    "optional": true
+                },
+                "reportSource": {
+                    "type": "string",
+                    "description": "GPT Researcher report source. Supported values: web, local, hybrid. Defaults to web.",
                     "optional": true
                 }
             }

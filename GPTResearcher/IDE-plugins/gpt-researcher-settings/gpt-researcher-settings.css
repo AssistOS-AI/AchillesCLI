@@ -35,6 +35,7 @@
 
 .gptr-settings-grid .form-item {
     margin: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 9px;
@@ -46,6 +47,16 @@
 
 .gptr-settings-grid .form-input {
     min-height: 42px;
+}
+
+.gptr-field-help {
+    max-width: 100%;
+    min-height: 1.2rem;
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    line-height: 1.35;
+    overflow-wrap: break-word;
+    white-space: normal;
 }
 
 .gptr-model-combobox {

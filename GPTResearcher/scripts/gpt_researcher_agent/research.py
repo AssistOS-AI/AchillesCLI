@@ -1,13 +1,14 @@
 import contextlib
 import io
+import os
 import sys
 import time
 import traceback
 
 from .io_utils import LiveLogTee, log_line, normalize_string, optional_call, write_json
-from .settings import apply_settings, build_research_query, load_settings
+from .settings import apply_settings, load_settings
 from .soul_gateway import patch_gpt_researcher_llm_providers, patch_gpt_researcher_retriever
-from .workspace_files import build_files_context, list_working_dir_files, resolve_working_dir, write_report_file
+from .workspace_files import list_working_dir_files, resolve_working_dir, write_report_file
 
 
 async def run_research(payload):
@@ -16,7 +17,6 @@ async def run_research(payload):
     report_type = normalize_string(payload.get("reportType")) or "research_report"
     working_dir = resolve_working_dir(payload.get("workingDir"))
     working_files = list_working_dir_files(working_dir)
-    files_context = build_files_context(working_files)
 
     if not query:
         write_json({
@@ -26,24 +26,29 @@ async def run_research(payload):
         return 1
 
     started_at = time.time()
-    effective_query = build_research_query(query, more_context, files_context)
     log_buffer = io.StringIO()
 
     try:
         settings = load_settings()
         apply_settings(settings)
+        report_source = settings["reportSource"]
+        os.environ["DOC_PATH"] = working_dir
         log_line(
             "[GPTResearcher/start_research] start "
-            f"queryChars={len(query)} reportType={report_type} "
+            f"queryChars={len(query)} reportType={report_type} reportSource={report_source} "
             f"fastLlm={settings['fastLlm']} smartLlm={settings['smartLlm']} "
             f"strategicLlm={settings['strategicLlm']} embedding={settings['embedding']} "
-            f"retriever=soul_gateway searchModel={settings['searchModel']}"
+            f"retriever=search_agent searchProvider={settings['searchProvider']}"
         )
         patch_gpt_researcher_llm_providers()
         patch_gpt_researcher_retriever()
         from gpt_researcher import GPTResearcher
 
-        researcher = GPTResearcher(query=effective_query, report_type=report_type)
+        researcher = GPTResearcher(
+            query=query,
+            report_type=report_type,
+            report_source=report_source,
+        )
         live_logs = LiveLogTee(log_buffer, sys.stderr)
         with contextlib.redirect_stdout(live_logs), contextlib.redirect_stderr(live_logs):
             log_line("[GPTResearcher/start_research] conduct_research started")
@@ -60,6 +65,8 @@ async def run_research(payload):
             "query": query,
             "moreContext": more_context,
             "reportType": report_type,
+            "reportSource": report_source,
+            "docPath": working_dir,
             "settings": settings,
             "report": report,
             "reportPath": report_path,
@@ -83,6 +90,8 @@ async def run_research(payload):
             "query": query,
             "moreContext": more_context,
             "reportType": report_type,
+            "reportSource": locals().get("report_source"),
+            "docPath": locals().get("working_dir"),
             "settings": locals().get("settings"),
             "workingDir": locals().get("working_dir"),
             "workingFiles": locals().get("working_files"),

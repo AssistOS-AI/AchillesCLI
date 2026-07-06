@@ -16,7 +16,8 @@
     "opencodeAgent global",
     "piAgent global",
     "codexAgent global no-wait",
-    "GPTResearcher global no-wait"
+    "GPTResearcher global no-wait",
+    "proxies/searchAgent no-wait"
   ],
   "webchat": {
     "auth": "static"

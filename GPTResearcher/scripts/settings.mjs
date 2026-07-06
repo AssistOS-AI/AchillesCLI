@@ -8,8 +8,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
     smartLlm: 'codex-api/gpt-5.5',
     strategicLlm: 'codex-api/gpt-5.4-mini',
     embedding: 'codestral-embed',
-    searchModel: 'duckduckgo/search-duckduckgo'
+    searchProvider: 'duckduckgo',
+    reportSource: 'web'
 });
+
+const REPORT_SOURCES = new Set(['web', 'local', 'hybrid']);
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -17,12 +20,14 @@ function trim(value) {
 
 export function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const reportSource = trim(input.reportSource) || DEFAULT_SETTINGS.reportSource;
     return {
         fastLlm: trim(input.fastLlm) || DEFAULT_SETTINGS.fastLlm,
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        searchModel: trim(input.searchModel) || DEFAULT_SETTINGS.searchModel
+        searchProvider: trim(input.searchProvider) || DEFAULT_SETTINGS.searchProvider,
+        reportSource: REPORT_SOURCES.has(reportSource) ? reportSource : DEFAULT_SETTINGS.reportSource
     };
 }
 

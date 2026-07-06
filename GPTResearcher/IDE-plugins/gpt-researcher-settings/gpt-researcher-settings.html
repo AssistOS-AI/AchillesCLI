@@ -42,12 +42,21 @@
                     </div>
                 </label>
                 <label class="form-item">
-                    <span class="form-label">Search Model</span>
-                    <div class="gptr-model-combobox" data-model-field="searchModel">
-                        <input id="gptrSearchModel" class="form-input gptr-model-input" type="text" spellcheck="false" autocomplete="off">
-                        <button class="gptr-model-toggle" type="button" data-model-toggle="searchModel" aria-label="Show search models">⌄</button>
-                        <div class="gptr-model-options" data-options-for="searchModel"></div>
+                    <span class="form-label">Search Provider</span>
+                    <div class="gptr-model-combobox" data-model-field="searchProvider">
+                        <input id="gptrSearchProvider" class="form-input gptr-model-input" type="text" spellcheck="false" autocomplete="off">
+                        <button class="gptr-model-toggle" type="button" data-model-toggle="searchProvider" aria-label="Show search providers">⌄</button>
+                        <div class="gptr-model-options" data-options-for="searchProvider"></div>
                     </div>
+                </label>
+                <label class="form-item">
+                    <span class="form-label">Report Source</span>
+                    <select id="gptrReportSource" class="form-input">
+                        <option value="web">web</option>
+                        <option value="local">local</option>
+                        <option value="hybrid">hybrid</option>
+                    </select>
+                    <span id="gptrReportSourceHelp" class="gptr-field-help"></span>
                 </label>
             </div>
         </section>

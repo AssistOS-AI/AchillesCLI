@@ -14,14 +14,15 @@ def _configure_gpt_researcher_runtime():
         patch_gpt_researcher_llm_providers()
         patch_gpt_researcher_retriever()
         sys.stderr.write(
-            "[GPTResearcher/sitecustomize] applied Soul Gateway settings "
+            "[GPTResearcher/sitecustomize] applied GPTResearcher settings "
             f"fastLlm={settings['fastLlm']} smartLlm={settings['smartLlm']} "
             f"strategicLlm={settings['strategicLlm']} embedding={settings['embedding']} "
-            f"searchModel={settings['searchModel']}\n"
+            f"retriever=search_agent searchProvider={settings['searchProvider']} "
+            f"reportSource={settings['reportSource']}\n"
         )
     except Exception as error:
         sys.stderr.write(
-            "[GPTResearcher/sitecustomize] failed to apply Soul Gateway settings: "
+            "[GPTResearcher/sitecustomize] failed to apply GPTResearcher settings: "
             f"{error}\n"
         )
         raise

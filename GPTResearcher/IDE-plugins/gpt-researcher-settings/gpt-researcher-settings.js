@@ -3,11 +3,18 @@ const DEFAULT_SETTINGS = Object.freeze({
     smartLlm: 'codex-api/gpt-5.5',
     strategicLlm: 'codex-api/gpt-5.4-mini',
     embedding: 'codestral-embed',
-    searchModel: 'duckduckgo/search-duckduckgo'
+    searchProvider: 'duckduckgo',
+    reportSource: 'web'
 });
 
 const LOG_PREFIX = '[GPTResearcher Settings]';
-const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding', 'searchModel']);
+const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding', 'searchProvider']);
+const REPORT_SOURCES = new Set(['web', 'local', 'hybrid']);
+const REPORT_SOURCE_HELP = Object.freeze({
+    web: 'Uses only internet sources through the selected search provider.',
+    local: 'Uses only local files from this agent workspace folder.',
+    hybrid: 'Uses both local files from this agent workspace folder and internet sources.'
+});
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -86,12 +93,14 @@ function parseToolPayload(result) {
 
 function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const reportSource = trim(input.reportSource) || DEFAULT_SETTINGS.reportSource;
     return {
         fastLlm: trim(input.fastLlm) || DEFAULT_SETTINGS.fastLlm,
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        searchModel: trim(input.searchModel) || DEFAULT_SETTINGS.searchModel
+        searchProvider: trim(input.searchProvider) || DEFAULT_SETTINGS.searchProvider,
+        reportSource: REPORT_SOURCES.has(reportSource) ? reportSource : DEFAULT_SETTINGS.reportSource
     };
 }
 
@@ -132,10 +141,10 @@ function normalizeModelPayload(value = {}) {
     const embeddingModels = Array.isArray(input.embeddingModels)
         ? input.embeddingModels.map(normalizeModel).filter(Boolean)
         : models.filter((model) => model.isEmbedding);
-    const searchModels = Array.isArray(input.searchModels)
-        ? input.searchModels.map(normalizeModel).filter(Boolean)
+    const searchProviders = Array.isArray(input.searchProviders)
+        ? input.searchProviders.map(normalizeModel).filter(Boolean)
         : models.filter((model) => model.isSearch);
-    return { models, chatModels, embeddingModels, searchModels };
+    return { models, chatModels, embeddingModels, searchProviders };
 }
 
 function searchTextForModel(model) {
@@ -201,25 +210,28 @@ export class GPTResearcherSettings {
             smartLlm: this.element.querySelector('#gptrSmartLlm'),
             strategicLlm: this.element.querySelector('#gptrStrategicLlm'),
             embedding: this.element.querySelector('#gptrEmbedding'),
-            searchModel: this.element.querySelector('#gptrSearchModel')
+            searchProvider: this.element.querySelector('#gptrSearchProvider'),
+            reportSource: this.element.querySelector('#gptrReportSource')
         };
         this.modelOptionLists = {
             fastLlm: this.element.querySelector('[data-options-for="fastLlm"]'),
             smartLlm: this.element.querySelector('[data-options-for="smartLlm"]'),
             strategicLlm: this.element.querySelector('[data-options-for="strategicLlm"]'),
             embedding: this.element.querySelector('[data-options-for="embedding"]'),
-            searchModel: this.element.querySelector('[data-options-for="searchModel"]')
+            searchProvider: this.element.querySelector('[data-options-for="searchProvider"]')
         };
         this.modelToggles = {
             fastLlm: this.element.querySelector('[data-model-toggle="fastLlm"]'),
             smartLlm: this.element.querySelector('[data-model-toggle="smartLlm"]'),
             strategicLlm: this.element.querySelector('[data-model-toggle="strategicLlm"]'),
             embedding: this.element.querySelector('[data-model-toggle="embedding"]'),
-            searchModel: this.element.querySelector('[data-model-toggle="searchModel"]')
+            searchProvider: this.element.querySelector('[data-model-toggle="searchProvider"]')
         };
         for (const field of MODEL_FIELDS) {
             this.bindModelCombobox(field);
         }
+        this.inputs.reportSource?.addEventListener('change', () => this.renderReportSourceHelp());
+        this.reportSourceHelpElement = this.element.querySelector('#gptrReportSourceHelp');
         this.statusElement = this.element.querySelector('#gptrSettingsStatus');
     }
 
@@ -266,13 +278,11 @@ export class GPTResearcherSettings {
             return this.mcpClientPromise;
         }
         this.mcpClientPromise = (async () => {
-            console.info(`${LOG_PREFIX} Importing MCP browser client.`);
             const module = await import('/MCPBrowserClient.js');
             if (!module || typeof module.createAgentClient !== 'function') {
                 console.error(`${LOG_PREFIX} MCP browser client module shape is invalid.`, { module });
                 throw new Error('MCP browser client module is unavailable.');
             }
-            console.info(`${LOG_PREFIX} Creating MCP client.`, { endpoint: '/GPTResearcher/mcp' });
             this.mcpClient = module.createAgentClient('/GPTResearcher/mcp');
             return this.mcpClient;
         })();
@@ -318,10 +328,18 @@ export class GPTResearcherSettings {
         if (this.inputs?.smartLlm) this.inputs.smartLlm.value = settings.smartLlm;
         if (this.inputs?.strategicLlm) this.inputs.strategicLlm.value = settings.strategicLlm;
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
-        if (this.inputs?.searchModel) this.inputs.searchModel.value = settings.searchModel;
+        if (this.inputs?.searchProvider) this.inputs.searchProvider.value = settings.searchProvider;
+        if (this.inputs?.reportSource) this.inputs.reportSource.value = settings.reportSource;
+        this.renderReportSourceHelp();
         for (const field of MODEL_FIELDS) {
             this.closeModelOptions(field);
         }
+    }
+
+    renderReportSourceHelp() {
+        if (!this.reportSourceHelpElement) return;
+        const source = trim(this.inputs?.reportSource?.value) || DEFAULT_SETTINGS.reportSource;
+        this.reportSourceHelpElement.textContent = REPORT_SOURCE_HELP[source] || REPORT_SOURCE_HELP.web;
     }
 
     collectSettingsFromInputs() {
@@ -330,7 +348,8 @@ export class GPTResearcherSettings {
             smartLlm: this.inputs?.smartLlm?.value,
             strategicLlm: this.inputs?.strategicLlm?.value,
             embedding: this.inputs?.embedding?.value,
-            searchModel: this.inputs?.searchModel?.value
+            searchProvider: this.inputs?.searchProvider?.value,
+            reportSource: this.inputs?.reportSource?.value
         });
     }
 
@@ -338,8 +357,8 @@ export class GPTResearcherSettings {
         if (field === 'embedding') {
             return this.state.models.embeddingModels || [];
         }
-        if (field === 'searchModel') {
-            return this.state.models.searchModels || [];
+        if (field === 'searchProvider') {
+            return this.state.models.searchProviders || [];
         }
         return this.state.models.chatModels || [];
     }
@@ -368,8 +387,8 @@ export class GPTResearcherSettings {
             empty.className = 'gptr-model-empty';
             if (field === 'embedding') {
                 empty.textContent = 'No matching embedding models.';
-            } else if (field === 'searchModel') {
-                empty.textContent = 'No matching search models.';
+            } else if (field === 'searchProvider') {
+                empty.textContent = 'No matching search providers.';
             } else {
                 empty.textContent = 'No matching models.';
             }
@@ -430,11 +449,8 @@ export class GPTResearcherSettings {
         if (!quiet) this.setStatus('Loading...');
         try {
             const client = await this.ensureMcpClient();
-            console.info(`${LOG_PREFIX} Calling gpt_researcher_get_settings.`);
             const result = await client.callTool('gpt_researcher_get_settings', {});
-            console.info(`${LOG_PREFIX} Raw get settings MCP result.`, result);
             const payload = parseToolPayload(result);
-            console.info(`${LOG_PREFIX} Parsed get settings payload.`, payload);
             if (!payload?.ok) {
                 throw new Error(payload?.error || `Invalid settings payload: ${stringifyForLog(payload)}`);
             }
@@ -452,11 +468,8 @@ export class GPTResearcherSettings {
         if (!quiet) this.setStatus('Loading models...');
         try {
             const client = await this.ensureMcpClient();
-            console.info(`${LOG_PREFIX} Calling gpt_researcher_list_models.`);
             const result = await client.callTool('gpt_researcher_list_models', {});
-            console.info(`${LOG_PREFIX} Raw list models MCP result.`, result);
             const payload = parseToolPayload(result);
-            console.info(`${LOG_PREFIX} Parsed list models payload.`, payload);
             if (!payload?.ok) {
                 throw new Error(payload?.error || `Invalid models payload: ${stringifyForLog(payload)}`);
             }
@@ -466,7 +479,7 @@ export class GPTResearcherSettings {
             }
             if (!quiet) this.setStatus('');
         } catch (error) {
-            logError('Failed to load Soul Gateway models.', error);
+            logError('Failed to load GPTResearcher model/provider options.', error);
             if (!quiet) this.setStatus(getErrorMessage(error, 'Model load failed.'), 'error');
             throw error;
         }
@@ -477,11 +490,8 @@ export class GPTResearcherSettings {
         try {
             const settings = this.collectSettingsFromInputs();
             const client = await this.ensureMcpClient();
-            console.info(`${LOG_PREFIX} Calling gpt_researcher_update_settings.`, { settings });
             const result = await client.callTool('gpt_researcher_update_settings', settings);
-            console.info(`${LOG_PREFIX} Raw update settings MCP result.`, result);
             const payload = parseToolPayload(result);
-            console.info(`${LOG_PREFIX} Parsed update settings payload.`, payload);
             if (!payload?.ok) {
                 throw new Error(payload?.error || `Invalid settings payload: ${stringifyForLog(payload)}`);
             }

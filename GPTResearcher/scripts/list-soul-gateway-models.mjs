@@ -131,8 +131,49 @@ function normalizePayload(payload) {
         models,
         chatModels: models.filter((model) => !model.isEmbedding && !model.isSearch),
         embeddingModels: models.filter((model) => model.isEmbedding),
-        searchModels: models.filter((model) => model.isSearch),
+        searchProviders: [],
     };
+}
+
+function normalizeSearchProvider(row) {
+    const provider = trim(row?.provider || row?.key || row?.id);
+    if (!provider) return null;
+    return {
+        id: provider,
+        label: trim(row?.name || row?.label) || provider,
+        providerKey: 'searchAgent',
+        providerLabel: 'SearchAgent',
+        providerModelId: provider,
+        tags: row?.configured === false ? ['search', 'not-configured'] : ['search'],
+        capabilities: {},
+        enabled: true,
+        isEmbedding: false,
+        isSearch: true,
+        configured: row?.configured !== false,
+    };
+}
+
+async function fetchSearchProviders(routerUrl) {
+    const url = `${routerUrl.replace(/\/+$/, '')}/services/search-agent/listProviders`;
+    const response = await fetch(url, {
+        headers: {
+            Accept: 'application/json',
+        },
+    });
+    const text = await response.text();
+    let payload = null;
+    try {
+        payload = text ? JSON.parse(text) : null;
+    } catch {
+        payload = null;
+    }
+    if (!response.ok) {
+        throw new Error(`SearchAgent providers request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
+    }
+    return asArray(payload?.providers)
+        .map(normalizeSearchProvider)
+        .filter(Boolean)
+        .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 async function main() {
@@ -162,7 +203,9 @@ async function main() {
     if (!response.ok) {
         throw new Error(`Soul Gateway models request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
     }
-    process.stdout.write(JSON.stringify(normalizePayload(payload)));
+    const normalized = normalizePayload(payload);
+    normalized.searchProviders = await fetchSearchProviders(routerUrl);
+    process.stdout.write(JSON.stringify(normalized));
 }
 
 try {
