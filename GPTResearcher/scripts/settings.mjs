@@ -8,7 +8,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     smartLlm: 'codex-api/gpt-5.5',
     strategicLlm: 'codex-api/gpt-5.4-mini',
     embedding: 'codestral-embed',
-    retriever: 'duckduckgo'
+    searchModel: 'duckduckgo/search-duckduckgo'
 });
 
 function trim(value) {
@@ -22,7 +22,7 @@ export function normalizeSettings(value = {}) {
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        retriever: trim(input.retriever) || DEFAULT_SETTINGS.retriever
+        searchModel: trim(input.searchModel) || DEFAULT_SETTINGS.searchModel
     };
 }
 

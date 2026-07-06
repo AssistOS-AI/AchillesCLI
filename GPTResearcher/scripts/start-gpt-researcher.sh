@@ -18,6 +18,8 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+export PYTHONPATH="/code/scripts${PYTHONPATH:+:$PYTHONPATH}"
+
 cd "$APP_DIR"
 "$VENV_DIR/bin/python" -m uvicorn main:app --host 0.0.0.0 --port "$UI_PORT" &
 GPT_RESEARCHER_UI_PID=$!

@@ -37,7 +37,7 @@
         {
             "name": "gpt_researcher_get_settings",
             "title": "Get GPTResearcher Settings",
-            "description": "Returns persisted GPT Researcher model and retriever settings.",
+            "description": "Returns persisted GPT Researcher model and Soul Gateway search settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/get-settings.mjs"],
             "cwd": "/code",
@@ -57,7 +57,7 @@
         {
             "name": "gpt_researcher_update_settings",
             "title": "Update GPTResearcher Settings",
-            "description": "Persists GPT Researcher model and retriever settings.",
+            "description": "Persists GPT Researcher model and Soul Gateway search settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/update-settings.mjs"],
             "cwd": "/code",
@@ -83,9 +83,9 @@
                     "description": "Soul Gateway embedding model id, without the soul_gateway: prefix.",
                     "optional": true
                 },
-                "retriever": {
+                "searchModel": {
                     "type": "string",
-                    "description": "RETRIEVER value such as duckduckgo or tavily.",
+                    "description": "Soul Gateway search model id.",
                     "optional": true
                 }
             }

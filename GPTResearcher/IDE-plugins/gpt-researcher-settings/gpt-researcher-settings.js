@@ -3,35 +3,11 @@ const DEFAULT_SETTINGS = Object.freeze({
     smartLlm: 'codex-api/gpt-5.5',
     strategicLlm: 'codex-api/gpt-5.4-mini',
     embedding: 'codestral-embed',
-    retriever: 'duckduckgo'
+    searchModel: 'duckduckgo/search-duckduckgo'
 });
-
-const RETRIEVER_META = Object.freeze({
-    duckduckgo: 'No API key required. Uses the ddgs package.',
-    tavily: 'Requires TAVILY_API_KEY.',
-    brave: 'Requires BRAVE_API_KEY.',
-    serper: 'Requires SERPER_API_KEY.',
-    serpapi: 'Requires SERPAPI_API_KEY.',
-    bing: 'Requires BING_API_KEY.',
-    google: 'Requires GOOGLE_API_KEY and Google search configuration.',
-    exa: 'Requires EXA_API_KEY.',
-    searchapi: 'Requires SEARCHAPI_API_KEY.',
-    arxiv: 'No API key required. Academic papers from arXiv.',
-    semantic_scholar: 'Semantic Scholar search. API key may be required for higher limits.',
-    pubmed_central: 'No API key required. Biomedical literature.',
-    openalex: 'No API key required. Academic metadata search.',
-    mcp: 'Requires MCP server configuration in GPT Researcher settings.',
-    custom: 'Requires custom retriever implementation.',
-    crw: 'Advanced retriever.',
-    groundroute: 'Advanced retriever.',
-    xquik: 'Advanced retriever.',
-    mock: 'Testing only.'
-});
-
-const KNOWN_RETRIEVERS = Object.freeze(new Set(Object.keys(RETRIEVER_META)));
 
 const LOG_PREFIX = '[GPTResearcher Settings]';
-const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding']);
+const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding', 'searchModel']);
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -115,7 +91,7 @@ function normalizeSettings(value = {}) {
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        retriever: KNOWN_RETRIEVERS.has(trim(input.retriever)) ? trim(input.retriever) : DEFAULT_SETTINGS.retriever
+        searchModel: trim(input.searchModel) || DEFAULT_SETTINGS.searchModel
     };
 }
 
@@ -123,7 +99,7 @@ function normalizeModel(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const id = trim(input.id);
     if (!id) return null;
-    return {
+    const model = {
         id,
         label: trim(input.label) || id,
         providerKey: trim(input.providerKey) || 'soul-gateway',
@@ -133,7 +109,8 @@ function normalizeModel(value = {}) {
         capabilities: input.capabilities && typeof input.capabilities === 'object' && !Array.isArray(input.capabilities)
             ? input.capabilities
             : {},
-        isEmbedding: input.isEmbedding === true
+        isEmbedding: input.isEmbedding === true,
+        isSearch: input.isSearch === true
     };
     model.searchText = [
         model.id,
@@ -155,7 +132,10 @@ function normalizeModelPayload(value = {}) {
     const embeddingModels = Array.isArray(input.embeddingModels)
         ? input.embeddingModels.map(normalizeModel).filter(Boolean)
         : models.filter((model) => model.isEmbedding);
-    return { models, chatModels, embeddingModels };
+    const searchModels = Array.isArray(input.searchModels)
+        ? input.searchModels.map(normalizeModel).filter(Boolean)
+        : models.filter((model) => model.isSearch);
+    return { models, chatModels, embeddingModels, searchModels };
 }
 
 function searchTextForModel(model) {
@@ -221,25 +201,25 @@ export class GPTResearcherSettings {
             smartLlm: this.element.querySelector('#gptrSmartLlm'),
             strategicLlm: this.element.querySelector('#gptrStrategicLlm'),
             embedding: this.element.querySelector('#gptrEmbedding'),
-            retriever: this.element.querySelector('#gptrRetriever')
+            searchModel: this.element.querySelector('#gptrSearchModel')
         };
         this.modelOptionLists = {
             fastLlm: this.element.querySelector('[data-options-for="fastLlm"]'),
             smartLlm: this.element.querySelector('[data-options-for="smartLlm"]'),
             strategicLlm: this.element.querySelector('[data-options-for="strategicLlm"]'),
-            embedding: this.element.querySelector('[data-options-for="embedding"]')
+            embedding: this.element.querySelector('[data-options-for="embedding"]'),
+            searchModel: this.element.querySelector('[data-options-for="searchModel"]')
         };
         this.modelToggles = {
             fastLlm: this.element.querySelector('[data-model-toggle="fastLlm"]'),
             smartLlm: this.element.querySelector('[data-model-toggle="smartLlm"]'),
             strategicLlm: this.element.querySelector('[data-model-toggle="strategicLlm"]'),
-            embedding: this.element.querySelector('[data-model-toggle="embedding"]')
+            embedding: this.element.querySelector('[data-model-toggle="embedding"]'),
+            searchModel: this.element.querySelector('[data-model-toggle="searchModel"]')
         };
         for (const field of MODEL_FIELDS) {
             this.bindModelCombobox(field);
         }
-        this.retrieverHelp = this.element.querySelector('#gptrRetrieverHelp');
-        this.inputs.retriever?.addEventListener('change', () => this.renderRetrieverHelp());
         this.statusElement = this.element.querySelector('#gptrSettingsStatus');
     }
 
@@ -338,8 +318,7 @@ export class GPTResearcherSettings {
         if (this.inputs?.smartLlm) this.inputs.smartLlm.value = settings.smartLlm;
         if (this.inputs?.strategicLlm) this.inputs.strategicLlm.value = settings.strategicLlm;
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
-        if (this.inputs?.retriever) this.inputs.retriever.value = settings.retriever;
-        this.renderRetrieverHelp();
+        if (this.inputs?.searchModel) this.inputs.searchModel.value = settings.searchModel;
         for (const field of MODEL_FIELDS) {
             this.closeModelOptions(field);
         }
@@ -351,21 +330,16 @@ export class GPTResearcherSettings {
             smartLlm: this.inputs?.smartLlm?.value,
             strategicLlm: this.inputs?.strategicLlm?.value,
             embedding: this.inputs?.embedding?.value,
-            retriever: this.inputs?.retriever?.value
+            searchModel: this.inputs?.searchModel?.value
         });
-    }
-
-    renderRetrieverHelp() {
-        if (!this.retrieverHelp) {
-            return;
-        }
-        const retriever = trim(this.inputs?.retriever?.value) || DEFAULT_SETTINGS.retriever;
-        this.retrieverHelp.textContent = RETRIEVER_META[retriever] || '';
     }
 
     getModelsForField(field) {
         if (field === 'embedding') {
             return this.state.models.embeddingModels || [];
+        }
+        if (field === 'searchModel') {
+            return this.state.models.searchModels || [];
         }
         return this.state.models.chatModels || [];
     }
@@ -392,9 +366,13 @@ export class GPTResearcherSettings {
         if (!models.length) {
             const empty = document.createElement('div');
             empty.className = 'gptr-model-empty';
-            empty.textContent = field === 'embedding'
-                ? 'No matching embedding models.'
-                : 'No matching models.';
+            if (field === 'embedding') {
+                empty.textContent = 'No matching embedding models.';
+            } else if (field === 'searchModel') {
+                empty.textContent = 'No matching search models.';
+            } else {
+                empty.textContent = 'No matching models.';
+            }
             options.appendChild(empty);
             options.classList.toggle('open', open);
             return;

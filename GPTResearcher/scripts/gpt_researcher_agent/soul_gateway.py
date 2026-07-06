@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from types import SimpleNamespace
 
 from .io_utils import normalize_string
@@ -177,6 +178,119 @@ class SoulGatewayEmbeddings(Embeddings):
         return self._embed([text])[0]
 
 
+class SoulGatewaySearchRetriever:
+    __name__ = "SoulGatewaySearchRetriever"
+
+    def __init__(self, query, query_domains=None):
+        self.query = query
+        self.query_domains = query_domains or []
+        self.model = normalize_string(os.environ.get("SOUL_GATEWAY_SEARCH_MODEL"))
+        if not self.model:
+            raise RuntimeError("Soul Gateway retriever requires SOUL_GATEWAY_SEARCH_MODEL.")
+        self.chat_url = resolve_soul_gateway_chat_url(soul_gateway_router_base_url())
+        self.api_key = soul_gateway_api_key()
+
+    def search(self, max_results=5):
+        import httpx
+
+        query = self.query
+        if self.query_domains:
+            domains = ", ".join(self.query_domains)
+            query = f"{query}\n\nRestrict results to these domains when possible: {domains}"
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": query}],
+            "stream": False,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        with httpx.Client(timeout=None) as client:
+            response = client.post(self.chat_url, headers=headers, json=payload)
+            if response.status_code >= 400:
+                raise RuntimeError(
+                    f"Soul Gateway search HTTP {response.status_code}: {response.text}"
+                )
+            data = response.json()
+
+        if data.get("error"):
+            raise RuntimeError(json.dumps(data["error"], ensure_ascii=False))
+
+        content = data.get("choices", [{}])[0].get("message", {}).get("content")
+        if not content:
+            raise RuntimeError(f"Soul Gateway search returned no content: {data}")
+
+        return parse_soul_gateway_search_results(content, max_results=max_results)
+
+
+def parse_soul_gateway_search_results(content, max_results=5):
+    text = normalize_string(content)
+    if not text:
+        return []
+
+    results = []
+    current = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        heading = re.match(r"^#{1,4}\s*\[?(\d+)\]?\s*(.+)$", line)
+        numbered = re.match(r"^\d+\.\s+\*\*(.+?)\*\*(?:\s+\(via .+?\))?$", line)
+        if heading or numbered:
+            if current:
+                results.append(current)
+            title = heading.group(2) if heading else numbered.group(1)
+            current = {"title": title.strip(), "href": "", "body": ""}
+            continue
+
+        if current is None:
+            continue
+
+        source_url = ""
+        if line.startswith(">"):
+            source_url = line[1:].strip()
+        elif line.startswith("http://") or line.startswith("https://"):
+            source_url = line
+
+        if source_url:
+            current["href"] = source_url
+            current["url"] = source_url
+            continue
+
+        if (
+            line.startswith("---")
+            or line.lower().startswith("**sources:**")
+            or re.match(r"^\[\d+\]\s+\[.+?\]\(.+?\)$", line)
+        ):
+            continue
+
+        if current["body"]:
+            current["body"] += " "
+        current["body"] += line
+
+    if current:
+        results.append(current)
+
+    if not results:
+        raise RuntimeError(f"Soul Gateway search response had no parseable results: {text[:1000]}")
+
+    normalized = []
+    for result in results[:max_results]:
+        url = result.get("href") or result.get("url") or ""
+        normalized.append({
+            "title": result.get("title") or url or "Soul Gateway search result",
+            "href": url,
+            "url": url,
+            "body": result.get("body") or "",
+            "content": result.get("body") or "",
+        })
+    return normalized
+
+
 def patch_gpt_researcher_llm_providers():
     from gpt_researcher.llm_provider.generic.base import GenericLLMProvider
     from gpt_researcher.llm_provider.generic import base as generic_base
@@ -224,3 +338,29 @@ def patch_gpt_researcher_llm_providers():
     GenericLLMProvider.from_provider = from_provider
     embeddings_module.Memory.__init__ = memory_init
     GenericLLMProvider._ploinky_soul_gateway_patch = True
+
+
+def patch_gpt_researcher_retriever():
+    from gpt_researcher.actions import retriever as retriever_module
+    from gpt_researcher.retrievers import utils as retriever_utils
+
+    if getattr(retriever_module, "_ploinky_soul_gateway_retriever_patch", False):
+        return
+
+    original_get_retriever = retriever_module.get_retriever
+    original_get_all_retriever_names = retriever_utils.get_all_retriever_names
+
+    def get_retriever(retriever):
+        if retriever == "soul_gateway":
+            return SoulGatewaySearchRetriever
+        return original_get_retriever(retriever)
+
+    def get_all_retriever_names():
+        names = list(original_get_all_retriever_names() or [])
+        if "soul_gateway" not in names:
+            names.append("soul_gateway")
+        return names
+
+    retriever_module.get_retriever = get_retriever
+    retriever_utils.get_all_retriever_names = get_all_retriever_names
+    retriever_module._ploinky_soul_gateway_retriever_patch = True

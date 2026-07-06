@@ -11,7 +11,7 @@ DEFAULT_SETTINGS = {
     "smartLlm": "codex-api/gpt-5.5",
     "strategicLlm": "codex-api/gpt-5.4-mini",
     "embedding": "codestral-embed",
-    "retriever": "duckduckgo",
+    "searchModel": "duckduckgo/search-duckduckgo",
 }
 
 
@@ -30,7 +30,7 @@ def normalize_settings(value):
         "smartLlm": normalize_string(source.get("smartLlm")) or DEFAULT_SETTINGS["smartLlm"],
         "strategicLlm": normalize_string(source.get("strategicLlm")) or DEFAULT_SETTINGS["strategicLlm"],
         "embedding": normalize_string(source.get("embedding")) or DEFAULT_SETTINGS["embedding"],
-        "retriever": normalize_string(source.get("retriever")) or DEFAULT_SETTINGS["retriever"],
+        "searchModel": normalize_string(source.get("searchModel")) or DEFAULT_SETTINGS["searchModel"],
     }
 
 
@@ -47,4 +47,5 @@ def apply_settings(settings):
     os.environ["SMART_LLM"] = f"soul_gateway:{settings['smartLlm']}"
     os.environ["STRATEGIC_LLM"] = f"soul_gateway:{settings['strategicLlm']}"
     os.environ["EMBEDDING"] = f"soul_gateway:{settings['embedding']}"
-    os.environ["RETRIEVER"] = settings["retriever"]
+    os.environ["RETRIEVER"] = "soul_gateway"
+    os.environ["SOUL_GATEWAY_SEARCH_MODEL"] = settings["searchModel"]

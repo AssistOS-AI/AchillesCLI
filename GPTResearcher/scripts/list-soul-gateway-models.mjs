@@ -5,11 +5,11 @@ function trim(value) {
 }
 
 function asArray(value) {
-    return Array.isArray(value) ? value : [];
-}
-
-function asObject(value) {
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+        return value.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+    return [];
 }
 
 function readField(row, camelName, snakeName, fallback = null) {
@@ -33,26 +33,60 @@ function lowerWords(...values) {
         .join(' ');
 }
 
+const SEARCH_PROVIDER_KEYS = new Set([
+    'tavily',
+    'brave',
+    'exa',
+    'serper',
+    'jina',
+    'duckduckgo',
+    'searxng',
+    'gemini-search',
+    'google-ai-mode',
+]);
+
 function isEmbeddingModel(model) {
-    const capabilities = asObject(model.capabilities);
     const tags = asArray(model.tags);
+    const haystack = lowerWords(model.id, model.label, model.providerModelId, tags);
+    return /\b(embed|embedding|embeddings)\b/.test(haystack) || haystack.includes('text-embedding');
+}
+
+function isSearchModel(model) {
+    const tags = asArray(model.tags);
+    const providerKey = trim(model.providerKey).toLowerCase();
     if (
-        capabilities.supportsEmbeddings === true ||
-        capabilities.supportsEmbedding === true ||
-        capabilities.embeddings === true ||
-        capabilities.embedding === true
+        SEARCH_PROVIDER_KEYS.has(providerKey) ||
+        tags.includes('search') ||
+        tags.includes('retrieval') ||
+        trim(model.kind).toLowerCase() === 'search' ||
+        trim(model.type).toLowerCase() === 'search' ||
+        trim(model.providerKind).toLowerCase() === 'search' ||
+        trim(model.adapterKey).toLowerCase() === 'search-builtin' ||
+        trim(model.backendKey).toLowerCase() === 'search-builtin' ||
+        trim(model.adapterKey).toLowerCase() === 'headless-search' ||
+        trim(model.backendKey).toLowerCase() === 'headless-search'
     ) {
         return true;
     }
-    const haystack = lowerWords(model.id, model.label, model.providerModelId, tags, capabilities);
-    return /\b(embed|embedding|embeddings)\b/.test(haystack) || haystack.includes('text-embedding');
+    const haystack = lowerWords(
+        model.id,
+        model.label,
+        model.providerModelId,
+        tags
+    );
+    return haystack.includes('search-')
+        || haystack.includes('deep-research')
+        || haystack.includes('headless-')
+        || /\b(search|retrieval|grounding)\b/.test(haystack);
 }
 
 function normalizeModel(row) {
     const id = trim(readField(row, 'modelKey', 'model_key'))
         || trim(readField(row, 'id', 'id'));
     if (!id) return null;
-    const label = id;
+    const label = trim(readField(row, 'displayName', 'display_name'))
+        || trim(readField(row, '_displayName', '_display_name'))
+        || id;
     const providerKey = trim(readField(row, 'providerKey', 'provider_key'))
         || trim(readField(row, 'owned_by', 'owned_by'))
         || 'soul-gateway';
@@ -61,23 +95,23 @@ function normalizeModel(row) {
         || trim(readField(row, 'root', 'root'))
         || '';
     const tags = asArray(readField(row, '_tags', '_tags', readField(row, 'tags', 'tags', [])));
-    const capabilities = asObject(readField(row, 'capabilities', 'capabilities', {}));
-    const context = asObject(readField(row, '_context', '_context', {}));
     const normalized = {
         id,
         label,
         providerKey,
         providerLabel,
         providerModelId,
+        kind: trim(readField(row, 'kind', 'kind')),
+        type: trim(readField(row, 'type', 'type')),
+        providerKind: trim(readField(row, 'providerKind', 'provider_kind')),
+        adapterKey: trim(readField(row, 'adapterKey', 'adapter_key')),
+        backendKey: trim(readField(row, 'backendKey', 'backend_key')),
         tags,
-        capabilities: {
-            ...capabilities,
-            contextWindow: capabilities.contextWindow ?? context.window ?? null,
-            maxOutputTokens: capabilities.maxOutputTokens ?? context.max_output_tokens ?? null,
-        },
+        capabilities: {},
         enabled: readField(row, 'enabled', 'enabled', true) !== false,
     };
     normalized.isEmbedding = isEmbeddingModel(normalized);
+    normalized.isSearch = isSearchModel(normalized);
     return normalized;
 }
 
@@ -95,8 +129,9 @@ function normalizePayload(payload) {
     return {
         ok: true,
         models,
-        chatModels: models.filter((model) => !model.isEmbedding),
+        chatModels: models.filter((model) => !model.isEmbedding && !model.isSearch),
         embeddingModels: models.filter((model) => model.isEmbedding),
+        searchModels: models.filter((model) => model.isSearch),
     };
 }
 

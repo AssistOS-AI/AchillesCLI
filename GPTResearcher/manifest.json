@@ -29,16 +29,6 @@
             "access": "authenticated"
         }
     ],
-    "env": [
-        "TAVILY_API_KEY",
-        "BRAVE_API_KEY",
-        "SERPER_API_KEY",
-        "SERPAPI_API_KEY",
-        "BING_API_KEY",
-        "GOOGLE_API_KEY",
-        "EXA_API_KEY",
-        "SEARCHAPI_API_KEY"
-    ],
     "ideSettings": [
         {
             "key": "gpt-researcher-settings",

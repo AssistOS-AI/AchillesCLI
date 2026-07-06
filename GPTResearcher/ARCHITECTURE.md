@@ -78,6 +78,20 @@ La start, aplicatia este pornita cu:
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
+Scriptul de start seteaza:
+
+```text
+PYTHONPATH=/code/scripts
+```
+
+Astfel, Python incarca automat:
+
+```text
+/code/scripts/sitecustomize.py
+```
+
+inainte de initializarea serverului. Acest hook aplica aceleasi setari persistente si aceleasi patch-uri Soul Gateway folosite de tool-ul MCP `start_research`.
+
 GPT Researcher App asculta in container pe portul:
 
 ```text
@@ -222,7 +236,7 @@ fastLlm
 smartLlm
 strategicLlm
 embedding
-retriever
+searchModel
 ```
 
 Fisierul nu contine provider base URLs si nu contine chei API.
@@ -240,15 +254,13 @@ FAST_LLM=soul_gateway:<fastLlm>
 SMART_LLM=soul_gateway:<smartLlm>
 STRATEGIC_LLM=soul_gateway:<strategicLlm>
 EMBEDDING=soul_gateway:<embedding>
-```
-
-Retrieverul este configurat prin:
-
-```text
-RETRIEVER
+RETRIEVER=soul_gateway
+SOUL_GATEWAY_SEARCH_MODEL=<searchModel>
 ```
 
 Setarile sunt aplicate la runtime de scriptul Python inainte ca instanta `GPTResearcher` sa fie creata.
+
+Pentru serverul UI oficial, aceleasi setari sunt aplicate la pornirea procesului Python prin `sitecustomize.py`, astfel incat cercetarile lansate din UI si cercetarile lansate prin MCP folosesc acelasi provider, aceleasi modele si acelasi model de search.
 
 Nu exista fallback catre OpenAI, Ollama, Mistral, Azure, OpenRouter sau un Soul Gateway remote configurat manual.
 
@@ -262,6 +274,7 @@ Exemple de model IDs salvate in settings:
 codex-api/gpt-5.5
 codex-api/gpt-5.4-mini
 codestral-embed
+duckduckgo/search-duckduckgo
 ```
 
 Providerul custom trimite cereri OpenAI-compatible catre:
@@ -309,7 +322,7 @@ Fast LLM
 Smart LLM
 Strategic LLM
 Embedding
-Retriever
+Search Model
 ```
 
 Pluginul include si un buton pentru deschiderea UI-ului oficial GPT Researcher:
@@ -325,6 +338,7 @@ AgentServer expune urmatoarele tool-uri MCP:
 ```text
 start_research
 gpt_researcher_get_settings
+gpt_researcher_list_models
 gpt_researcher_update_settings
 ```
 
@@ -374,20 +388,9 @@ WORKSPACE_PATH
 
 Directorul persistent in care se salveaza `gpt-researcher-settings.json`.
 
-```text
-TAVILY_API_KEY
-BRAVE_API_KEY
-SERPER_API_KEY
-SERPAPI_API_KEY
-BING_API_KEY
-GOOGLE_API_KEY
-EXA_API_KEY
-SEARCHAPI_API_KEY
-```
+Nu sunt injectate chei API pentru retrieverele native GPT Researcher.
 
-Chei folosite doar de retrieverele GPT Researcher, in functie de retrieverul selectat.
-
-Providerul LLM nu este configurabil prin environment; el este intotdeauna Soul Gateway local prin credentialele Ploinky generate.
+Providerul LLM si providerul de search nu sunt configurabile prin environment; ambele sunt intotdeauna Soul Gateway local prin credentialele Ploinky generate.
 
 ## Separation of Responsibilities
 
@@ -465,7 +468,9 @@ Repository-ul oficial GPT Researcher este clonat la instalare.
 
 Dependintele aplicatiei GPT Researcher sunt instalate in acelasi venv.
 
-La start, GPT Researcher App porneste prima pe portul 8000.
+La start, scriptul seteaza `PYTHONPATH=/code/scripts`, astfel incat hook-ul `sitecustomize.py` poate configura runtime-ul GPT Researcher.
+
+GPT Researcher App porneste apoi pe portul 8000.
 
 Ploinky AgentServer porneste dupa aceea pe portul 7000.
 
