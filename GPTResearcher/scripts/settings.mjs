@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-export const SETTINGS_PATH = path.join(process.env.WORKSPACE_PATH, 'gpt-researcher-settings.json');
+export const SETTINGS_PATH = path.join(process.env.HOME, 'gpt-researcher-settings.json');
 
 export const DEFAULT_SETTINGS = Object.freeze({
     fastLlm: 'codex-api/gpt-5.4-mini',

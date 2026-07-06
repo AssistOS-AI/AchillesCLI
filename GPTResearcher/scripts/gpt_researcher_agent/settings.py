@@ -4,7 +4,7 @@ import os
 from .io_utils import normalize_string
 
 
-SETTINGS_PATH = os.path.join(os.environ["WORKSPACE_PATH"], "gpt-researcher-settings.json")
+SETTINGS_PATH = os.path.join(os.environ["HOME"], "gpt-researcher-settings.json")
 
 DEFAULT_SETTINGS = {
     "fastLlm": "codex-api/gpt-5.4-mini",

@@ -237,12 +237,12 @@ Rezultatul este intors catre AgentServer, apoi catre router si client.
 
 ## Settings Storage
 
-Setarile non-secret sunt salvate in workspace-ul agentului, nu in `/code`.
+Setarile non-secret sunt salvate in root-ul persistent al agentului, nu in `/code` si nu in workspace-ul global al userului.
 
 Fisierul folosit este:
 
 ```text
-$WORKSPACE_PATH/gpt-researcher-settings.json
+$HOME/gpt-researcher-settings.json
 ```
 
 Acest fisier contine:
@@ -401,10 +401,10 @@ si trebuie sa respecte modelul de acces al Ploinky.
 Urmatoarele variabile modifica comportamentul operational al agentului:
 
 ```text
-WORKSPACE_PATH
+HOME
 ```
 
-Directorul persistent in care se salveaza `gpt-researcher-settings.json`.
+Root-ul persistent al agentului in care se salveaza `gpt-researcher-settings.json`. In container este `/root`, mapat pe host la `.data/GPTResearcher`.
 
 Nu sunt injectate chei API pentru retrieverele native GPT Researcher.
 
@@ -469,10 +469,10 @@ MCP-ul trebuie accesat prin:
 Setarile persistente trebuie salvate in:
 
 ```text
-$WORKSPACE_PATH/gpt-researcher-settings.json
+$HOME/gpt-researcher-settings.json
 ```
 
-si nu in `/code`.
+si nu in `/code` sau in workspace-ul global.
 
 Secretele nu trebuie salvate in fisierul de settings.
 

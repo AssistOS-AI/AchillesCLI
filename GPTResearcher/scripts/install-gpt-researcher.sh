@@ -16,10 +16,12 @@ fi
 "$VENV_DIR/bin/python" -m pip install --no-cache-dir -r "$APP_DIR/requirements.txt"
 
 : "${WORKSPACE_PATH:?WORKSPACE_PATH is required}"
+: "${HOME:?HOME is required}"
 
 mkdir -p "$WORKSPACE_PATH"
+mkdir -p "$HOME"
 
-SETTINGS_PATH="$WORKSPACE_PATH/gpt-researcher-settings.json"
+SETTINGS_PATH="$HOME/gpt-researcher-settings.json"
 if [ ! -f "$SETTINGS_PATH" ]; then
     cat > "$SETTINGS_PATH" <<'EOF'
 {
