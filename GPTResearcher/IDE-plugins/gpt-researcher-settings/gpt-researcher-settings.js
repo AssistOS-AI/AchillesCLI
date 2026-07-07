@@ -119,7 +119,9 @@ function normalizeModel(value = {}) {
             ? input.capabilities
             : {},
         isEmbedding: input.isEmbedding === true,
-        isSearch: input.isSearch === true
+        isSearch: input.isSearch === true,
+        configured: input.configured !== false,
+        requiredEnv: normalizeEnvStatus(input.requiredEnv),
     };
     model.searchText = [
         model.id,
@@ -130,6 +132,17 @@ function normalizeModel(value = {}) {
         ...model.tags
     ].join(' ').toLowerCase();
     return model;
+}
+
+function normalizeEnvStatus(value) {
+    return Array.isArray(value)
+        ? value
+            .map((item) => ({
+                name: trim(item?.name || item?.key || item),
+                configured: item && typeof item === 'object' ? item.configured === true : false
+            }))
+            .filter((item) => item.name)
+        : [];
 }
 
 function normalizeModelPayload(value = {}) {
@@ -230,7 +243,9 @@ export class GPTResearcherSettings {
         for (const field of MODEL_FIELDS) {
             this.bindModelCombobox(field);
         }
+        this.inputs.searchProvider?.addEventListener('change', () => this.renderSearchProviderHelp());
         this.inputs.reportSource?.addEventListener('change', () => this.renderReportSourceHelp());
+        this.searchProviderHelpElement = this.element.querySelector('#gptrSearchProviderHelp');
         this.reportSourceHelpElement = this.element.querySelector('#gptrReportSourceHelp');
         this.statusElement = this.element.querySelector('#gptrSettingsStatus');
     }
@@ -240,7 +255,12 @@ export class GPTResearcherSettings {
         const options = this.modelOptionLists?.[field];
         if (!input) return;
         input.addEventListener('focus', () => this.renderModelOptions(field, true, { showAll: true }));
-        input.addEventListener('input', () => this.renderModelOptions(field, true));
+        input.addEventListener('input', () => {
+            this.renderModelOptions(field, true);
+            if (field === 'searchProvider') {
+                this.renderSearchProviderHelp();
+            }
+        });
         input.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 this.closeModelOptions(field);
@@ -330,10 +350,54 @@ export class GPTResearcherSettings {
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
         if (this.inputs?.searchProvider) this.inputs.searchProvider.value = settings.searchProvider;
         if (this.inputs?.reportSource) this.inputs.reportSource.value = settings.reportSource;
+        this.renderSearchProviderHelp();
         this.renderReportSourceHelp();
         for (const field of MODEL_FIELDS) {
             this.closeModelOptions(field);
         }
+    }
+
+    renderSearchProviderHelp() {
+        if (!this.searchProviderHelpElement) return;
+        const providerId = trim(this.inputs?.searchProvider?.value);
+        const provider = (this.state.models.searchProviders || []).find((item) => item.id === providerId);
+        this.searchProviderHelpElement.textContent = '';
+        if (!providerId) {
+            return;
+        }
+        if (!provider) {
+            this.searchProviderHelpElement.textContent = 'Provider metadata is not loaded yet.';
+            return;
+        }
+        const keys = provider.requiredEnv || [];
+        if (!keys.length) {
+            this.searchProviderHelpElement.textContent = 'No required API key.';
+            return;
+        }
+        const fragment = document.createDocumentFragment();
+        const hasMissingRequired = keys.some((key) => !key.configured);
+        for (const key of keys) {
+            fragment.appendChild(this.createEnvStatusElement(key.name, key.configured, false));
+        }
+        if (hasMissingRequired) {
+            const note = document.createElement('span');
+            note.className = 'gptr-env-status-note';
+            note.textContent = 'Set api keys in searchAgent as env variables.';
+            fragment.appendChild(note);
+        }
+        this.searchProviderHelpElement.appendChild(fragment);
+    }
+
+    createEnvStatusElement(name, configured) {
+        const item = document.createElement('span');
+        item.className = `gptr-env-status ${configured ? 'configured' : 'missing'}`;
+        const icon = document.createElement('span');
+        icon.className = 'gptr-env-status-icon';
+        icon.textContent = configured ? '✓' : 'x';
+        const text = document.createElement('span');
+        text.textContent = `${name} ${configured ? 'configured' : 'not configured'}`;
+        item.append(icon, text);
+        return item;
     }
 
     renderReportSourceHelp() {
@@ -415,6 +479,9 @@ export class GPTResearcherSettings {
                 button.addEventListener('mousedown', (event) => {
                     event.preventDefault();
                     input.value = model.id;
+                    if (field === 'searchProvider') {
+                        this.renderSearchProviderHelp();
+                    }
                     this.closeModelOptions(field);
                 });
                 const main = document.createElement('span');
@@ -477,6 +544,7 @@ export class GPTResearcherSettings {
             for (const field of MODEL_FIELDS) {
                 this.closeModelOptions(field);
             }
+            this.renderSearchProviderHelp();
             if (!quiet) this.setStatus('');
         } catch (error) {
             logError('Failed to load GPTResearcher model/provider options.', error);

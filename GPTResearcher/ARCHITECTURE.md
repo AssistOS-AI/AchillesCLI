@@ -91,6 +91,8 @@ Lista de modele vine din Soul Gateway. Lista de provideri de search vine din Sea
 - Search Provider
 - Report Source
 
+Pentru `Search Provider`, modalul afiseaza si variabilele de environment cerute de providerul selectat, asa cum sunt raportate de SearchAgent prin `/listProviders`.
+
 `Report Source` poate fi:
 
 - `web`: foloseste doar surse de pe internet prin SearchAgent.

@@ -59,6 +59,41 @@
     white-space: normal;
 }
 
+.gptr-env-status {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    gap: 5px;
+    margin-right: 10px;
+    white-space: normal;
+}
+
+.gptr-env-status-icon {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 13px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.gptr-env-status.configured .gptr-env-status-icon {
+    background: var(--file-exp-success, #16803c);
+}
+
+.gptr-env-status.missing .gptr-env-status-icon {
+    background: var(--file-exp-error, #b42318);
+}
+
+.gptr-env-status-note {
+    display: block;
+    margin-top: 3px;
+}
+
 .gptr-model-combobox {
     position: relative;
 }

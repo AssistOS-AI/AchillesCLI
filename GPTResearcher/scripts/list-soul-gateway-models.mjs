@@ -138,6 +138,8 @@ function normalizePayload(payload) {
 function normalizeSearchProvider(row) {
     const provider = trim(row?.provider || row?.key || row?.id);
     if (!provider) return null;
+    const requiredEnv = normalizeEnvStatus(row?.requiredEnv);
+    const configured = requiredEnv.every((item) => item.configured);
     return {
         id: provider,
         label: trim(row?.name || row?.label) || provider,
@@ -149,8 +151,23 @@ function normalizeSearchProvider(row) {
         enabled: true,
         isEmbedding: false,
         isSearch: true,
-        configured: row?.configured !== false,
+        configured,
+        requiredEnv,
     };
+}
+
+function normalizeEnvStatus(value) {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => ({
+                name: trim(item?.name || item?.key || item),
+                configured: item && typeof item === 'object'
+                    ? item.configured === true
+                    : false,
+            }))
+            .filter((item) => item.name);
+    }
+    return [];
 }
 
 async function fetchSearchProviders(routerUrl) {
