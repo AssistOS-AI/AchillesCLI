@@ -177,73 +177,6 @@ class SoulGatewayEmbeddings(Embeddings):
         return self._embed([text])[0]
 
 
-def search_agent_router_base_url():
-    base_url = normalize_string(os.environ.get("PLOINKY_ROUTER_URL"))
-    if not base_url:
-        raise RuntimeError("SearchAgent retriever requires PLOINKY_ROUTER_URL.")
-    return base_url.rstrip("/")
-
-
-def search_agent_headers():
-    return {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
-
-class SearchAgentSearchRetriever:
-    __name__ = "SearchAgentSearchRetriever"
-
-    def __init__(self, query, query_domains=None):
-        self.query = query
-        self.query_domains = query_domains or []
-        self.provider = normalize_string(os.environ.get("SEARCH_AGENT_PROVIDER")) or "duckduckgo"
-        self.search_url = f"{search_agent_router_base_url()}/services/search-agent/search"
-
-    def search(self, max_results=5):
-        import httpx
-
-        query = self.query
-        if self.query_domains:
-            domains = ", ".join(self.query_domains)
-            query = f"{query}\n\nRestrict results to these domains when possible: {domains}"
-
-        payload = {
-            "provider": self.provider,
-            "query": query,
-            "maxResults": max_results,
-        }
-        with httpx.Client(timeout=None) as client:
-            response = client.post(self.search_url, headers=search_agent_headers(), json=payload)
-            if response.status_code >= 400:
-                raise RuntimeError(
-                    f"SearchAgent search HTTP {response.status_code}: {response.text}"
-                )
-            data = response.json()
-
-        if data.get("error"):
-            raise RuntimeError(json.dumps(data["error"], ensure_ascii=False))
-
-        results = data.get("results")
-        if not isinstance(results, list):
-            raise RuntimeError(f"SearchAgent returned invalid results payload: {data}")
-
-        normalized = []
-        for result in results[:max_results]:
-            if not isinstance(result, dict):
-                continue
-            url = normalize_string(result.get("url") or result.get("href"))
-            snippet = normalize_string(result.get("snippet") or result.get("body") or result.get("content"))
-            normalized.append({
-                "title": normalize_string(result.get("title")) or url or "SearchAgent result",
-                "href": url,
-                "url": url,
-                "body": snippet,
-                "content": snippet,
-            })
-        return normalized
-
-
 def patch_gpt_researcher_llm_providers():
     from gpt_researcher.llm_provider.generic.base import GenericLLMProvider
     from gpt_researcher.llm_provider.generic import base as generic_base
@@ -291,29 +224,3 @@ def patch_gpt_researcher_llm_providers():
     GenericLLMProvider.from_provider = from_provider
     embeddings_module.Memory.__init__ = memory_init
     GenericLLMProvider._ploinky_soul_gateway_patch = True
-
-
-def patch_gpt_researcher_retriever():
-    from gpt_researcher.actions import retriever as retriever_module
-    from gpt_researcher.retrievers import utils as retriever_utils
-
-    if getattr(retriever_module, "_ploinky_soul_gateway_retriever_patch", False):
-        return
-
-    original_get_retriever = retriever_module.get_retriever
-    original_get_all_retriever_names = retriever_utils.get_all_retriever_names
-
-    def get_retriever(retriever):
-        if retriever == "search_agent":
-            return SearchAgentSearchRetriever
-        return original_get_retriever(retriever)
-
-    def get_all_retriever_names():
-        names = list(original_get_all_retriever_names() or [])
-        if "search_agent" not in names:
-            names.append("search_agent")
-        return names
-
-    retriever_module.get_retriever = get_retriever
-    retriever_utils.get_all_retriever_names = get_all_retriever_names
-    retriever_module._ploinky_soul_gateway_retriever_patch = True

@@ -138,54 +138,29 @@ function normalizePayload(payload) {
 function normalizeSearchProvider(row) {
     const provider = trim(row?.provider || row?.key || row?.id);
     if (!provider) return null;
-    const requiredEnv = normalizeEnvStatus(row?.requiredEnv);
-    const configured = requiredEnv.every((item) => item.configured);
     return {
         id: provider,
         label: trim(row?.name || row?.label) || provider,
         providerKey: 'searchAgent',
         providerLabel: 'SearchAgent',
         providerModelId: provider,
-        tags: row?.configured === false ? ['search', 'not-configured'] : ['search'],
+        tags: ['search'],
         capabilities: {},
         enabled: true,
         isEmbedding: false,
         isSearch: true,
-        configured,
-        requiredEnv,
     };
 }
 
-function normalizeEnvStatus(value) {
-    if (Array.isArray(value)) {
-        return value
-            .map((item) => ({
-                name: trim(item?.name || item?.key || item),
-                configured: item && typeof item === 'object'
-                    ? item.configured === true
-                    : false,
-            }))
-            .filter((item) => item.name);
+async function fetchSearchProviders() {
+    const module = await import('/Agent/client/AgentMcpClient.mjs');
+    if (!module || typeof module.createAgentClient !== 'function') {
+        throw new Error('AgentMcpClient module does not expose createAgentClient.');
     }
-    return [];
-}
-
-async function fetchSearchProviders(routerUrl) {
-    const url = `${routerUrl.replace(/\/+$/, '')}/services/search-agent/listProviders`;
-    const response = await fetch(url, {
-        headers: {
-            Accept: 'application/json',
-        },
-    });
-    const text = await response.text();
-    let payload = null;
-    try {
-        payload = text ? JSON.parse(text) : null;
-    } catch {
-        payload = null;
-    }
-    if (!response.ok) {
-        throw new Error(`SearchAgent providers request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
+    const client = await module.createAgentClient('searchAgent');
+    const payload = await client.callTool('search_agent_list_providers', {});
+    if (payload?.ok === false) {
+        throw new Error(payload.error?.message || payload.error || 'SearchAgent providers request failed.');
     }
     return asArray(payload?.providers)
         .map(normalizeSearchProvider)
@@ -221,7 +196,7 @@ async function main() {
         throw new Error(`Soul Gateway models request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
     }
     const normalized = normalizePayload(payload);
-    normalized.searchProviders = await fetchSearchProviders(routerUrl);
+    normalized.searchProviders = await fetchSearchProviders();
     process.stdout.write(JSON.stringify(normalized));
 }
 

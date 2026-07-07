@@ -6,8 +6,9 @@ import time
 import traceback
 
 from .io_utils import LiveLogTee, log_line, normalize_string, optional_call, write_json
+from .search_agent import patch_gpt_researcher_retriever
 from .settings import apply_settings, load_settings
-from .soul_gateway import patch_gpt_researcher_llm_providers, patch_gpt_researcher_retriever
+from .soul_gateway import patch_gpt_researcher_llm_providers
 from .workspace_files import list_working_dir_files, resolve_working_dir, write_report_file
 
 

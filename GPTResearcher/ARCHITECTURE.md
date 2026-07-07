@@ -91,7 +91,7 @@ Lista de modele vine din Soul Gateway. Lista de provideri de search vine din Sea
 - Search Provider
 - Report Source
 
-Pentru `Search Provider`, modalul afiseaza si variabilele de environment cerute de providerul selectat, asa cum sunt raportate de SearchAgent prin `/listProviders`.
+Pentru `Search Provider`, modalul afiseaza si secretele cerute de providerul selectat, asa cum sunt raportate de SearchAgent prin tool-ul MCP `search_agent_list_providers`.
 
 `Report Source` poate fi:
 
@@ -116,7 +116,7 @@ SEARCH_AGENT_PROVIDER=<searchProvider>
 
 Providerul `soul_gateway` este adaugat prin patch local in `soul_gateway.py`. Acest provider trimite chat completions si embeddings catre Soul Gateway prin routerul Ploinky si foloseste `PLOINKY_AGENT_API_KEY` ca autorizare.
 
-Retrieverul `search_agent` este tot un patch local. El trimite cereri de search catre SearchAgent prin routerul Ploinky. Payload-ul principal este:
+Retrieverul `search_agent` este tot un patch local. El trimite cereri de search catre SearchAgent prin `/Agent/client/AgentMcpClient.mjs`, folosind tool-ul MCP `search_agent_search`. Payload-ul principal este:
 
 ```json
 {
@@ -135,7 +135,7 @@ GPTResearcher nu apeleaza direct Tavily, Brave, DuckDuckGo sau alti provideri de
 Providerul ales in settings (`searchProvider`) este transmis catre SearchAgent la fiecare cautare. SearchAgent este responsabil pentru:
 
 - alegerea providerului concret de search;
-- citirea cheilor de provider din environment-ul lui;
+- citirea cheilor de provider din DPU secrets;
 - apelarea API-ului providerului;
 - normalizarea raspunsului la forma standard `{ results: [...] }`.
 
