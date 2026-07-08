@@ -12,12 +12,30 @@ from .soul_gateway import patch_gpt_researcher_llm_providers
 from .workspace_files import list_working_dir_files, resolve_working_dir, write_report_file
 
 
+def normalize_optional_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return None
+
+
 async def run_research(payload):
     query = normalize_string(payload.get("query"))
-    more_context = normalize_string(payload.get("moreContext"))
+    research_context = normalize_string(payload.get("context"))
     report_type = normalize_string(payload.get("reportType")) or "research_report"
     working_dir = resolve_working_dir(payload.get("workingDir"))
-    working_files = list_working_dir_files(working_dir)
+    use_local_docs = normalize_optional_bool(payload.get("useLocalDocs"))
+    effective_use_local_docs = use_local_docs is not False
+    report_source = "hybrid" if effective_use_local_docs else "web"
+    doc_path = working_dir if effective_use_local_docs else None
+    working_files = list_working_dir_files(working_dir) if effective_use_local_docs else []
 
     if not query:
         write_json({
@@ -32,11 +50,14 @@ async def run_research(payload):
     try:
         settings = load_settings()
         apply_settings(settings)
-        report_source = settings["reportSource"]
-        os.environ["DOC_PATH"] = working_dir
+        if doc_path:
+            os.environ["DOC_PATH"] = doc_path
+        else:
+            os.environ.pop("DOC_PATH", None)
         log_line(
             "[GPTResearcher/start_research] start "
             f"queryChars={len(query)} reportType={report_type} reportSource={report_source} "
+            f"useLocalDocs={effective_use_local_docs} "
             f"fastLlm={settings['fastLlm']} smartLlm={settings['smartLlm']} "
             f"strategicLlm={settings['strategicLlm']} embedding={settings['embedding']} "
             f"retriever=search_agent searchProvider={settings['searchProvider']}"
@@ -49,6 +70,7 @@ async def run_research(payload):
             query=query,
             report_type=report_type,
             report_source=report_source,
+            context=[research_context] if research_context else None,
         )
         live_logs = LiveLogTee(log_buffer, sys.stderr)
         with contextlib.redirect_stdout(live_logs), contextlib.redirect_stderr(live_logs):
@@ -56,7 +78,9 @@ async def run_research(payload):
             await researcher.conduct_research()
             log_line("[GPTResearcher/start_research] conduct_research completed")
             log_line("[GPTResearcher/start_research] write_report started")
-            report = await researcher.write_report()
+            report = await researcher.write_report(
+                custom_prompt=research_context if research_context else ""
+            )
             log_line("[GPTResearcher/start_research] write_report completed")
             report_path = write_report_file(working_dir, query, report)
             log_line(f"[GPTResearcher/start_research] report saved to {report_path}")
@@ -64,10 +88,11 @@ async def run_research(payload):
         write_json({
             "ok": True,
             "query": query,
-            "moreContext": more_context,
+            "context": research_context,
             "reportType": report_type,
             "reportSource": report_source,
-            "docPath": working_dir,
+            "useLocalDocs": effective_use_local_docs,
+            "docPath": doc_path,
             "settings": settings,
             "report": report,
             "reportPath": report_path,
@@ -89,10 +114,11 @@ async def run_research(payload):
             "ok": False,
             "error": str(error),
             "query": query,
-            "moreContext": more_context,
+            "context": research_context,
             "reportType": report_type,
             "reportSource": locals().get("report_source"),
-            "docPath": locals().get("working_dir"),
+            "useLocalDocs": locals().get("effective_use_local_docs"),
+            "docPath": locals().get("doc_path"),
             "settings": locals().get("settings"),
             "workingDir": locals().get("working_dir"),
             "workingFiles": locals().get("working_files"),

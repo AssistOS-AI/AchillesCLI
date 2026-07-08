@@ -29,8 +29,7 @@ if [ ! -f "$SETTINGS_PATH" ]; then
   "smartLlm": "codex-api/gpt-5.5",
   "strategicLlm": "codex-api/gpt-5.4-mini",
   "embedding": "codestral-embed",
-  "searchProvider": "duckduckgo",
-  "reportSource": "web"
+  "searchProvider": "duckduckgo"
 }
 EOF
 fi

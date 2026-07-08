@@ -5,11 +5,26 @@
 The `launch-gpt-researcher` C-Skill delegates a research request to the workspace
 `GPTResearcher` agent by calling its `start_research` MCP tool.
 
-The public input is plain research prompt text or JSON containing `prompt`,
-optional `context`, optional `reportType`, and optional `workingDir`. The skill
-maps these to the agent payload as `query`, `moreContext`, `reportType`, and
-`workingDir`. If the input omits `workingDir`, the skill sends the current
-AchillesCLI working directory from the invocation context.
+The public input is plain research query text or JSON containing `query`,
+optional `context`, optional `reportType`, and optional `useLocalDocs`. The
+skill maps these to the agent payload as `query`, `context`, `reportType`, and
+`useLocalDocs`.
+
+`query` is the main research query used for web research. `context` contains
+optional instructions or data for the research task.
+
+The skill always sends the current AchillesCLI working directory as the
+GPTResearcher `workingDir`. This is derived from the running AchillesCLI
+instance and is not a caller-controlled parameter.
+
+Supported `reportType` values are `research_report`, `resource_report`,
+`outline_report`, `custom_report`, `subtopic_report`, and `deep`. Omitted
+`reportType` defaults to `research_report`.
+
+`useLocalDocs` controls whether GPTResearcher receives the working directory as
+local document context. Missing `useLocalDocs` defaults to local documents
+enabled, so the GPTResearcher agent runs hybrid research. `useLocalDocs: false`
+runs web-only research.
 
 The skill returns plain text only. Successful runs return
 `GPTResearcher task completed.` and append the generated `report` when present.

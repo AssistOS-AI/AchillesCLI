@@ -7,6 +7,7 @@ test('action calls GPTResearcher MCP tool with plain prompt', async () => {
     const calls = [];
     const result = await action({
         promptText: 'research the workspace',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callTool: async (toolName, payload, options) => {
                 calls.push({ toolName, payload, options });
@@ -24,24 +25,30 @@ test('action calls GPTResearcher MCP tool with plain prompt', async () => {
     assert.equal(calls[0].toolName, TOOL_NAME);
     assert.deepEqual(calls[0].payload, {
         query: 'research the workspace',
+        workingDir: '/workspace/project',
     });
     assert.equal(typeof calls[0].options.onTaskUpdate, 'function');
 });
 
-test('action accepts JSON input with prompt, context, and reportType', async () => {
+test('action accepts JSON input with query, context, reportType, and useLocalDocs', async () => {
     const result = await action({
         promptText: JSON.stringify({
-            prompt: 'build a research brief',
+            query: 'build a research brief',
             context: 'focus on implementation tradeoffs',
             reportType: 'custom_report',
+            useLocalDocs: false,
+            workingDir: '/ignored/by/skill',
         }),
+        mainAgent: { startDir: '/workspace/current' },
         agentClient: {
             callTool: async (toolName, payload) => {
                 assert.equal(toolName, TOOL_NAME);
                 assert.deepEqual(payload, {
                     query: 'build a research brief',
-                    moreContext: 'focus on implementation tradeoffs',
+                    context: 'focus on implementation tradeoffs',
                     reportType: 'custom_report',
+                    workingDir: '/workspace/current',
+                    useLocalDocs: false,
                 });
                 return {
                     content: [{ type: 'text', text: JSON.stringify({ ok: true, report: 'brief' }) }],
@@ -53,12 +60,13 @@ test('action accepts JSON input with prompt, context, and reportType', async () 
     assert.equal(result, 'GPTResearcher task completed.\n\nbrief');
 });
 
-test('action accepts invocation context and reportType with text prompt', async () => {
+test('action accepts context and reportType with text prompt', async () => {
     const calls = [];
     const result = await action({
         promptText: 'summarize useful files',
-        context: 'include citations',
+        context: 'include implementation constraints',
         reportType: 'research_report',
+        mainAgent: { startDir: '/workspace/text-prompt' },
         agentClient: {
             callTool: async (toolName, payload) => {
                 calls.push({ toolName, payload });
@@ -72,14 +80,16 @@ test('action accepts invocation context and reportType with text prompt', async 
     assert.equal(result, 'GPTResearcher task completed.\n\nsummary');
     assert.deepEqual(calls[0].payload, {
         query: 'summarize useful files',
-        moreContext: 'include citations',
+        context: 'include implementation constraints',
         reportType: 'research_report',
+        workingDir: '/workspace/text-prompt',
     });
 });
 
 test('action falls back to compact JSON when report is absent', async () => {
     const result = await action({
         promptText: 'research',
+        mainAgent: { startDir: '/workspace/fallback' },
         agentClient: {
             callTool: async () => ({
                 content: [{ type: 'text', text: JSON.stringify({ ok: true, sourceUrls: ['https://example.com'] }) }],

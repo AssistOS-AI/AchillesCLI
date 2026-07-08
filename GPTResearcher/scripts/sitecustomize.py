@@ -15,8 +15,7 @@ def _configure_gpt_researcher_runtime():
             "[GPTResearcher/sitecustomize] applied GPTResearcher settings "
             f"fastLlm={settings['fastLlm']} smartLlm={settings['smartLlm']} "
             f"strategicLlm={settings['strategicLlm']} embedding={settings['embedding']} "
-            f"retriever=search_agent searchProvider={settings['searchProvider']} "
-            f"reportSource={settings['reportSource']}\n"
+            f"retriever=search_agent searchProvider={settings['searchProvider']}\n"
         )
     except Exception as error:
         sys.stderr.write(

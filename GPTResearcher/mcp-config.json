@@ -17,9 +17,9 @@
                     "minLength": 1,
                     "optional": false
                 },
-                "moreContext": {
+                "context": {
                     "type": "string",
-                    "description": "Optional reserved extra context. It is preserved in the response payload but is not injected into the GPTResearcher search query.",
+                    "description": "Optional instructions or data for the research task. The query remains the main query used for web research.",
                     "optional": true
                 },
                 "reportType": {
@@ -29,7 +29,12 @@
                 },
                 "workingDir": {
                     "type": "string",
-                    "description": "Optional working directory inside WORKSPACE_PATH. Direct child files are exposed to GPTResearcher through DOC_PATH and the final Markdown report is saved there.",
+                    "description": "Optional working directory inside WORKSPACE_PATH. The final Markdown report is saved there. When useLocalDocs is true or omitted, this directory is also exposed to GPTResearcher through DOC_PATH.",
+                    "optional": true
+                },
+                "useLocalDocs": {
+                    "type": "boolean",
+                    "description": "Whether GPTResearcher should use workingDir as local document context. Defaults to true, which uses hybrid research. False uses web-only research.",
                     "optional": true
                 }
             }
@@ -37,7 +42,7 @@
         {
             "name": "gpt_researcher_get_settings",
             "title": "Get GPTResearcher Settings",
-            "description": "Returns persisted GPT Researcher model, SearchAgent provider, and report source settings.",
+            "description": "Returns persisted GPT Researcher model and SearchAgent provider settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/get-settings.mjs"],
             "cwd": "/code",
@@ -57,7 +62,7 @@
         {
             "name": "gpt_researcher_update_settings",
             "title": "Update GPTResearcher Settings",
-            "description": "Persists GPT Researcher model, SearchAgent provider, and report source settings.",
+            "description": "Persists GPT Researcher model and SearchAgent provider settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/update-settings.mjs"],
             "cwd": "/code",
@@ -86,11 +91,6 @@
                 "searchProvider": {
                     "type": "string",
                     "description": "SearchAgent provider key.",
-                    "optional": true
-                },
-                "reportSource": {
-                    "type": "string",
-                    "description": "GPT Researcher report source. Supported values: web, local, hybrid. Defaults to web.",
                     "optional": true
                 }
             }

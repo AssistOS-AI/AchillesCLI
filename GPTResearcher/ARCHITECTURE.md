@@ -2,14 +2,13 @@
 
 ## Rolul agentului
 
-GPTResearcher este un agent Ploinky care ruleaza GPT Researcher si il integreaza cu infrastructura locala a workspace-ului.
+GPTResearcher este un agent Ploinky care ruleaza libraria GPT Researcher si o conecteaza la infrastructura locala:
 
-Agentul are doua moduri principale de folosire:
+- modelele LLM si embeddings merg prin Soul Gateway;
+- web search-ul merge prin SearchAgent;
+- rapoartele generate se salveaza in workspace-ul cererii.
 
-- UI-ul oficial GPT Researcher, pentru interactiune vizuala din browser.
-- Tool-uri MCP, pentru apeluri controlate din alti agenti Ploinky.
-
-In ambele cazuri, modelele LLM si embeddings sunt trimise prin Soul Gateway, iar web search-ul este trimis prin SearchAgent. Agentul nu foloseste direct chei de model in fisiere de configurare.
+Agentul poate fi folosit prin UI-ul oficial GPT Researcher sau prin tool-uri MCP. Integrarea principala cu AchillesCLI foloseste tool-ul MCP `start_research`.
 
 ## Componente
 
@@ -19,21 +18,19 @@ La instalare, agentul creeaza un virtual environment Python in:
 /opt/gpt-researcher-venv
 ```
 
-In acest environment este instalat pachetul `gpt-researcher` impreuna cu dependintele necesare.
-
-Agentul instaleaza si aplicatia oficiala GPT Researcher in:
+Aplicatia oficiala GPT Researcher este instalata in:
 
 ```text
 /opt/gpt-researcher-app
 ```
 
-La start, scriptul `/code/scripts/start-gpt-researcher.sh` porneste aplicatia oficiala GPT Researcher si apoi porneste Ploinky AgentServer. AgentServer citeste `mcp-config.json` si expune tool-urile MCP ale agentului.
+La start, `/code/scripts/start-gpt-researcher.sh` porneste aplicatia oficiala si apoi Ploinky AgentServer. AgentServer citeste `mcp-config.json` si expune tool-urile MCP.
 
-`PYTHONPATH` include `/code/scripts`, astfel incat Python incarca `sitecustomize.py`. Acest hook aplica aceleasi setari si patch-uri GPT Researcher care sunt folosite si de tool-ul MCP `start_research`.
+`PYTHONPATH` include `/code/scripts`, deci Python incarca `sitecustomize.py`. Acest hook aplica patch-urile locale pentru Soul Gateway si SearchAgent si seteaza aceleasi modele pe care le foloseste si tool-ul `start_research`.
 
 ## Setari persistente
 
-Setarile agentului sunt salvate intr-un singur fisier JSON:
+Setarile agentului sunt salvate in:
 
 ```text
 $HOME/gpt-researcher-settings.json
@@ -45,7 +42,7 @@ In container, `$HOME` este root-ul persistent al agentului (`/root`). In Ploinky
 .data/GPTResearcher
 ```
 
-Deci fisierul de settings apare pe host ca:
+Pe host, fisierul apare ca:
 
 ```text
 .data/GPTResearcher/gpt-researcher-settings.json
@@ -59,18 +56,15 @@ Fisierul contine doar setari non-secret:
   "smartLlm": "codex-api/gpt-5.5",
   "strategicLlm": "codex-api/gpt-5.4-mini",
   "embedding": "codestral-embed",
-  "searchProvider": "duckduckgo",
-  "reportSource": "web"
+  "searchProvider": "duckduckgo"
 }
 ```
 
-Daca fisierul lipseste, codul foloseste valorile default de mai sus. La install, fisierul este creat doar daca nu exista deja.
-
-Cheile API, tokenurile Ploinky si secretele providerilor nu se salveaza in acest fisier.
+Daca fisierul lipseste, codul foloseste valorile default. La install, fisierul este creat doar daca nu exista deja. Cheile API, tokenurile Ploinky si secretele providerilor nu se salveaza aici.
 
 ## Settings UI
 
-Modalul de settings din IDE este implementat de pluginul:
+Modalul de settings din IDE este implementat in:
 
 ```text
 IDE-plugins/gpt-researcher-settings
@@ -82,28 +76,13 @@ Pluginul nu scrie direct pe disk. El apeleaza tool-urile MCP:
 - `gpt_researcher_update_settings`
 - `gpt_researcher_list_models`
 
-Lista de modele vine din Soul Gateway. Lista de provideri de search vine din SearchAgent. In UI se pot seta:
+In UI se pot seta modelele `fastLlm`, `smartLlm`, `strategicLlm`, modelul de `embedding` si `searchProvider`. Lista de modele vine din Soul Gateway, iar lista de provideri de search vine din SearchAgent.
 
-- Fast LLM
-- Smart LLM
-- Strategic LLM
-- Embedding
-- Search Provider
-- Report Source
+UI-ul GPTResearcher nu configureaza sursa de research si nu afiseaza informatii despre cheile API ale SearchAgent.
 
-Pentru `Search Provider`, modalul afiseaza si secretele cerute de providerul selectat, asa cum sunt raportate de SearchAgent prin tool-ul MCP `search_agent_list_providers`.
+## Configurare la runtime
 
-`Report Source` poate fi:
-
-- `web`: foloseste doar surse de pe internet prin SearchAgent.
-- `local`: foloseste doar documentele locale din `DOC_PATH`.
-- `hybrid`: combina documentele locale cu web search prin SearchAgent.
-
-## Configurarea GPT Researcher la runtime
-
-Setarile persistente sunt aplicate inainte de crearea instantei GPT Researcher.
-
-Modelele sunt transformate in variabilele asteptate de GPT Researcher:
+Setarile persistente sunt aplicate inainte de crearea instantei GPT Researcher:
 
 ```text
 FAST_LLM=soul_gateway:<fastLlm>
@@ -114,36 +93,19 @@ RETRIEVER=search_agent
 SEARCH_AGENT_PROVIDER=<searchProvider>
 ```
 
-Providerul `soul_gateway` este adaugat prin patch local in `soul_gateway.py`. Acest provider trimite chat completions si embeddings catre Soul Gateway prin routerul Ploinky si foloseste `PLOINKY_AGENT_API_KEY` ca autorizare.
+Providerul `soul_gateway` este adaugat prin patch local in `soul_gateway.py`. El trimite chat completions si embeddings catre Soul Gateway prin routerul Ploinky.
 
-Retrieverul `search_agent` este tot un patch local. El trimite cereri de search catre SearchAgent prin `/Agent/client/AgentMcpClient.mjs`, folosind tool-ul MCP `search_agent_search`. Payload-ul principal este:
-
-```json
-{
-  "provider": "<searchProvider>",
-  "query": "<query>",
-  "maxResults": 5
-}
-```
-
-SearchAgent intoarce rezultate standardizate, iar acest agent le adapteaza la forma asteptata de GPT Researcher (`title`, `href`, `url`, `body`, `content`).
+Retrieverul `search_agent` este adaugat prin patch local in `search_agent.py`. El trimite cererile de web search catre SearchAgent prin MCP, folosind tool-ul `search_agent_search`.
 
 ## Search prin SearchAgent
 
-GPTResearcher nu apeleaza direct Tavily, Brave, DuckDuckGo sau alti provideri de search. Pentru web search, agentul foloseste intotdeauna SearchAgent.
+GPTResearcher nu apeleaza direct Tavily, Brave, DuckDuckGo sau alti provideri. Pentru web search, foloseste intotdeauna SearchAgent.
 
-Providerul ales in settings (`searchProvider`) este transmis catre SearchAgent la fiecare cautare. SearchAgent este responsabil pentru:
+Providerul ales in settings (`searchProvider`) este transmis catre SearchAgent la fiecare cautare. SearchAgent alege providerul concret, citeste secretele proprii din mediul sau si normalizeaza raspunsurile.
 
-- alegerea providerului concret de search;
-- citirea cheilor de provider din DPU secrets;
-- apelarea API-ului providerului;
-- normalizarea raspunsului la forma standard `{ results: [...] }`.
+Query-ul trimis catre SearchAgent este query-ul generat de pipeline-ul GPT Researcher. Lista de fisiere locale nu este lipita in query.
 
-GPTResearcher primeste inapoi doar rezultatele normalizate si le transforma in formatul asteptat de libraria `gpt-researcher`.
-
-Query-ul trimis catre SearchAgent este query-ul generat de GPT Researcher in timpul pipeline-ului sau de research. Lista de fisiere locale nu este lipita in acest query. Daca `reportSource=local`, GPT Researcher foloseste documentele din `DOC_PATH`; daca `reportSource=hybrid`, foloseste atat `DOC_PATH`, cat si web search prin SearchAgent.
-
-## Flow-ul tool-ului `start_research`
+## Flow-ul `start_research`
 
 Tool-ul MCP `start_research` ruleaza:
 
@@ -154,17 +116,17 @@ Tool-ul MCP `start_research` ruleaza:
 Input-ul important este:
 
 - `query`: cererea de research trimisa curat catre GPT Researcher.
-- `moreContext`: camp optional, pastrat in raspuns, dar nefolosit momentan in query sau search.
+- `context`: instructiuni sau date optionale pentru task-ul de research. `query` ramane query-ul principal folosit pentru web research.
 - `reportType`: tipul raportului GPT Researcher; default `research_report`.
-- `workingDir`: director din `WORKSPACE_PATH` unde se cauta documente locale si unde se salveaza raportul.
+- `workingDir`: director din `WORKSPACE_PATH` unde se salveaza raportul.
+- `useLocalDocs`: boolean optional care decide daca `workingDir` este folosit ca sursa de documente locale.
 
 `workingDir` trebuie sa fie in interiorul `WORKSPACE_PATH`. Daca lipseste, se foloseste radacina `WORKSPACE_PATH`. Directorul este creat daca nu exista.
 
-Inainte de research, agentul seteaza:
+Semantica `useLocalDocs` este:
 
-```text
-DOC_PATH=<workingDir>
-```
+- lipseste sau `true`: agentul seteaza `DOC_PATH=<workingDir>` si creeaza GPT Researcher cu `report_source="hybrid"`;
+- `false`: agentul nu seteaza `DOC_PATH` si creeaza GPT Researcher cu `report_source="web"`.
 
 Instanta GPT Researcher este creata cu:
 
@@ -172,21 +134,15 @@ Instanta GPT Researcher este creata cu:
 GPTResearcher(
     query=query,
     report_type=report_type,
-    report_source=settings["reportSource"],
+    report_source=report_source,
 )
 ```
 
-Agentul nu concateneaza lista de fisiere locale in query. Query-ul trimis la GPT Researcher ramane query-ul primit de tool. GPT Researcher decide apoi sub-query-urile si apelurile de search conform propriului pipeline.
+Agentul nu concateneaza fisierele locale sau lista de fisiere in query. GPT Researcher decide sub-query-urile si apelurile de search conform propriului pipeline. Daca `context` este prezent, agentul il paseaza separat catre GPT Researcher ca instructiuni/context pentru raport.
 
 ## Documente locale si rapoarte
 
-Documentele locale sunt citite de GPT Researcher prin `DOC_PATH`, care pointeaza la `workingDir`.
-
-Semantica `reportSource` este:
-
-- `web`: `DOC_PATH` este setat, dar GPT Researcher foloseste doar web search.
-- `local`: GPT Researcher incarca documentele din `DOC_PATH` si foloseste context local.
-- `hybrid`: GPT Researcher incarca documentele din `DOC_PATH` si face si web search.
+Cand `useLocalDocs` este `true` sau lipseste, documentele locale sunt citite de GPT Researcher prin `DOC_PATH`, care pointeaza la `workingDir`. Cand `useLocalDocs` este `false`, research-ul este web-only si documentele locale nu sunt expuse.
 
 Raportul final este salvat in `workingDir` cu nume generat din timestamp si query:
 
@@ -194,20 +150,20 @@ Raportul final este salvat in `workingDir` cu nume generat din timestamp si quer
 gpt-researcher-<timestamp>-<query-slug>.md
 ```
 
-Raspunsul tool-ului include raportul, calea fisierului salvat, sursele, costurile daca sunt disponibile, fisierele gasite in `workingDir` si un tail de log.
+Raspunsul tool-ului include raportul, calea fisierului salvat, sursele, costurile daca sunt disponibile, fisierele locale folosite cand exista si un tail de log.
 
 ## Date persistente
 
-Agentul foloseste doua zone diferite de date:
+Agentul foloseste doua zone de date:
 
-- `$HOME` pentru datele persistente ale agentului. Aici se afla `gpt-researcher-settings.json`, iar pe host corespunde cu `.data/GPTResearcher`.
-- `WORKSPACE_PATH` pentru fisierele de lucru ale utilizatorului. Aici se afla `workingDir`, documentele locale si rapoartele generate.
+- `$HOME`: date persistente ale agentului, inclusiv `gpt-researcher-settings.json`; pe host corespunde cu `.data/GPTResearcher`.
+- `WORKSPACE_PATH`: fisierele de lucru ale utilizatorului, documentele locale si rapoartele generate.
 
-Aceasta separare este intentionata: setarile agentului sunt date ale agentului, iar rapoartele si documentele sunt date ale workspace-ului de lucru.
+Aceasta separare este intentionata: setarile sunt date ale agentului, iar documentele si rapoartele sunt date ale workspace-ului de lucru.
 
 ## Tool-uri MCP
 
-Agentul expune urmatoarele tool-uri:
+Agentul expune:
 
 - `start_research`: porneste un research GPT Researcher si salveaza raportul.
 - `gpt_researcher_get_settings`: citeste setarile persistente.
@@ -218,10 +174,8 @@ Agentul expune urmatoarele tool-uri:
 
 ## Reguli operationale
 
-Setarile de model si search trebuie schimbate prin fisierul persistent sau prin modalul IDE, nu prin editarea codului.
+Setarile de model si search se schimba prin fisierul persistent sau prin modalul IDE, nu prin editarea codului.
 
-`moreContext` exista pentru extensii viitoare, dar nu trebuie tratat ca sursa activa de search.
+Pentru a controla documentele locale din AchillesCLI, foloseste parametrul skillului `useLocalDocs`. Default-ul este `true`, deci research-ul este hybrid daca parametrul lipseste.
 
-Pentru research pe documente locale, foloseste `reportSource=local` sau `reportSource=hybrid`. `reportSource=web` ignora documentele locale chiar daca `DOC_PATH` este setat.
-
-Pentru debugging, logurile importante sunt emise de scriptul `start_research` si includ `queryChars`, `reportType`, `reportSource`, modelele alese si providerul de search.
+Pentru debugging, logurile importante sunt emise de `start_research` si includ `queryChars`, `reportType`, `reportSource`, `useLocalDocs`, modelele alese si providerul de search.

@@ -3,18 +3,11 @@ const DEFAULT_SETTINGS = Object.freeze({
     smartLlm: 'codex-api/gpt-5.5',
     strategicLlm: 'codex-api/gpt-5.4-mini',
     embedding: 'codestral-embed',
-    searchProvider: 'duckduckgo',
-    reportSource: 'web'
+    searchProvider: 'duckduckgo'
 });
 
 const LOG_PREFIX = '[GPTResearcher Settings]';
 const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding', 'searchProvider']);
-const REPORT_SOURCES = new Set(['web', 'local', 'hybrid']);
-const REPORT_SOURCE_HELP = Object.freeze({
-    web: 'Uses only internet sources through the selected search provider.',
-    local: 'Uses only local files from this agent workspace folder.',
-    hybrid: 'Uses both local files from this agent workspace folder and internet sources.'
-});
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -93,14 +86,12 @@ function parseToolPayload(result) {
 
 function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const reportSource = trim(input.reportSource) || DEFAULT_SETTINGS.reportSource;
     return {
         fastLlm: trim(input.fastLlm) || DEFAULT_SETTINGS.fastLlm,
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
         embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        searchProvider: trim(input.searchProvider) || DEFAULT_SETTINGS.searchProvider,
-        reportSource: REPORT_SOURCES.has(reportSource) ? reportSource : DEFAULT_SETTINGS.reportSource
+        searchProvider: trim(input.searchProvider) || DEFAULT_SETTINGS.searchProvider
     };
 }
 
@@ -210,8 +201,7 @@ export class GPTResearcherSettings {
             smartLlm: this.element.querySelector('#gptrSmartLlm'),
             strategicLlm: this.element.querySelector('#gptrStrategicLlm'),
             embedding: this.element.querySelector('#gptrEmbedding'),
-            searchProvider: this.element.querySelector('#gptrSearchProvider'),
-            reportSource: this.element.querySelector('#gptrReportSource')
+            searchProvider: this.element.querySelector('#gptrSearchProvider')
         };
         this.modelOptionLists = {
             fastLlm: this.element.querySelector('[data-options-for="fastLlm"]'),
@@ -231,9 +221,7 @@ export class GPTResearcherSettings {
             this.bindModelCombobox(field);
         }
         this.inputs.searchProvider?.addEventListener('change', () => this.renderSearchProviderHelp());
-        this.inputs.reportSource?.addEventListener('change', () => this.renderReportSourceHelp());
         this.searchProviderHelpElement = this.element.querySelector('#gptrSearchProviderHelp');
-        this.reportSourceHelpElement = this.element.querySelector('#gptrReportSourceHelp');
         this.statusElement = this.element.querySelector('#gptrSettingsStatus');
     }
 
@@ -336,9 +324,7 @@ export class GPTResearcherSettings {
         if (this.inputs?.strategicLlm) this.inputs.strategicLlm.value = settings.strategicLlm;
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
         if (this.inputs?.searchProvider) this.inputs.searchProvider.value = settings.searchProvider;
-        if (this.inputs?.reportSource) this.inputs.reportSource.value = settings.reportSource;
         this.renderSearchProviderHelp();
-        this.renderReportSourceHelp();
         for (const field of MODEL_FIELDS) {
             this.closeModelOptions(field);
         }
@@ -349,20 +335,13 @@ export class GPTResearcherSettings {
         this.searchProviderHelpElement.textContent = '';
     }
 
-    renderReportSourceHelp() {
-        if (!this.reportSourceHelpElement) return;
-        const source = trim(this.inputs?.reportSource?.value) || DEFAULT_SETTINGS.reportSource;
-        this.reportSourceHelpElement.textContent = REPORT_SOURCE_HELP[source] || REPORT_SOURCE_HELP.web;
-    }
-
     collectSettingsFromInputs() {
         return normalizeSettings({
             fastLlm: this.inputs?.fastLlm?.value,
             smartLlm: this.inputs?.smartLlm?.value,
             strategicLlm: this.inputs?.strategicLlm?.value,
             embedding: this.inputs?.embedding?.value,
-            searchProvider: this.inputs?.searchProvider?.value,
-            reportSource: this.inputs?.reportSource?.value
+            searchProvider: this.inputs?.searchProvider?.value
         });
     }
 

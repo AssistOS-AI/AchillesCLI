@@ -12,22 +12,17 @@ DEFAULT_SETTINGS = {
     "strategicLlm": "codex-api/gpt-5.4-mini",
     "embedding": "codestral-embed",
     "searchProvider": "duckduckgo",
-    "reportSource": "web",
 }
-
-REPORT_SOURCES = {"web", "local", "hybrid"}
 
 
 def normalize_settings(value):
     source = value if isinstance(value, dict) else {}
-    report_source = normalize_string(source.get("reportSource")) or DEFAULT_SETTINGS["reportSource"]
     return {
         "fastLlm": normalize_string(source.get("fastLlm")) or DEFAULT_SETTINGS["fastLlm"],
         "smartLlm": normalize_string(source.get("smartLlm")) or DEFAULT_SETTINGS["smartLlm"],
         "strategicLlm": normalize_string(source.get("strategicLlm")) or DEFAULT_SETTINGS["strategicLlm"],
         "embedding": normalize_string(source.get("embedding")) or DEFAULT_SETTINGS["embedding"],
         "searchProvider": normalize_string(source.get("searchProvider")) or DEFAULT_SETTINGS["searchProvider"],
-        "reportSource": report_source if report_source in REPORT_SOURCES else DEFAULT_SETTINGS["reportSource"],
     }
 
 

@@ -2,6 +2,30 @@ function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeOptionalBoolean(value) {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) {
+        return true;
+    }
+    if (['false', '0', 'no', 'off'].includes(normalized)) {
+        return false;
+    }
+    return undefined;
+}
+
+function resolveWorkingDir(invocation = {}) {
+    return trim(invocation.mainAgent?.startDir)
+        || trim(invocation.context?.workingDir)
+        || trim(invocation.context?.workspaceRoot)
+        || process.cwd();
+}
+
 const PROGRESS_CHUNK_LIMIT = 3000;
 
 function limitProgressText(text) {
@@ -152,6 +176,7 @@ export const TARGET_AGENT = 'GPTResearcher';
 export const TOOL_NAME = 'start_research';
 
 function normalizeInput(invocation = {}) {
+    const defaultWorkingDir = resolveWorkingDir(invocation);
     const candidate = typeof invocation.promptText === 'string'
         ? invocation.promptText
         : typeof invocation.prompt === 'string'
@@ -160,44 +185,50 @@ function normalizeInput(invocation = {}) {
     const text = trim(candidate);
     if (!text) {
         return {
-            prompt: trim(invocation.prompt),
-            context: trim(invocation.context),
+            query: trim(invocation.query || invocation.prompt),
+            context: trim(invocation.researchContext || invocation.context),
             reportType: trim(invocation.reportType),
-            workingDir: trim(invocation.workingDir),
+            workingDir: defaultWorkingDir,
+            useLocalDocs: normalizeOptionalBoolean(invocation.useLocalDocs),
         };
     }
     try {
         const parsed = JSON.parse(text);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             return {
-                prompt: trim(parsed.prompt || parsed.query || parsed.task || parsed.taskDescription),
-                context: trim(parsed.context || parsed.moreContext),
+                query: trim(parsed.query || parsed.task || parsed.taskDescription),
+                context: trim(parsed.context),
                 reportType: trim(parsed.reportType || parsed.report_type),
-                workingDir: trim(parsed.workingDir || parsed.working_dir),
+                workingDir: defaultWorkingDir,
+                useLocalDocs: normalizeOptionalBoolean(parsed.useLocalDocs ?? parsed.use_local_docs),
             };
         }
     } catch {
     }
     return {
-        prompt: text,
-        context: trim(invocation.context),
+        query: text,
+        context: trim(invocation.researchContext || invocation.context),
         reportType: trim(invocation.reportType),
-        workingDir: trim(invocation.workingDir),
+        workingDir: defaultWorkingDir,
+        useLocalDocs: normalizeOptionalBoolean(invocation.useLocalDocs),
     };
 }
 
-function buildPayload({ prompt, context, reportType, workingDir }) {
+function buildPayload({ query, context, reportType, workingDir, useLocalDocs }) {
     const payload = {
-        query: prompt,
+        query,
     };
     if (context) {
-        payload.moreContext = context;
+        payload.context = context;
     }
     if (reportType) {
         payload.reportType = reportType;
     }
     if (workingDir) {
         payload.workingDir = workingDir;
+    }
+    if (typeof useLocalDocs === 'boolean') {
+        payload.useLocalDocs = useLocalDocs;
     }
     return payload;
 }
@@ -254,7 +285,7 @@ function normalizeAnswer(payload) {
 
 export async function action(invocation = {}) {
     const input = normalizeInput(invocation);
-    if (!input.prompt) {
+    if (!input.query) {
         return 'GPTResearcher needs a natural-language research task to run.';
     }
 
