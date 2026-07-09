@@ -7,11 +7,11 @@ from .io_utils import normalize_string
 SETTINGS_PATH = os.path.join(os.environ["HOME"], "gpt-researcher-settings.json")
 
 DEFAULT_SETTINGS = {
-    "fastLlm": "codex-api/gpt-5.4-mini",
-    "smartLlm": "codex-api/gpt-5.5",
-    "strategicLlm": "codex-api/gpt-5.4-mini",
-    "embedding": "codestral-embed",
-    "searchProvider": "duckduckgo",
+    "fastLlm": "fast",
+    "smartLlm": "plan",
+    "strategicLlm": "deep",
+    "embedding": "embeddings",
+    "searchProvider": "searxng",
 }
 
 

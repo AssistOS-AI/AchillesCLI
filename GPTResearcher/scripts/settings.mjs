@@ -4,11 +4,11 @@ import path from 'node:path';
 export const SETTINGS_PATH = path.join(process.env.HOME, 'gpt-researcher-settings.json');
 
 export const DEFAULT_SETTINGS = Object.freeze({
-    fastLlm: 'codex-api/gpt-5.4-mini',
-    smartLlm: 'codex-api/gpt-5.5',
-    strategicLlm: 'codex-api/gpt-5.4-mini',
-    embedding: 'codestral-embed',
-    searchProvider: 'duckduckgo'
+    fastLlm: 'fast',
+    smartLlm: 'deep',
+    strategicLlm: 'plan',
+    embedding: 'embeddings',
+    searchProvider: 'searxng'
 });
 
 function trim(value) {
