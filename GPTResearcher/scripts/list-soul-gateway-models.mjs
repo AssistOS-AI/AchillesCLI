@@ -131,41 +131,7 @@ function normalizePayload(payload) {
         models,
         chatModels: models.filter((model) => !model.isEmbedding && !model.isSearch),
         embeddingModels: models.filter((model) => model.isEmbedding),
-        searchProviders: [],
     };
-}
-
-function normalizeSearchProvider(row) {
-    const provider = trim(row?.provider || row?.key || row?.id);
-    if (!provider) return null;
-    return {
-        id: provider,
-        label: trim(row?.name || row?.label) || provider,
-        providerKey: 'searchAgent',
-        providerLabel: 'SearchAgent',
-        providerModelId: provider,
-        tags: ['search'],
-        capabilities: {},
-        enabled: true,
-        isEmbedding: false,
-        isSearch: true,
-    };
-}
-
-async function fetchSearchProviders() {
-    const module = await import('/Agent/client/AgentMcpClient.mjs');
-    if (!module || typeof module.createAgentClient !== 'function') {
-        throw new Error('AgentMcpClient module does not expose createAgentClient.');
-    }
-    const client = await module.createAgentClient('searchAgent');
-    const payload = await client.callTool('search_agent_list_providers', {});
-    if (payload?.ok === false) {
-        throw new Error(payload.error?.message || payload.error || 'SearchAgent providers request failed.');
-    }
-    return asArray(payload?.providers)
-        .map(normalizeSearchProvider)
-        .filter(Boolean)
-        .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 async function main() {
@@ -195,9 +161,7 @@ async function main() {
     if (!response.ok) {
         throw new Error(`Soul Gateway models request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
     }
-    const normalized = normalizePayload(payload);
-    normalized.searchProviders = await fetchSearchProviders();
-    process.stdout.write(JSON.stringify(normalized));
+    process.stdout.write(JSON.stringify(normalizePayload(payload)));
 }
 
 try {

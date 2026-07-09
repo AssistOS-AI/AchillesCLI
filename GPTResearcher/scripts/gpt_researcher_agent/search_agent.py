@@ -30,7 +30,6 @@ class SearchAgentSearchRetriever:
     def __init__(self, query, query_domains=None):
         self.query = query
         self.query_domains = query_domains or []
-        self.provider = normalize_string(os.environ.get("SEARCH_AGENT_PROVIDER")) or "duckduckgo"
 
     def search(self, max_results=5):
         query = self.query
@@ -39,7 +38,6 @@ class SearchAgentSearchRetriever:
             query = f"{query}\n\nRestrict results to these domains when possible: {domains}"
 
         payload = {
-            "provider": self.provider,
             "query": query,
             "maxResults": max_results,
         }

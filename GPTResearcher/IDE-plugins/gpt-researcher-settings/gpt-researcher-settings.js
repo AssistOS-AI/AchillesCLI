@@ -2,12 +2,11 @@ const DEFAULT_SETTINGS = Object.freeze({
     fastLlm: 'codex-api/gpt-5.4-mini',
     smartLlm: 'codex-api/gpt-5.5',
     strategicLlm: 'codex-api/gpt-5.4-mini',
-    embedding: 'codestral-embed',
-    searchProvider: 'duckduckgo'
+    embedding: 'codestral-embed'
 });
 
 const LOG_PREFIX = '[GPTResearcher Settings]';
-const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding', 'searchProvider']);
+const MODEL_FIELDS = Object.freeze(['fastLlm', 'smartLlm', 'strategicLlm', 'embedding']);
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -90,8 +89,7 @@ function normalizeSettings(value = {}) {
         fastLlm: trim(input.fastLlm) || DEFAULT_SETTINGS.fastLlm,
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
-        embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
-        searchProvider: trim(input.searchProvider) || DEFAULT_SETTINGS.searchProvider
+        embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding
     };
 }
 
@@ -132,10 +130,7 @@ function normalizeModelPayload(value = {}) {
     const embeddingModels = Array.isArray(input.embeddingModels)
         ? input.embeddingModels.map(normalizeModel).filter(Boolean)
         : models.filter((model) => model.isEmbedding);
-    const searchProviders = Array.isArray(input.searchProviders)
-        ? input.searchProviders.map(normalizeModel).filter(Boolean)
-        : models.filter((model) => model.isSearch);
-    return { models, chatModels, embeddingModels, searchProviders };
+    return { models, chatModels, embeddingModels };
 }
 
 function searchTextForModel(model) {
@@ -200,28 +195,23 @@ export class GPTResearcherSettings {
             fastLlm: this.element.querySelector('#gptrFastLlm'),
             smartLlm: this.element.querySelector('#gptrSmartLlm'),
             strategicLlm: this.element.querySelector('#gptrStrategicLlm'),
-            embedding: this.element.querySelector('#gptrEmbedding'),
-            searchProvider: this.element.querySelector('#gptrSearchProvider')
+            embedding: this.element.querySelector('#gptrEmbedding')
         };
         this.modelOptionLists = {
             fastLlm: this.element.querySelector('[data-options-for="fastLlm"]'),
             smartLlm: this.element.querySelector('[data-options-for="smartLlm"]'),
             strategicLlm: this.element.querySelector('[data-options-for="strategicLlm"]'),
-            embedding: this.element.querySelector('[data-options-for="embedding"]'),
-            searchProvider: this.element.querySelector('[data-options-for="searchProvider"]')
+            embedding: this.element.querySelector('[data-options-for="embedding"]')
         };
         this.modelToggles = {
             fastLlm: this.element.querySelector('[data-model-toggle="fastLlm"]'),
             smartLlm: this.element.querySelector('[data-model-toggle="smartLlm"]'),
             strategicLlm: this.element.querySelector('[data-model-toggle="strategicLlm"]'),
-            embedding: this.element.querySelector('[data-model-toggle="embedding"]'),
-            searchProvider: this.element.querySelector('[data-model-toggle="searchProvider"]')
+            embedding: this.element.querySelector('[data-model-toggle="embedding"]')
         };
         for (const field of MODEL_FIELDS) {
             this.bindModelCombobox(field);
         }
-        this.inputs.searchProvider?.addEventListener('change', () => this.renderSearchProviderHelp());
-        this.searchProviderHelpElement = this.element.querySelector('#gptrSearchProviderHelp');
         this.statusElement = this.element.querySelector('#gptrSettingsStatus');
     }
 
@@ -232,9 +222,6 @@ export class GPTResearcherSettings {
         input.addEventListener('focus', () => this.renderModelOptions(field, true, { showAll: true }));
         input.addEventListener('input', () => {
             this.renderModelOptions(field, true);
-            if (field === 'searchProvider') {
-                this.renderSearchProviderHelp();
-            }
         });
         input.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
@@ -323,16 +310,9 @@ export class GPTResearcherSettings {
         if (this.inputs?.smartLlm) this.inputs.smartLlm.value = settings.smartLlm;
         if (this.inputs?.strategicLlm) this.inputs.strategicLlm.value = settings.strategicLlm;
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
-        if (this.inputs?.searchProvider) this.inputs.searchProvider.value = settings.searchProvider;
-        this.renderSearchProviderHelp();
         for (const field of MODEL_FIELDS) {
             this.closeModelOptions(field);
         }
-    }
-
-    renderSearchProviderHelp() {
-        if (!this.searchProviderHelpElement) return;
-        this.searchProviderHelpElement.textContent = '';
     }
 
     collectSettingsFromInputs() {
@@ -340,17 +320,13 @@ export class GPTResearcherSettings {
             fastLlm: this.inputs?.fastLlm?.value,
             smartLlm: this.inputs?.smartLlm?.value,
             strategicLlm: this.inputs?.strategicLlm?.value,
-            embedding: this.inputs?.embedding?.value,
-            searchProvider: this.inputs?.searchProvider?.value
+            embedding: this.inputs?.embedding?.value
         });
     }
 
     getModelsForField(field) {
         if (field === 'embedding') {
             return this.state.models.embeddingModels || [];
-        }
-        if (field === 'searchProvider') {
-            return this.state.models.searchProviders || [];
         }
         return this.state.models.chatModels || [];
     }
@@ -379,8 +355,6 @@ export class GPTResearcherSettings {
             empty.className = 'gptr-model-empty';
             if (field === 'embedding') {
                 empty.textContent = 'No matching embedding models.';
-            } else if (field === 'searchProvider') {
-                empty.textContent = 'No matching search providers.';
             } else {
                 empty.textContent = 'No matching models.';
             }
@@ -407,9 +381,6 @@ export class GPTResearcherSettings {
                 button.addEventListener('mousedown', (event) => {
                     event.preventDefault();
                     input.value = model.id;
-                    if (field === 'searchProvider') {
-                        this.renderSearchProviderHelp();
-                    }
                     this.closeModelOptions(field);
                 });
                 const main = document.createElement('span');
@@ -472,7 +443,6 @@ export class GPTResearcherSettings {
             for (const field of MODEL_FIELDS) {
                 this.closeModelOptions(field);
             }
-            this.renderSearchProviderHelp();
             if (!quiet) this.setStatus('');
         } catch (error) {
             logError('Failed to load GPTResearcher model/provider options.', error);

@@ -63,7 +63,10 @@ async function main() {
         throw new Error('AgentMcpClient module does not expose createAgentClient.');
     }
     const client = await module.createAgentClient('searchAgent');
-    const result = await client.callTool('search_agent_search', input);
+    const result = await client.callTool('search_agent_search', {
+        query: input.query,
+        maxResults: input.maxResults,
+    });
     process.stdout.write(JSON.stringify(unwrapToolPayload(result)));
 }
 

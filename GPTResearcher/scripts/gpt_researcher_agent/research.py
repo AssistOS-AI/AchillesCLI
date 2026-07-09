@@ -62,7 +62,7 @@ async def run_research(payload):
             f"useLocalDocs={effective_use_local_docs} "
             f"fastLlm={settings['fastLlm']} smartLlm={settings['smartLlm']} "
             f"strategicLlm={settings['strategicLlm']} embedding={settings['embedding']} "
-            f"retriever=search_agent searchProvider={settings['searchProvider']}"
+            "retriever=search_agent"
         )
         patch_gpt_researcher_llm_providers()
         patch_gpt_researcher_retriever()

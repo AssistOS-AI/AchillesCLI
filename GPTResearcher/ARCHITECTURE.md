@@ -55,8 +55,7 @@ Fisierul contine doar setari non-secret:
   "fastLlm": "codex-api/gpt-5.4-mini",
   "smartLlm": "codex-api/gpt-5.5",
   "strategicLlm": "codex-api/gpt-5.4-mini",
-  "embedding": "codestral-embed",
-  "searchProvider": "duckduckgo"
+  "embedding": "codestral-embed"
 }
 ```
 
@@ -76,7 +75,7 @@ Pluginul nu scrie direct pe disk. El apeleaza tool-urile MCP:
 - `gpt_researcher_update_settings`
 - `gpt_researcher_list_models`
 
-In UI se pot seta modelele `fastLlm`, `smartLlm`, `strategicLlm`, modelul de `embedding` si `searchProvider`. Lista de modele vine din Soul Gateway, iar lista de provideri de search vine din SearchAgent.
+In UI se pot seta modelele `fastLlm`, `smartLlm`, `strategicLlm` si modelul de `embedding`. Lista de modele vine din Soul Gateway. Providerul de web search se configureaza in SearchAgent Settings.
 
 UI-ul GPTResearcher nu configureaza sursa de research si nu afiseaza informatii despre cheile API ale SearchAgent.
 
@@ -90,7 +89,6 @@ SMART_LLM=soul_gateway:<smartLlm>
 STRATEGIC_LLM=soul_gateway:<strategicLlm>
 EMBEDDING=soul_gateway:<embedding>
 RETRIEVER=search_agent
-SEARCH_AGENT_PROVIDER=<searchProvider>
 ```
 
 Providerul `soul_gateway` este adaugat prin patch local in `soul_gateway.py`. El trimite chat completions si embeddings catre Soul Gateway prin routerul Ploinky.
@@ -101,7 +99,7 @@ Retrieverul `search_agent` este adaugat prin patch local in `search_agent.py`. E
 
 GPTResearcher nu apeleaza direct Tavily, Brave, DuckDuckGo sau alti provideri. Pentru web search, foloseste intotdeauna SearchAgent.
 
-Providerul ales in settings (`searchProvider`) este transmis catre SearchAgent la fiecare cautare. SearchAgent alege providerul concret, citeste secretele proprii din mediul sau si normalizeaza raspunsurile.
+Providerul de search este setare interna SearchAgent. GPTResearcher trimite catre SearchAgent doar query-ul si limita de rezultate; SearchAgent alege providerul configurat, citeste secretele proprii din mediul sau si normalizeaza raspunsurile.
 
 Query-ul trimis catre SearchAgent este query-ul generat de pipeline-ul GPT Researcher. Lista de fisiere locale nu este lipita in query.
 

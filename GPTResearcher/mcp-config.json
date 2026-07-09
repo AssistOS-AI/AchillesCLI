@@ -42,7 +42,7 @@
         {
             "name": "gpt_researcher_get_settings",
             "title": "Get GPTResearcher Settings",
-            "description": "Returns persisted GPT Researcher model and SearchAgent provider settings.",
+            "description": "Returns persisted GPT Researcher model settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/get-settings.mjs"],
             "cwd": "/code",
@@ -52,7 +52,7 @@
         {
             "name": "gpt_researcher_list_models",
             "title": "List GPTResearcher Model Options",
-            "description": "Returns Soul Gateway model metadata and SearchAgent providers for GPTResearcher settings.",
+            "description": "Returns Soul Gateway model metadata for GPTResearcher settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/list-soul-gateway-models.mjs"],
             "cwd": "/code",
@@ -62,7 +62,7 @@
         {
             "name": "gpt_researcher_update_settings",
             "title": "Update GPTResearcher Settings",
-            "description": "Persists GPT Researcher model and SearchAgent provider settings.",
+            "description": "Persists GPT Researcher model settings.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/update-settings.mjs"],
             "cwd": "/code",
@@ -86,11 +86,6 @@
                 "embedding": {
                     "type": "string",
                     "description": "Soul Gateway embedding model id, without the soul_gateway: prefix.",
-                    "optional": true
-                },
-                "searchProvider": {
-                    "type": "string",
-                    "description": "SearchAgent provider key.",
                     "optional": true
                 }
             }
