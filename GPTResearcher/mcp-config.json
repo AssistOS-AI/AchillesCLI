@@ -29,7 +29,7 @@
                 },
                 "workingDir": {
                     "type": "string",
-                    "description": "Optional working directory inside WORKSPACE_PATH. The final Markdown report is saved there. When useLocalDocs is true or omitted, this directory is also exposed to GPTResearcher through DOC_PATH.",
+                    "description": "Optional working directory inside WORKSPACE_PATH. The final Markdown report is saved there. When useLocalDocs is true or omitted and local files exist, this directory is also exposed to GPTResearcher through DOC_PATH.",
                     "optional": true
                 },
                 "useLocalDocs": {

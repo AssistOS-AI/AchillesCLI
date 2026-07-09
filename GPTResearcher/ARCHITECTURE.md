@@ -125,7 +125,7 @@ Input-ul important este:
 
 Semantica `useLocalDocs` este:
 
-- lipseste sau `true`: agentul seteaza `DOC_PATH=<workingDir>` si creeaza GPT Researcher cu `report_source="hybrid"`;
+- lipseste sau `true`: agentul seteaza `DOC_PATH=<workingDir>` si creeaza GPT Researcher cu `report_source="hybrid"` cand exista fisiere locale in `workingDir`; daca nu exista fisiere locale, face fallback automat la `report_source="web"`;
 - `false`: agentul nu seteaza `DOC_PATH` si creeaza GPT Researcher cu `report_source="web"`.
 
 Instanta GPT Researcher este creata cu:
@@ -142,7 +142,7 @@ Agentul nu concateneaza fisierele locale sau lista de fisiere in query. GPT Rese
 
 ## Documente locale si rapoarte
 
-Cand `useLocalDocs` este `true` sau lipseste, documentele locale sunt citite de GPT Researcher prin `DOC_PATH`, care pointeaza la `workingDir`. Cand `useLocalDocs` este `false`, research-ul este web-only si documentele locale nu sunt expuse.
+Cand `useLocalDocs` este `true` sau lipseste si exista fisiere locale, documentele locale sunt citite de GPT Researcher prin `DOC_PATH`, care pointeaza la `workingDir`. Cand `useLocalDocs` este `false` sau `workingDir` nu contine fisiere locale, research-ul este web-only si documentele locale nu sunt expuse.
 
 Raportul final este salvat in `workingDir` cu nume generat din timestamp si query:
 

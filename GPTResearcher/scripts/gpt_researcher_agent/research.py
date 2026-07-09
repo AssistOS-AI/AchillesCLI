@@ -33,9 +33,11 @@ async def run_research(payload):
     working_dir = resolve_working_dir(payload.get("workingDir"))
     use_local_docs = normalize_optional_bool(payload.get("useLocalDocs"))
     effective_use_local_docs = use_local_docs is not False
+    working_files = list_working_dir_files(working_dir) if effective_use_local_docs else []
+    if effective_use_local_docs and not working_files:
+        effective_use_local_docs = False
     report_source = "hybrid" if effective_use_local_docs else "web"
     doc_path = working_dir if effective_use_local_docs else None
-    working_files = list_working_dir_files(working_dir) if effective_use_local_docs else []
 
     if not query:
         write_json({
