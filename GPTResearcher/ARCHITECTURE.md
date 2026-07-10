@@ -55,7 +55,8 @@ Fisierul contine doar setari non-secret:
   "fastLlm": "codex-api/gpt-5.4-mini",
   "smartLlm": "codex-api/gpt-5.5",
   "strategicLlm": "codex-api/gpt-5.4-mini",
-  "embedding": "codestral-embed"
+  "embedding": "codestral-embed",
+  "searchProvider": "searxng"
 }
 ```
 
@@ -75,9 +76,9 @@ Pluginul nu scrie direct pe disk. El apeleaza tool-urile MCP:
 - `gpt_researcher_update_settings`
 - `gpt_researcher_list_models`
 
-In UI se pot seta modelele `fastLlm`, `smartLlm`, `strategicLlm` si modelul de `embedding`. Lista de modele vine din Soul Gateway. Providerul de web search se configureaza in SearchAgent Settings.
+In UI se pot seta modelele `fastLlm`, `smartLlm`, `strategicLlm`, modelul de `embedding`, si providerul SearchAgent folosit pentru web research. Lista de modele vine din Soul Gateway; lista de provideri de search este derivata din modelele SearchAgent sincronizate in Soul Gateway si marcate cu tagul `search`.
 
-UI-ul GPTResearcher nu configureaza sursa de research si nu afiseaza informatii despre cheile API ale SearchAgent.
+UI-ul GPTResearcher configureaza doar providerul de search selectat. Cheile API ale providerilor raman in SearchAgent Settings si nu sunt afisate in GPTResearcher.
 
 ## Configurare la runtime
 
@@ -88,6 +89,7 @@ FAST_LLM=soul_gateway:<fastLlm>
 SMART_LLM=soul_gateway:<smartLlm>
 STRATEGIC_LLM=soul_gateway:<strategicLlm>
 EMBEDDING=soul_gateway:<embedding>
+SEARCH_AGENT_PROVIDER=<searchProvider>
 RETRIEVER=search_agent
 ```
 
@@ -99,7 +101,7 @@ Retrieverul `search_agent` este adaugat prin patch local in `search_agent.py`. E
 
 GPTResearcher nu apeleaza direct Tavily, Brave, DuckDuckGo sau alti provideri. Pentru web search, foloseste intotdeauna SearchAgent.
 
-Providerul de search este setare interna SearchAgent. GPTResearcher trimite catre SearchAgent doar query-ul si limita de rezultate; SearchAgent alege providerul configurat, citeste secretele proprii din mediul sau si normalizeaza raspunsurile.
+Providerul de search este setare persistenta GPTResearcher (`searchProvider`). GPTResearcher trimite catre SearchAgent providerul, query-ul si limita de rezultate; SearchAgent citeste secretele proprii din mediul sau si normalizeaza raspunsurile.
 
 Query-ul trimis catre SearchAgent este query-ul generat de pipeline-ul GPT Researcher. Lista de fisiere locale nu este lipita in query.
 
@@ -166,7 +168,7 @@ Agentul expune:
 - `start_research`: porneste un research GPT Researcher si salveaza raportul.
 - `gpt_researcher_get_settings`: citeste setarile persistente.
 - `gpt_researcher_update_settings`: salveaza setarile persistente.
-- `gpt_researcher_list_models`: listeaza modelele Soul Gateway si providerii SearchAgent pentru UI.
+- `gpt_researcher_list_models`: listeaza modelele Soul Gateway si deriveaza providerii SearchAgent din modelele marcate cu tagul `search` pentru UI.
 
 `start_research` este marcat `internal`, fiind destinat apelurilor agent-to-agent. Tool-urile de settings sunt folosite de pluginul IDE.
 
@@ -176,4 +178,4 @@ Setarile de model si search se schimba prin fisierul persistent sau prin modalul
 
 Pentru a controla documentele locale din AchillesCLI, foloseste parametrul skillului `useLocalDocs`. Default-ul este `true`, deci research-ul este hybrid daca parametrul lipseste.
 
-Pentru debugging, logurile importante sunt emise de `start_research` si includ `queryChars`, `reportType`, `reportSource`, `useLocalDocs`, modelele alese si providerul de search.
+Pentru debugging, logurile importante sunt emise de `start_research` si includ `queryChars`, `reportType`, `reportSource`, `useLocalDocs`, modelele alese si `searchProvider`.

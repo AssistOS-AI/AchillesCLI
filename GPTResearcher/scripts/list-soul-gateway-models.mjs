@@ -12,6 +12,10 @@ function asArray(value) {
     return [];
 }
 
+function normalizeObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function readField(row, camelName, snakeName, fallback = null) {
     if (row && Object.prototype.hasOwnProperty.call(row, camelName)) {
         return row[camelName];
@@ -41,8 +45,10 @@ const SEARCH_PROVIDER_KEYS = new Set([
     'jina',
     'duckduckgo',
     'searxng',
+    'gemini',
     'gemini-search',
     'google-ai-mode',
+    'deep-research',
 ]);
 
 function isEmbeddingModel(model) {
@@ -57,7 +63,6 @@ function isSearchModel(model) {
     if (
         SEARCH_PROVIDER_KEYS.has(providerKey) ||
         tags.includes('search') ||
-        tags.includes('retrieval') ||
         trim(model.kind).toLowerCase() === 'search' ||
         trim(model.type).toLowerCase() === 'search' ||
         trim(model.providerKind).toLowerCase() === 'search' ||
@@ -68,16 +73,7 @@ function isSearchModel(model) {
     ) {
         return true;
     }
-    const haystack = lowerWords(
-        model.id,
-        model.label,
-        model.providerModelId,
-        tags
-    );
-    return haystack.includes('search-')
-        || haystack.includes('deep-research')
-        || haystack.includes('headless-')
-        || /\b(search|retrieval|grounding)\b/.test(haystack);
+    return false;
 }
 
 function normalizeModel(row) {
@@ -92,27 +88,101 @@ function normalizeModel(row) {
         || 'soul-gateway';
     const providerLabel = trim(readField(row, 'providerDisplayName', 'provider_display_name')) || providerKey;
     const providerModelId = trim(readField(row, 'providerModelId', 'provider_model_id'))
-        || trim(readField(row, 'root', 'root'))
         || '';
-    const tags = asArray(readField(row, '_tags', '_tags', readField(row, 'tags', 'tags', [])));
+    const root = trim(readField(row, 'root', 'root')) || '';
+    const tags = asArray(readField(row, '_tags', '_tags', readField(row, 'tags', 'tags', [])))
+        .map((value) => trim(String(value).toLowerCase()))
+        .filter(Boolean);
     const normalized = {
         id,
         label,
         providerKey,
         providerLabel,
         providerModelId,
+        root,
         kind: trim(readField(row, 'kind', 'kind')),
         type: trim(readField(row, 'type', 'type')),
         providerKind: trim(readField(row, 'providerKind', 'provider_kind')),
         adapterKey: trim(readField(row, 'adapterKey', 'adapter_key')),
         backendKey: trim(readField(row, 'backendKey', 'backend_key')),
         tags,
-        capabilities: {},
+        capabilities: normalizeObject(readField(row, 'capabilities', 'capabilities', readField(row, '_capabilities', '_capabilities', {}))),
+        metadata: normalizeObject(readField(row, 'metadata', 'metadata', {})),
         enabled: readField(row, 'enabled', 'enabled', true) !== false,
     };
     normalized.isEmbedding = isEmbeddingModel(normalized);
     normalized.isSearch = isSearchModel(normalized);
     return normalized;
+}
+
+function stripProviderPrefix(value, providerKey) {
+    const text = trim(value);
+    const prefix = trim(providerKey);
+    if (!text || !prefix) return '';
+    const expected = `${prefix}/`;
+    return text.startsWith(expected) ? trim(text.slice(expected.length)) : '';
+}
+
+function lastPathSegment(value) {
+    const text = trim(value);
+    if (!text) return '';
+    const index = text.lastIndexOf('/');
+    return trim(index >= 0 ? text.slice(index + 1) : text);
+}
+
+function searchProviderIdFromModel(model) {
+    const metadataProvider = trim(model.metadata?.provider);
+    if (trim(model.providerModelId)) return trim(model.providerModelId);
+    if (metadataProvider) return metadataProvider;
+    return stripProviderPrefix(model.id, model.providerKey)
+        || stripProviderPrefix(model.root, model.providerKey)
+        || lastPathSegment(model.root)
+        || lastPathSegment(model.id);
+}
+
+function labelFromSearchProviderId(id) {
+    const known = {
+        duckduckgo: 'DuckDuckGo',
+        searxng: 'SearXNG',
+        tavily: 'Tavily',
+        brave: 'Brave',
+        exa: 'Exa',
+        serper: 'Serper',
+        jina: 'Jina',
+        gemini: 'Google AI Mode',
+        'gemini-search': 'Google AI Mode',
+        'google-ai-mode': 'Google AI Mode',
+        'deep-research': 'Deep Research',
+    };
+    if (known[id]) return known[id];
+    return id
+        .split(/[-_]+/)
+        .filter(Boolean)
+        .map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`)
+        .join(' ');
+}
+
+function searchProvidersFromModels(models) {
+    const providersById = new Map();
+    for (const model of models) {
+        if (!asArray(model.tags).includes('search')) continue;
+        const id = searchProviderIdFromModel(model);
+        if (!id || providersById.has(id)) continue;
+        const label = (
+            trim(model.metadata?.displayName)
+            || trim(model.metadata?.name)
+            || (model.label !== model.id && model.label !== model.root ? trim(model.label) : '')
+            || labelFromSearchProviderId(id)
+            || id
+        );
+        providersById.set(id, {
+            id,
+            label,
+            modelId: model.id,
+        });
+    }
+    return Array.from(providersById.values())
+        .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function normalizePayload(payload) {
@@ -126,11 +196,13 @@ function normalizePayload(payload) {
             if (providerCmp !== 0) return providerCmp;
             return a.label.localeCompare(b.label);
         });
+    const searchModels = models.filter((model) => model.isSearch);
     return {
         ok: true,
         models,
         chatModels: models.filter((model) => !model.isEmbedding && !model.isSearch),
         embeddingModels: models.filter((model) => model.isEmbedding),
+        searchProviders: searchProvidersFromModels(searchModels),
     };
 }
 
@@ -161,7 +233,8 @@ async function main() {
     if (!response.ok) {
         throw new Error(`Soul Gateway models request failed with HTTP ${response.status}: ${text.slice(0, 500)}`);
     }
-    process.stdout.write(JSON.stringify(normalizePayload(payload)));
+    const normalized = normalizePayload(payload);
+    process.stdout.write(JSON.stringify(normalized));
 }
 
 try {

@@ -17,6 +17,10 @@ function normalizePayload(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function trim(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
 export function unwrapToolPayload(value) {
     const direct = normalizePayload(value);
     if (isSearchPayload(direct)) return direct;
@@ -63,7 +67,9 @@ async function main() {
         throw new Error('AgentMcpClient module does not expose createAgentClient.');
     }
     const client = await module.createAgentClient('searchAgent');
+    const provider = trim(input.provider) || trim(process.env.SEARCH_AGENT_PROVIDER);
     const result = await client.callTool('search_agent_search', {
+        provider,
         query: input.query,
         maxResults: input.maxResults,
     });

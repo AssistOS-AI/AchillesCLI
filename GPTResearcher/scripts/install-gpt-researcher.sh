@@ -28,7 +28,8 @@ if [ ! -f "$SETTINGS_PATH" ]; then
   "fastLlm": "codex-api/gpt-5.4-mini",
   "smartLlm": "codex-api/gpt-5.5",
   "strategicLlm": "codex-api/gpt-5.4-mini",
-  "embedding": "codestral-embed"
+  "embedding": "codestral-embed",
+  "searchProvider": "searxng"
 }
 EOF
 fi

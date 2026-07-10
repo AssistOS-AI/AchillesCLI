@@ -7,7 +7,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     fastLlm: 'fast',
     smartLlm: 'deep',
     strategicLlm: 'plan',
-    embedding: 'embeddings'
+    embedding: 'embeddings',
+    searchProvider: 'searxng'
 });
 
 function trim(value) {
@@ -20,7 +21,8 @@ export function normalizeSettings(value = {}) {
         fastLlm: trim(input.fastLlm) || DEFAULT_SETTINGS.fastLlm,
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
-        embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding
+        embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
+        searchProvider: trim(input.searchProvider) || DEFAULT_SETTINGS.searchProvider
     };
 }
 

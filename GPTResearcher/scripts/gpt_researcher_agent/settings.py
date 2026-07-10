@@ -11,6 +11,7 @@ DEFAULT_SETTINGS = {
     "smartLlm": "plan",
     "strategicLlm": "deep",
     "embedding": "embeddings",
+    "searchProvider": "searxng",
 }
 
 
@@ -21,6 +22,7 @@ def normalize_settings(value):
         "smartLlm": normalize_string(source.get("smartLlm")) or DEFAULT_SETTINGS["smartLlm"],
         "strategicLlm": normalize_string(source.get("strategicLlm")) or DEFAULT_SETTINGS["strategicLlm"],
         "embedding": normalize_string(source.get("embedding")) or DEFAULT_SETTINGS["embedding"],
+        "searchProvider": normalize_string(source.get("searchProvider")) or DEFAULT_SETTINGS["searchProvider"],
     }
 
 
@@ -37,4 +39,5 @@ def apply_settings(settings):
     os.environ["SMART_LLM"] = f"soul_gateway:{settings['smartLlm']}"
     os.environ["STRATEGIC_LLM"] = f"soul_gateway:{settings['strategicLlm']}"
     os.environ["EMBEDDING"] = f"soul_gateway:{settings['embedding']}"
+    os.environ["SEARCH_AGENT_PROVIDER"] = settings["searchProvider"]
     os.environ["RETRIEVER"] = "search_agent"

@@ -87,6 +87,11 @@
                     "type": "string",
                     "description": "Soul Gateway embedding model id, without the soul_gateway: prefix.",
                     "optional": true
+                },
+                "searchProvider": {
+                    "type": "string",
+                    "description": "SearchAgent provider key used by GPTResearcher web research.",
+                    "optional": true
                 }
             }
         }

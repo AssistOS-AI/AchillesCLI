@@ -2,7 +2,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     fastLlm: 'codex-api/gpt-5.4-mini',
     smartLlm: 'codex-api/gpt-5.5',
     strategicLlm: 'codex-api/gpt-5.4-mini',
-    embedding: 'codestral-embed'
+    embedding: 'codestral-embed',
+    searchProvider: 'searxng'
 });
 
 const LOG_PREFIX = '[GPTResearcher Settings]';
@@ -89,7 +90,8 @@ function normalizeSettings(value = {}) {
         fastLlm: trim(input.fastLlm) || DEFAULT_SETTINGS.fastLlm,
         smartLlm: trim(input.smartLlm) || DEFAULT_SETTINGS.smartLlm,
         strategicLlm: trim(input.strategicLlm) || DEFAULT_SETTINGS.strategicLlm,
-        embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding
+        embedding: trim(input.embedding) || DEFAULT_SETTINGS.embedding,
+        searchProvider: trim(input.searchProvider) || DEFAULT_SETTINGS.searchProvider
     };
 }
 
@@ -130,7 +132,20 @@ function normalizeModelPayload(value = {}) {
     const embeddingModels = Array.isArray(input.embeddingModels)
         ? input.embeddingModels.map(normalizeModel).filter(Boolean)
         : models.filter((model) => model.isEmbedding);
-    return { models, chatModels, embeddingModels };
+    const searchProviders = Array.isArray(input.searchProviders)
+        ? input.searchProviders.map(normalizeSearchProvider).filter(Boolean)
+        : [];
+    return { models, chatModels, embeddingModels, searchProviders };
+}
+
+function normalizeSearchProvider(value = {}) {
+    const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const id = trim(input.id || input.provider || input.key);
+    if (!id) return null;
+    return {
+        id,
+        label: trim(input.label || input.name) || id
+    };
 }
 
 function searchTextForModel(model) {
@@ -195,7 +210,8 @@ export class GPTResearcherSettings {
             fastLlm: this.element.querySelector('#gptrFastLlm'),
             smartLlm: this.element.querySelector('#gptrSmartLlm'),
             strategicLlm: this.element.querySelector('#gptrStrategicLlm'),
-            embedding: this.element.querySelector('#gptrEmbedding')
+            embedding: this.element.querySelector('#gptrEmbedding'),
+            searchProvider: this.element.querySelector('#gptrSearchProvider')
         };
         this.modelOptionLists = {
             fastLlm: this.element.querySelector('[data-options-for="fastLlm"]'),
@@ -310,6 +326,7 @@ export class GPTResearcherSettings {
         if (this.inputs?.smartLlm) this.inputs.smartLlm.value = settings.smartLlm;
         if (this.inputs?.strategicLlm) this.inputs.strategicLlm.value = settings.strategicLlm;
         if (this.inputs?.embedding) this.inputs.embedding.value = settings.embedding;
+        this.renderSearchProviderOptions(settings.searchProvider);
         for (const field of MODEL_FIELDS) {
             this.closeModelOptions(field);
         }
@@ -320,8 +337,30 @@ export class GPTResearcherSettings {
             fastLlm: this.inputs?.fastLlm?.value,
             smartLlm: this.inputs?.smartLlm?.value,
             strategicLlm: this.inputs?.strategicLlm?.value,
-            embedding: this.inputs?.embedding?.value
+            embedding: this.inputs?.embedding?.value,
+            searchProvider: this.inputs?.searchProvider?.value
         });
+    }
+
+    renderSearchProviderOptions(selectedProvider) {
+        const select = this.inputs?.searchProvider;
+        if (!select) return;
+        const providers = Array.isArray(this.state.models.searchProviders)
+            ? this.state.models.searchProviders
+            : [];
+        const options = new Map();
+        const selected = trim(selectedProvider) || DEFAULT_SETTINGS.searchProvider;
+        options.set(selected, selected);
+        for (const provider of providers) {
+            options.set(provider.id, provider.label || provider.id);
+        }
+        select.replaceChildren(...Array.from(options.entries()).map(([id, label]) => {
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = label === id ? id : `${label} (${id})`;
+            return option;
+        }));
+        select.value = selected;
     }
 
     getModelsForField(field) {
@@ -440,6 +479,7 @@ export class GPTResearcherSettings {
                 throw new Error(payload?.error || `Invalid models payload: ${stringifyForLog(payload)}`);
             }
             this.state.models = normalizeModelPayload(payload);
+            this.renderSearchProviderOptions(normalizeSettings(this.state.settings).searchProvider);
             for (const field of MODEL_FIELDS) {
                 this.closeModelOptions(field);
             }
