@@ -79,6 +79,12 @@ Ploinky integration boundary:
     context. Launcher skills may use this same-origin router base for
     user-facing browser links, while ignoring malformed or non-HTTP origin
     hints.
+15. Ploinky marks an existing WebChat conversation with
+    `PLOINKY_WEBCHAT_HAS_HISTORY=1`. AchillesCLI must use that flag by itself to
+    suppress the new-conversation intro. Folder session identity and persisted
+    history remain host-owned; AchillesCLI does not require a session-id
+    environment variable because Ploinky restores prior turns through the next
+    normal prompt.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.

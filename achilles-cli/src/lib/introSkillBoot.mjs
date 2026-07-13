@@ -74,6 +74,18 @@ function extractSkillResultText(result) {
     return '';
 }
 
+export function shouldStartWebchatIntro(env = process.env) {
+    return String(env?.PLOINKY_WEBCHAT_HAS_HISTORY || '').trim() !== '1';
+}
+
+export function startWebchatIntroSkill(agent, options = {}) {
+    const { env = process.env, ...introOptions } = options;
+    if (!shouldStartWebchatIntro(env)) {
+        return null;
+    }
+    return startIntroSkill(agent, introOptions);
+}
+
 export function startIntroSkill(agent, options = {}) {
     const skillRecord = agent?.getSkillRecord?.(INTRO_SKILL_SHORT_NAME)
         || agent?.getSkillRecord?.(INTRO_SKILL_CANONICAL_NAME);

@@ -45,6 +45,8 @@
     In webchat runtime mode, AchillesCLI emits structured progress metadata before loop-session tool calls.
     The metadata carries the planner reason for the selected tool and is intended for browser UI progress rendering,
     not for transcript or final-answer text.
+    The startup intro is skipped when <code>PLOINKY_WEBCHAT_HAS_HISTORY=1</code> and otherwise runs normally;
+    no WebChat session-id environment variable is required by AchillesCLI.
   </div>
 
   <h2>Repository Maintenance</h2>

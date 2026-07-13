@@ -23,7 +23,7 @@ import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from './lib/repoMan
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
 import { normalizeWebchatMessage } from './lib/webchatEnvelope.mjs';
 import { materializeWebchatContext } from './lib/webchatResources.mjs';
-import { startIntroSkill } from './lib/introSkillBoot.mjs';
+import { startIntroSkill, startWebchatIntroSkill } from './lib/introSkillBoot.mjs';
 import {
     drainWorkspaceSkillsRefresh,
     installWorkspaceSkillRefreshHook,
@@ -512,7 +512,7 @@ async function runWebchatInteractive(agent, options) {
     };
     context.akuSessionState = akuSessionState;
     agent.context = context;
-    await startIntroSkill(agent, {
+    await startWebchatIntroSkill(agent, {
         workingDir,
         context,
         logger: agent.logger,

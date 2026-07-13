@@ -32,6 +32,7 @@ Runtime wiring:
 1. Construct or rehydrate `LLMAgent`/`MainAgent` with runtime configuration.
 2. Attach command execution utilities and UI providers.
 3. Register built-in and discovered skill roots before accepting requests.
+4. In webchat mode, run the startup intro unless `PLOINKY_WEBCHAT_HAS_HISTORY=1`; no folder session identifier is required by the agent process.
 
 Configuration boundaries:
 1. Startup must not hardcode environment-specific absolute paths.
