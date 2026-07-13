@@ -10,9 +10,11 @@ summary: Defines the contract for delegating AchillesCLI tasks to the OpenCode P
 
 ## Introduction
 This DS defines the bounded OpenCode launcher delegation contract implemented
-by the `launch-opencode` C-Skill. The feature exists to let AchillesCLI route a
-plain user task to the known `opencodeAgent` Ploinky agent without turning
-general chat handling into an unrestricted agent invocation surface.
+by the `launch-opencode` C-Skill and the OpenAI-compatible surface exposed by
+the `opencodeAgent` Ploinky agent. The feature exists to let AchillesCLI route
+a plain user task to the known `opencodeAgent` without turning general chat
+handling into an unrestricted agent invocation surface, while also allowing
+Soul Gateway to discover and call OpenCode as an agent-backed provider.
 
 ## Core Content
 The public skill input must be plain task text. The target agent is not part of
@@ -62,6 +64,28 @@ The AchillesCLI Ploinky manifest must enable `copilot-agents/opencodeAgent
 global` as a blocking dependency so the OpenCode agent runs against the same
 workspace as Copilot.
 
+The `opencodeAgent` manifest must expose AgentServer `endpoints.chatCompletions`
+and `endpoints.models` handlers. The chat-completions handler must reuse the
+same OpenCode execution runner as `execute-task`, must require an OpenCode
+model id from the OpenAI request `model` field, and must transform request
+messages into a single OpenCode prompt. The chat-completions handler must run
+OpenCode in `WORKSPACE_PATH`, which is the effective workspace path mounted by
+Ploinky for the agent. It must not use `PLOINKY_WORKSPACE_ROOT` as the chat
+completion project directory. Streaming is not part of this contract; the
+manifest must leave streaming disabled so AgentServer rejects streaming
+requests before invoking the handler.
+
+The models handler must list OpenCode models through the OpenCode CLI and
+return an OpenAI-style `object: "list"` response. Each returned model id must
+remain the exact OpenCode model id, such as `opencode/gpt-5` or `xai/grok-4.3`.
+Descriptors must include the standardized Soul Gateway fields for
+`modelId`, `providerModelId`, display name, token pricing when available,
+context and output limits when available, tool and vision capability flags, and
+the tags `coding` and `agentic`. Free OpenCode models must use
+`pricingMode: "free"`, models with numeric input or output prices must use
+`pricingMode: "token"`, and models whose pricing is unavailable must use
+`pricingMode: "external_directory"`.
+
 ## Decisions & Questions
 ### Question #1: Why is the launcher fixed to OpenCode instead of accepting any agent name?
 Response: External agent invocation is a security-sensitive Ploinky surface.
@@ -82,7 +106,24 @@ visibility. AgentServer already owns async MCP task state, bounded log tails,
 and final results, so the launcher uses the returned task id and keeps the
 OpenCode delegation behind the same router-mediated authorization path.
 
+### Question #4: Why does the chat-completions wrapper use `WORKSPACE_PATH`?
+Response: Ploinky sets `WORKSPACE_PATH` to the workspace that the agent should
+operate on. For isolated agents that path may be `/root`; for global or devel
+agents it is the current workspace path mounted into the container. Using
+`PLOINKY_WORKSPACE_ROOT` would confuse host workspace identity with the
+effective runtime project directory and can be wrong for the way an agent is
+mounted.
+
+### Question #5: Why does `opencodeAgent` expose `/v1/models`?
+Response: Soul Gateway treats each Ploinky agent as a provider and discovers
+its concrete models from the agent. OpenCode already owns the provider/model
+catalog, so `opencodeAgent` must publish those models through AgentServer
+instead of relying on a synthetic fallback model.
+
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users
 explicitly ask for OpenCode work while preserving Ploinky router mediation,
 fixed tool dispatch, deterministic argument mapping, and plain text results.
+The same agent also provides an OpenAI-compatible provider surface for Soul
+Gateway, with model discovery delegated to OpenCode and execution constrained
+to the Ploinky-provided `WORKSPACE_PATH`.

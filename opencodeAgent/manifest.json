@@ -16,6 +16,19 @@
             "successThreshold": 1
         }
     },
+    "endpoints": {
+        "chatCompletions": {
+            "command": "/usr/local/bin/node",
+            "args": ["/code/openai-api/chat-completions.mjs"],
+            "cwd": "/code",
+            "supportsStream": false
+        },
+        "models": {
+            "command": "/usr/local/bin/node",
+            "args": ["/code/openai-api/models.mjs"],
+            "cwd": "/code"
+        }
+    },
     "cli": "/root/.opencode/bin/opencode",
     "env": [
         "PLOINKY_WORKSPACE_ROOT",

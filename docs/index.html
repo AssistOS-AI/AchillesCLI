@@ -22,7 +22,7 @@
   <div class="card">
     <strong>Runtime package:</strong> <code>achilles-cli/</code> (entrypoint, REPL, UI, schemas, skills)<br>
     <strong>Tests:</strong> <code>tests/</code> and <code>achilles-cli/tests/</code><br>
-    <strong>Specifications:</strong> <code>docs/specs/DS000-DS011</code>
+    <strong>Specifications:</strong> <code>docs/specs/DS000-DS012</code>
   </div>
 
   <h2>Ecosystem Integration</h2>
@@ -82,6 +82,16 @@
     relay tool names, and provider agent ids stay out of WebChat launch URLs.
   </div>
 
+  <h2>OpenCode Agent Provider</h2>
+  <div class="card">
+    The <code>opencodeAgent</code> Ploinky agent exposes OpenAI-compatible
+    <code>/v1/chat/completions</code> and <code>/v1/models</code> handlers through AgentServer.
+    Chat completions execute OpenCode in the Ploinky-provided <code>WORKSPACE_PATH</code>,
+    and model discovery returns the OpenCode provider/model catalog for Soul Gateway.
+    This contract is specified in
+    <a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012</a>.
+  </div>
+
   <h2>Specification Entry Points</h2>
   <ul>
     <li><a href="./specsLoader.html?spec=matrix.md">Specification Matrix</a></li>
@@ -97,6 +107,7 @@
     <li><a href="./specsLoader.html?spec=DS009-testing-observability-and-ops.md">DS009 - Testing, Observability, and Operational Controls</a></li>
     <li><a href="./specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 - Ecosystem Integration</a></li>
     <li><a href="./specsLoader.html?spec=DS011-aku-aware-copilot-memory.md">DS011 - AKU-Aware Copilot Memory</a></li>
+    <li><a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012 - OpenCode Launcher Delegation</a></li>
   </ul>
 </body>
 </html>
