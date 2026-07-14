@@ -79,3 +79,21 @@ test('command catalog includes built-in AchillesCLI skills in skill completions'
     assert.equal(completion.label, 'read-skill');
     assert.equal(completion.description, 'Input: skillName.');
 });
+
+test('command catalog exposes the workspace task summary command', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?tasks=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) {
+            await unlink(localDependencyPath);
+        }
+    }
+
+    const catalog = toAutocompleteCatalog({ dir: repoRoot });
+    const tasks = catalog.commands.find((command) => command.name === '/tasks');
+    assert.equal(tasks.usage, '/tasks [count|all]');
+    assert.match(tasks.description, /background task status/i);
+    assert.deepEqual(tasks.argCompletions, []);
+});

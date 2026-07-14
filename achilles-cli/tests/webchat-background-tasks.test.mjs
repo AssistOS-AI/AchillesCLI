@@ -26,14 +26,16 @@ test('ongoing task restoration ignores malformed lines and terminal tasks', () =
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-journal-'));
     const history = path.join(workspace, '.copilot_history');
     fs.mkdirSync(history);
+    const ongoingId = 'task_aaaaaaaaaaaaaaaaaaaaaaaa';
+    const finishedId = 'task_bbbbbbbbbbbbbbbbbbbbbbbb';
     fs.writeFileSync(path.join(history, 'agent_tasks'), [
-        JSON.stringify({ id: 'task_a', targetAgent: 'one', remoteTaskId: '1', status: 'ongoing' }),
+        JSON.stringify({ id: ongoingId, targetAgent: 'one', remoteTaskId: '1', status: 'ongoing' }),
         '{partial',
-        JSON.stringify({ id: 'task_b', targetAgent: 'two', remoteTaskId: '2', status: 'finished' }),
+        JSON.stringify({ id: finishedId, targetAgent: 'two', remoteTaskId: '2', status: 'finished' }),
         '',
     ].join('\n'));
     const tasks = __testables.readOngoingTasks(workspace);
-    assert.deepEqual(tasks.map((task) => task.id), ['task_a']);
+    assert.deepEqual(tasks.map((task) => task.id), [ongoingId]);
 });
 
 test('remote task statuses map to the four WebChat states', () => {

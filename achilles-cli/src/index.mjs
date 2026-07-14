@@ -34,6 +34,7 @@ import { buildAKUPlanningPacket } from './lib/akuMemory/akuPlanningPacket.mjs';
 import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMemory/akuContextFormatter.mjs';
 import { createAKUSessionState } from './lib/akuMemory/akuSessionState.mjs';
 import { createWebchatBackgroundTaskManager } from './lib/webchatBackgroundTasks.mjs';
+import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -540,6 +541,7 @@ async function runWebchatInteractive(agent, options) {
             await refreshWorkspaceSkillsNow(agent, { logger: agent.logger });
         },
         historyManager,
+        getTaskSummary: (args) => formatWorkspaceTaskSummary(workingDir, args),
     });
 
     let isClosing = false;

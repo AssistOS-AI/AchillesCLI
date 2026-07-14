@@ -63,6 +63,15 @@
     aggregated per-repository failures with a <code>failed to update repos:</code> message.
   </div>
 
+  <h2>Task Inspection</h2>
+  <div class="card">
+    The deterministic <code>/tasks [count|all]</code> command is available in both the terminal REPL and WebChat.
+    It reads the current workspace task journal without changing task state. By default it lists the ten most recently
+    updated tasks with their status, description preview, target agent, and update time. Terminal task states may include
+    the final five log lines, bounded to 2 KiB per task; ongoing logs remain on the existing WebChat lifecycle surface.
+    Terminal use inspects persisted workspace tasks but does not detach new launcher calls.
+  </div>
+
   <h2>MCP Tool Exposure</h2>
   <div class="card">
     AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism.

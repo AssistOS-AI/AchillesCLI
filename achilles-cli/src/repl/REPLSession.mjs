@@ -33,6 +33,7 @@ import {
     installWorkspaceSkillRefreshHook,
     refreshWorkspaceSkillsNow,
 } from '../lib/workspaceSkillRefresh.mjs';
+import { formatWorkspaceTaskSummary } from '../lib/workspaceTasks.mjs';
 
 // Import tier/model utilities from achillesAgentLib (direct path — not re-exported from index)
 let _listTiersFromCache = null;
@@ -110,6 +111,7 @@ export class REPLSession {
             getSkills: () => agent.getSkills(),
             buildSkills: () => this.reloadSkills(),
             historyManager: this.historyManager,
+            getTaskSummary: (args) => formatWorkspaceTaskSummary(this.workingDir, args),
         });
 
         // Build command list for interactive selector

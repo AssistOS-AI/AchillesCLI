@@ -125,6 +125,7 @@ ${C.bold}${C.yellow}Slash Commands${C.reset} ${C.dim}(direct skill execution)${C
   ${C.cyan}/raw${C.reset}                     Toggle markdown rendering
   ${C.cyan}/tier${C.reset} [name]             Show/switch LLM tier
   ${C.cyan}/model${C.reset} [name|clear]      Pin a model or clear pin
+  ${C.cyan}/tasks${C.reset} [count|all]       Show background task summaries
   ${C.cyan}/help${C.reset} [topic]            Show help
   ${C.cyan}/add-repo${C.reset} <URL> [name]   Clone a repository
   ${C.cyan}/list-repos${C.reset}              List cloned repositories
@@ -887,6 +888,23 @@ ${C.bold}${C.yellow}When to Use:${C.reset}
 `,
     },
 
+    tasks: {
+        title: '/tasks - Show Background Tasks',
+        content: `
+${C.bold}${C.cyan}/tasks - Show Background Tasks${C.reset}
+
+${C.bold}${C.yellow}Usage:${C.reset}
+  ${C.green}/tasks${C.reset}             Show the 10 most recently updated tasks
+  ${C.green}/tasks <count>${C.reset}     Show 1 to 100 recent tasks
+  ${C.green}/tasks all${C.reset}         Show the complete workspace task journal
+
+${C.bold}${C.yellow}Description:${C.reset}
+  Reads task status from the current workspace without changing task state.
+  Ongoing tasks show metadata only. Finished, stopped, and failed tasks may
+  include the final five log lines, bounded to 2 KiB per task.
+`,
+    },
+
     delete: {
         title: '/delete - Delete Skill',
         content: `
@@ -1180,6 +1198,7 @@ ${C.bold}${C.yellow}Common Slash Commands${C.reset}
   ${C.cyan}/test${C.reset} <skill>     Test generated code
   ${C.cyan}/refine${C.reset} <skill>   Improve until tests pass
   ${C.cyan}/update repos${C.reset}      Pull cloned repositories
+  ${C.cyan}/tasks${C.reset} [count|all] Show background task summaries
   ${C.cyan}/add-repo${C.reset} <URL>   Clone a repository
   ${C.cyan}/list-repos${C.reset}       List cloned repositories
   ${C.cyan}/remove-repo${C.reset}      Remove a repository

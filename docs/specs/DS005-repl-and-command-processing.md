@@ -44,6 +44,8 @@ Command routing model:
 3. Non-slash inputs are processed directly through the natural-language execution path with no fallback to quick commands.
 4. Command handlers can trigger skill reload when skill definitions change.
 5. Repository update failures must be reported as an aggregated error beginning with `failed to update repos:` followed by one line per failed repository.
+6. `/tasks [count|all]` reads the current workspace task journal without invoking an LLM. With no argument it returns the ten most recently updated tasks; a numeric argument must be between 1 and 100, while `all` explicitly requests the complete journal.
+7. Task summaries must use the persisted description preview with `toolName` and task id as fallbacks, and must include status, target agent, and update time. Only terminal tasks may include log output, limited to the final five lines and 2 KiB per task.
 
 Hierarchical command structure:
 1. Commands with `subOptions` in `COMMAND_DEFINITIONS` show a sub-menu when selected.
@@ -65,6 +67,14 @@ Operational invariants:
 3. REPL errors must be user-readable and must not silently terminate the loop.
 4. All commands use slash syntax; there are no quick commands without `/`.
 5. Interrupted turns must not be appended to command history.
+6. Task inspection must remain read-only. It must not create task storage, change task status, start polling, or detach terminal CLI work.
+
+## Decisions & Questions
+
+### Question #1: Why does `/tasks` use one command path in terminal and WebChat?
+
+Response:
+Both runtimes already dispatch deterministic slash commands through `SlashCommandHandler`. Injecting the same workspace task formatter preserves identical filtering, limits, and output while allowing the browser command catalog to discover `/tasks` without a second protocol.
 
 ## Conclusion
 The REPL subsystem is the primary interactive contract for AchillesCLI and must keep deterministic commands, orchestrated prompting, and session-state controls coherent. The hierarchical command model provides uniform discovery and execution through the `/` menu.

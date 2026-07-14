@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
+import { readOngoingTasks } from './workspaceTasks.mjs';
 
 const TASK_POLL_INTERVAL_MS = 5000;
 const DESCRIPTION_LIMIT = 240;
@@ -61,32 +60,6 @@ function resultText(result) {
         }
     }
     return text.length > RESULT_LIMIT ? text.slice(text.length - RESULT_LIMIT) : text;
-}
-
-function readOngoingTasks(workingDir) {
-    const journalPath = path.join(workingDir, '.copilot_history', 'agent_tasks');
-    let raw = '';
-    try {
-        raw = fs.readFileSync(journalPath, 'utf8');
-    } catch (error) {
-        if (error?.code !== 'ENOENT') {
-            console.warn(`[webchat-tasks] Unable to read task journal: ${error.message}`);
-        }
-        return [];
-    }
-
-    const tasks = new Map();
-    for (const line of raw.split(/\r?\n/)) {
-        if (!line.trim()) continue;
-        try {
-            const event = JSON.parse(line);
-            if (!event?.id || !event?.targetAgent || !event?.remoteTaskId) continue;
-            tasks.set(event.id, { ...(tasks.get(event.id) || {}), ...event });
-        } catch (_) {
-            // An incomplete final append is ignored and will be superseded later.
-        }
-    }
-    return [...tasks.values()].filter((task) => task.status === 'ongoing');
 }
 
 function emitTaskEvent(payload) {
@@ -225,7 +198,14 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
 
     const reattachTimer = setTimeout(() => {
         if (closed) return;
-        for (const task of readOngoingTasks(workingDir)) {
+        let ongoingTasks = [];
+        try {
+            ongoingTasks = readOngoingTasks(workingDir);
+        } catch (error) {
+            console.warn(`[webchat-tasks] Unable to read task journal: ${error.message}`);
+            return;
+        }
+        for (const task of ongoingTasks) {
             void agentClientModule.createAgentClient(task.targetAgent).then((client) => {
                 watch({
                     agentName: task.targetAgent,

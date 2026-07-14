@@ -94,6 +94,12 @@ Ploinky integration boundary:
     reattach tasks recorded as ongoing in `<cwd>/.copilot_history/agent_tasks`.
     The observer must not persist agent credentials, invocation grants, or raw
     tool arguments.
+17. AchillesCLI exposes `/tasks [count|all]` through its shared slash-command
+    catalog and handler. Both WebChat and terminal REPL modes read the same
+    Ploinky-owned workspace task journal directly from disk. Terminal mode does
+    not install the WebChat observer or detach new launcher work; it only
+    inspects task records already persisted for that workspace. This read-only
+    command does not add a router route, MCP execution tool, or policy surface.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
@@ -165,6 +171,15 @@ container. Its PID is local to that runtime and may be reused after restart,
 whereas the router-mediated status contract is explicitly keyed by target
 agent and AgentServer task id. A PID may be carried as optional diagnostics but
 cannot be the reattachment authority.
+
+### Question #4: Why does terminal `/tasks` read the WebChat task journal instead of querying the router?
+
+Response:
+The journal and bounded task logs are already the durable workspace record,
+and the AchillesCLI process has access to that workspace in both modes. Direct
+read-only inspection avoids adding an authenticated router API for a local CLI
+operation and does not change the existing rule that terminal launchers wait
+for their delegated task result.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

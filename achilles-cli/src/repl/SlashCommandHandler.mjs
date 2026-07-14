@@ -195,6 +195,12 @@ export const COMMAND_DEFINITIONS = {
         args: 'optional',
         needsSkillArg: false,
     },
+    'tasks': {
+        usage: '/tasks [count|all]',
+        description: 'Show background task status and bounded final log tails',
+        args: 'optional',
+        needsSkillArg: false,
+    },
     'exit': {
         usage: '/exit',
         description: 'Exit the REPL',
@@ -335,13 +341,15 @@ export class SlashCommandHandler {
      * @param {Function} options.getUserSkills - Function to get user skills: () => Array
      * @param {Function} options.getSkills - Function to get all skills: () => Array
      * @param {HistoryManager} [options.historyManager] - Command history manager
+     * @param {Function} [options.getTaskSummary] - Read and format workspace task status
      */
-    constructor({ executeSkill, buildSkills, getUserSkills, getSkills, historyManager }) {
+    constructor({ executeSkill, buildSkills, getUserSkills, getSkills, historyManager, getTaskSummary }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
         this.getUserSkills = getUserSkills;
         this.getSkills = getSkills;
         this.historyManager = historyManager;
+        this.getTaskSummary = getTaskSummary;
     }
 
     /**
@@ -473,6 +481,17 @@ export class SlashCommandHandler {
 
         if (command === 'history') {
             return this._handleHistory(args);
+        }
+
+        if (command === 'tasks') {
+            if (typeof this.getTaskSummary !== 'function') {
+                return { handled: true, error: 'Task history is unavailable in this session.' };
+            }
+            try {
+                return { handled: true, result: await this.getTaskSummary(args, options) };
+            } catch (error) {
+                return { handled: true, error: error.message };
+            }
         }
 
         // Handle direct skill commands
