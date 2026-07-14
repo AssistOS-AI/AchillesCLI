@@ -85,6 +85,15 @@ Ploinky integration boundary:
     history remain host-owned; AchillesCLI does not require a session-id
     environment variable because Ploinky restores prior turns through the next
     normal prompt.
+16. In WebChat runtime mode, AchillesCLI registers a generic asynchronous-task
+    observer with Ploinky `AgentMcpClient.mjs`. Any router-mediated MCP call
+    that returns AgentServer `taskId` metadata may be detached from the current
+    reply. AchillesCLI must identify such work by target agent plus remote task
+    id, emit `__webchatTask` lifecycle envelopes, and continue polling through
+    the router-mediated task-status path. A recreated WebChat runtime must
+    reattach tasks recorded as ongoing in `<cwd>/.copilot_history/agent_tasks`.
+    The observer must not persist agent credentials, invocation grants, or raw
+    tool arguments.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
@@ -147,6 +156,15 @@ achilles-cli/manifest.json:L6-L10
 
 Response:
 The editor changes AchillesCLI-owned skill-management workflow configuration while using Explorer only as the host surface for folder context menus and file persistence. Keeping the plugin under `achilles-cli/IDE-plugins/` lets AchillesCLI own the UX and manifest contract without adding Explorer-specific routes, tools, or policy behavior.
+
+### Question #3: Why is an asynchronous task identified by target agent and task id instead of PID?
+
+Response:
+The delegated process is owned by the target AgentServer, often inside another
+container. Its PID is local to that runtime and may be reused after restart,
+whereas the router-mediated status contract is explicitly keyed by target
+agent and AgentServer task id. A PID may be carried as optional diagnostics but
+cannot be the reattachment authority.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

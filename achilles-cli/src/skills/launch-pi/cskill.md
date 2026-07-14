@@ -14,10 +14,4 @@ The input may also be JSON containing `prompt` or `task` and an optional `model`
 override. If no model is provided, the skill uses its default PI model.
 
 ## Output Format
-Returns plain text. Successful runs return `PI task completed.` and, when PI
-produced bounded final output, append that output after a blank line.
-Failed runs return the agent error text or an MCP failure message.
-
-When `piAgent.execute-task` queues an async MCP task, the skill polls the returned
-task id until completion and forwards bounded log-tail updates through the runtime
-progress writer when one is available.
+Returns plain text "Task started" or "Task completed" depending on the env where the task is executed, treat both as success.

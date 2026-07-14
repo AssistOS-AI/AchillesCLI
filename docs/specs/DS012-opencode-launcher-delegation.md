@@ -39,12 +39,12 @@ agent returns it. Failed runs return the agent error text or an MCP failure
 message.
 
 If the target tool is registered as an async MCP tool and the call returns
-AgentServer task metadata, the skill must poll the returned task id through the
-Ploinky-mediated task-status path until completion, failure, cancellation, or
-timeout. The skill may forward newly observed bounded `logTail` chunks through
-the runtime progress writer or supervisor output writer so users can see
-OpenCode activity while the tool call is still pending. The final response to
-the user remains plain text and is derived from the completed task result.
+AgentServer task metadata, AchillesCLI WebChat must detach the task through its
+generic background-task observer. The skill returns `Task started` immediately,
+allowing the conversation to continue, while the observer polls through the
+Ploinky-mediated task-status path and emits task lifecycle and log envelopes.
+Outside WebChat, where that observer is not installed, the existing blocking
+polling and final plain-text result behavior remains available.
 
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The AchillesCLI runtime must have `PLOINKY_AGENT_ID` and
@@ -100,11 +100,13 @@ task description only. The model is fixed to
 `xai/grok-4.20-0309-non-reasoning` so the launcher behavior is stable and does
 not depend on session or environment model configuration.
 
-### Question #3: Why use async task polling instead of returning immediately?
-Response: OpenCode tasks can run long enough that callers need progress
-visibility. AgentServer already owns async MCP task state, bounded log tails,
-and final results, so the launcher uses the returned task id and keeps the
-OpenCode delegation behind the same router-mediated authorization path.
+### Question #3: Why does WebChat detach async task polling?
+Response: OpenCode tasks can run long enough that blocking the orchestrator
+prevents an otherwise independent conversation from continuing. AgentServer
+already owns task execution and bounded log tails, so WebChat returns the
+start acknowledgement while a generic observer follows the same task id over
+the router-mediated authorization path. Terminal and non-WebChat callers keep
+the blocking behavior when no observer claims the task.
 
 ### Question #4: Why does the chat-completions wrapper use `WORKSPACE_PATH`?
 Response: Ploinky sets `WORKSPACE_PATH` to the workspace that the agent should

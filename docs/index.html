@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AchillesCLI Documentation</title>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+  </script>
   <style>
     body { font-family: Arial, sans-serif; max-width: 980px; margin: 0 auto; padding: 2rem; line-height: 1.6; background: #fff; color: #111; }
     h1, h2 { margin-top: 1.5rem; }
@@ -47,6 +51,9 @@
     not for transcript or final-answer text.
     The startup intro is skipped when <code>PLOINKY_WEBCHAT_HAS_HISTORY=1</code> and otherwise runs normally;
     no WebChat session-id environment variable is required by AchillesCLI.
+    Asynchronous AgentServer tools are detached from the active WebChat reply: AchillesCLI acknowledges the start,
+    follows the remote task through the router, and emits dedicated lifecycle and log envelopes. Ongoing tasks are
+    reattached from the workspace task journal if the WebChat runtime is recreated.
   </div>
 
   <h2>Repository Maintenance</h2>

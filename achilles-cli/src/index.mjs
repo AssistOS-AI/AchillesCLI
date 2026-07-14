@@ -33,6 +33,7 @@ import { AkuMemoryAdapter } from './lib/akuMemory/AkuMemoryAdapter.mjs';
 import { buildAKUPlanningPacket } from './lib/akuMemory/akuPlanningPacket.mjs';
 import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMemory/akuContextFormatter.mjs';
 import { createAKUSessionState } from './lib/akuMemory/akuSessionState.mjs';
+import { createWebchatBackgroundTaskManager } from './lib/webchatBackgroundTasks.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -512,6 +513,8 @@ async function runWebchatInteractive(agent, options) {
     };
     context.akuSessionState = akuSessionState;
     agent.context = context;
+    const backgroundTaskManager = await createWebchatBackgroundTaskManager({ workingDir });
+    context.backgroundTaskManager = backgroundTaskManager;
     await startWebchatIntroSkill(agent, {
         workingDir,
         context,
@@ -726,6 +729,7 @@ async function runWebchatInteractive(agent, options) {
         });
         await processingChain;
     } finally {
+        backgroundTaskManager.close();
         try {
             handleControlData.cleanup?.();
         } catch (_) {}

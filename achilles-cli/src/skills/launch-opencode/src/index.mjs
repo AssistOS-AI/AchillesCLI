@@ -213,6 +213,11 @@ function normalizeAnswer(payload) {
     if (!payload || typeof payload !== 'object') {
         return 'OpenCode task completed without a response.';
     }
+    const backgroundTask = payload?.metadata?.backgroundTask;
+    if (backgroundTask?.detached) {
+        const description = trim(backgroundTask.description);
+        return description ? `Task started: ${description}` : 'OpenCode task started.';
+    }
     if (payload.ok === false && payload.error) {
         return formatFailurePayload(payload);
     }

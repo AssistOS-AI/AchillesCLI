@@ -29,6 +29,4 @@ The skill always sends the current AchillesCLI working directory to
 GPTResearcher. Callers cannot override it.
 
 ## Output Format
-Returns plain text. Successful runs return `GPTResearcher task completed.` and
-append the report when available. Failed runs return the agent error text or an
-MCP failure message.
+Returns plain text "Task started" or "Task completed" depending on the env where the task is executed, treat both as success.
