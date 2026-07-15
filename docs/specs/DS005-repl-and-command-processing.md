@@ -61,6 +61,7 @@ Session control behavior:
 5. Context-sensitive help and command selection remain available in interactive mode.
 6. Webchat runtime mode (non-TTY stdin) accepts ESC as a standalone line (`\x1b`) to abort the current prompt execution. The agent must respond with `[cancelled]` and resume accepting input.
 7. `/model` without arguments opens the terminal search selector. `/model <model-name>` validates the exact name against Soul Gateway and persists it for the workspace; `/tier` removes that explicit selection.
+8. In WebChat mode, a successful `/model` or `/tier` change must publish the settings value through generic runtime-state metadata after the settings write completes. The published model must be the value read back from settings, or `null` after `/tier` removes it.
 
 Operational invariants:
 1. Deterministic slash flows must avoid unnecessary LLM routing.
@@ -76,6 +77,11 @@ Operational invariants:
 
 Response:
 Both runtimes already dispatch deterministic slash commands through `SlashCommandHandler`. Injecting the same workspace task formatter preserves identical filtering, limits, and output while allowing the browser command catalog to discover `/tasks` without a second protocol.
+
+### Question #2: Why is runtime model state published only after settings persistence?
+
+Response:
+The browser badge represents the explicit workspace configuration, so the emitted value must not get ahead of the durable setting. Reading the saved value back before publication keeps runtime execution state and the WebChat header aligned even if settings normalization changes later.
 
 ## Conclusion
 The REPL subsystem is the primary interactive contract for AchillesCLI and must keep deterministic commands, orchestrated prompting, and session-state controls coherent. The hierarchical command model provides uniform discovery and execution through the `/` menu.

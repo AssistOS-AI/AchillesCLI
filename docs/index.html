@@ -93,7 +93,10 @@
     Soul Gateway catalog and stores it in <code>.achilles-cli/settings.json</code> for the current workspace.
     WebChat keeps the full catalog searchable inside a fixed-height, progressively rendered suggestion list;
     typing part of a model, provider, tag, or description narrows the list. The terminal uses an interactive
-    search selector. Running <code>/tier</code> removes the explicit saved model selection.
+    search selector. The WebChat runtime publishes that explicit settings value through generic runtime-state
+    metadata, allowing the browser to show it beside the agent name without storing model data in chat history.
+    This badge is the configured model, not the effective Soul Gateway leaf used for an individual response.
+    Running <code>/tier</code> removes the explicit saved model selection and clears the badge.
   </div>
 
   <h2>Semantic Copilot Routing</h2>

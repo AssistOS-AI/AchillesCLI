@@ -33,11 +33,19 @@ Runtime wiring:
 2. Attach command execution utilities and UI providers.
 3. Register built-in and discovered skill roots before accepting requests.
 4. In webchat mode, run the startup intro unless `PLOINKY_WEBCHAT_HAS_HISTORY=1`; no folder session identifier is required by the agent process.
+5. In webchat mode, publish the explicit model restored from `.achilles-cli/settings.json` as generic runtime-state metadata before accepting user input; publish `null` when that setting is absent.
 
 Configuration boundaries:
 1. Startup must not hardcode environment-specific absolute paths.
 2. Startup config must preserve override + fallback semantics.
 3. Runtime metadata tags remain available for routing-sensitive tasks.
+
+## Decisions & Questions
+
+### Question #1: Why does startup publish the model through stdout instead of exposing the settings path to WebChat?
+
+Response:
+The working-directory settings file is owned by AchillesCLI and is not part of Ploinky's generic browser contract. Publishing a bounded runtime-state envelope keeps filesystem access and model semantics inside the agent while allowing compatible clients to present the current explicit selection.
 
 ## Conclusion
 Entrypoint bootstrap is the operational root of AchillesCLI and must remain deterministic, debuggable, and override-friendly across local and integrated environments.

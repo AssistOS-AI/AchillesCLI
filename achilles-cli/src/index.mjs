@@ -34,12 +34,13 @@ import { buildAKUPlanningPacket } from './lib/akuMemory/akuPlanningPacket.mjs';
 import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMemory/akuContextFormatter.mjs';
 import { createAKUSessionState } from './lib/akuMemory/akuSessionState.mjs';
 import { createWebchatBackgroundTaskManager } from './lib/webchatBackgroundTasks.mjs';
-import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
 import {
-    clearSelectedModel,
-    getSelectedModel,
-    setSelectedModel,
-} from './lib/achillesSettings.mjs';
+    clearWebchatRuntimeModel,
+    emitWebchatRuntimeState,
+    selectWebchatRuntimeModel,
+} from './lib/webchatRuntimeState.mjs';
+import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
+import { getSelectedModel } from './lib/achillesSettings.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -513,6 +514,7 @@ async function runWebchatInteractive(agent, options) {
         pinnedModel: getSelectedModel(workingDir),
         markdownEnabled: renderMarkdown !== false,
     };
+    emitWebchatRuntimeState(slashState.pinnedModel);
     const context = {
         workingDir,
         skillsDir,
@@ -806,6 +808,7 @@ async function executeWebchatSlashCommand({
     slashState,
     context,
     signal,
+    emitRuntimeState = emitWebchatRuntimeState,
 }) {
     const parsed = slashHandler.parseSlashCommand(input);
     if (!parsed) {
@@ -844,13 +847,20 @@ async function executeWebchatSlashCommand({
     }
     if (result.tierChange) {
         slashState.activeTier = result.tierChange;
-        slashState.pinnedModel = null;
-        clearSelectedModel(context.workingDir);
+        clearWebchatRuntimeModel({
+            workingDir: context.workingDir,
+            slashState,
+            emitRuntimeState,
+        });
         return { output: `Tier set to ${slashState.activeTier}.` };
     }
     if (result.modelChange !== undefined) {
-        slashState.pinnedModel = result.modelChange;
-        setSelectedModel(context.workingDir, slashState.pinnedModel);
+        selectWebchatRuntimeModel({
+            workingDir: context.workingDir,
+            model: result.modelChange,
+            slashState,
+            emitRuntimeState,
+        });
         return { output: `Model selected: ${slashState.pinnedModel}` };
     }
     if (result.toggleMarkdown) {
