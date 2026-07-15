@@ -15,7 +15,7 @@ test('action calls opencodeAgent execute-task with default model', async () => {
         promptText: 'build artifacts',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true, projectDir: payload.projectDir, model: payload.model };
             },
@@ -39,7 +39,7 @@ test('action accepts text input with model and task fields', async () => {
         promptText: 'model: anthropic/claude-test task: build artifacts: include tests',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true };
             },
@@ -59,7 +59,7 @@ test('action accepts JSON input with model override', async () => {
             model: 'openrouter/model',
         }),
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true };
             },
@@ -96,7 +96,7 @@ test('action uses mainAgent.startDir as the current AchillesCLI working director
         promptText: JSON.stringify({ prompt: 'run checks' }),
         mainAgent: { startDir: '/workspace/copilot' },
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true };
             },
@@ -113,7 +113,7 @@ test('action returns successful opencode output as plain text', async () => {
         promptText: 'build artifacts',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
-            callTool: async () => ({
+            callToolWithoutWait: async () => ({
                 ok: true,
                 outputText: 'created files\nran tests',
             }),
@@ -123,24 +123,14 @@ test('action returns successful opencode output as plain text', async () => {
     assert.equal(result, 'OpenCode task completed.\n\ncreated files\nran tests');
 });
 
-test('action forwards task updates from callback and completes on final tool response', async () => {
-    const progress = [];
+test('action uses the non-blocking client path without callback polling', async () => {
+    let capturedOptions = null;
     const result = await action({
         promptText: 'build artifacts',
         mainAgent: { startDir: '/workspace/project' },
-        progressWriter: { write: (entry) => progress.push(entry) },
         agentClient: {
-            callTool: async (_toolName, _payload, { onTaskUpdate }) => {
-                onTaskUpdate({
-                    status: 'running',
-                    logTail: '[opencode stdout] first\n',
-                    logSeq: 1,
-                });
-                onTaskUpdate({
-                    status: 'completed',
-                    logTail: '[opencode stdout] first\n[opencode stdout] done\n',
-                    logSeq: 2,
-                });
+            callToolWithoutWait: async (_toolName, _payload, options) => {
+                capturedOptions = options;
                 return {
                     ok: true,
                     outputText: 'final output',
@@ -150,10 +140,7 @@ test('action forwards task updates from callback and completes on final tool res
     });
 
     assert.equal(result, 'OpenCode task completed.\n\nfinal output');
-    assert.equal(progress.length, 2);
-    assert.deepEqual(progress.map((entry) => entry.type), ['tool_reason', 'tool_reason']);
-    assert.match(progress[0].reason, /first/);
-    assert.match(progress[1].reason, /done/);
+    assert.equal(capturedOptions.onTaskUpdate, undefined);
 });
 
 test('action reports failed async opencode task errors', async () => {
@@ -167,7 +154,7 @@ test('action reports failed async opencode task errors', async () => {
     const result = await action({
         promptText: 'build artifacts',
         agentClient: {
-            callTool: async () => {
+            callToolWithoutWait: async () => {
                 throw error;
             },
         },
@@ -181,7 +168,7 @@ test('action uses process cwd only without mainAgent.startDir', async () => {
     await action({
         promptText: 'run checks',
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true };
             },
@@ -201,7 +188,7 @@ test('action returns plain agent error text', async () => {
     const result = await action({
         promptText: 'build artifacts',
         agentClient: {
-            callTool: async () => ({ ok: false, error: 'opencode failed' }),
+            callToolWithoutWait: async () => ({ ok: false, error: 'opencode failed' }),
         },
     });
 
@@ -212,7 +199,7 @@ test('action returns plain MCP exception text', async () => {
     const result = await action({
         promptText: 'build artifacts',
         agentClient: {
-            callTool: async () => {
+            callToolWithoutWait: async () => {
                 throw new Error('router unavailable');
             },
         },

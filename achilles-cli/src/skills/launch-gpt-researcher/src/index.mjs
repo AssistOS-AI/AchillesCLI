@@ -26,81 +26,8 @@ function resolveWorkingDir(invocation = {}) {
         || process.cwd();
 }
 
-const PROGRESS_CHUNK_LIMIT = 3000;
-
-function limitProgressText(text) {
-    const trimmed = trim(text);
-    if (!trimmed) {
-        return '';
-    }
-    if (trimmed.length <= PROGRESS_CHUNK_LIMIT) {
-        return trimmed;
-    }
-    return trimmed.slice(trimmed.length - PROGRESS_CHUNK_LIMIT);
-}
-
-function getProgressWriter(invocation = {}) {
-    if (invocation.progressWriter?.write) {
-        return invocation.progressWriter;
-    }
-    if (invocation.context?.progressWriter?.write) {
-        return invocation.context.progressWriter;
-    }
-    const supervisorWriter = invocation.mainAgent?.supervisor?.getOutputWriter?.();
-    if (supervisorWriter?.write) {
-        return supervisorWriter;
-    }
-    return null;
-}
-
-function emitProgress(invocation, text, { tool = 'launch-gpt-researcher' } = {}) {
-    const reason = limitProgressText(text);
-    if (!reason) {
-        return;
-    }
-    const writer = getProgressWriter(invocation);
-    if (!writer) {
-        return;
-    }
-    try {
-        writer.write({
-            type: 'tool_reason',
-            tool,
-            reason,
-        });
-    } catch {
-    }
-}
-
-function makeTaskUpdateReporter(invocation, toolName = 'launch-gpt-researcher') {
-    let lastLogSeq = -1;
-    let lastLogTail = '';
-
-    return (task) => {
-        if (!task || typeof task !== 'object') {
-            return;
-        }
-
-        const logTail = trim(task.logTail);
-        const logSeqValue = Number(task.logSeq);
-        const logSeq = Number.isFinite(logSeqValue) ? logSeqValue : null;
-        if (!logTail) {
-            return;
-        }
-
-        if (logSeq === null ? logTail !== lastLogTail : logSeq !== lastLogSeq) {
-            const reason = lastLogTail && logTail.startsWith(lastLogTail) ? logTail.slice(lastLogTail.length) : logTail;
-            emitProgress(invocation, reason, { tool: toolName });
-            lastLogTail = logTail;
-            if (logSeq !== null) {
-                lastLogSeq = logSeq;
-            }
-        }
-    };
-}
-
 async function resolveAgentClient(agentName, invocation = {}) {
-    if (invocation.agentClient && typeof invocation.agentClient.callTool === 'function') {
+    if (invocation.agentClient && typeof invocation.agentClient.callToolWithoutWait === 'function') {
         return invocation.agentClient;
     }
 
@@ -166,9 +93,8 @@ function parseTaskResult(payload) {
 
 async function callAgentTool(agentName, toolName, payload, invocation = {}) {
     const client = await resolveAgentClient(agentName, invocation);
-    return client.callTool(toolName, payload, {
+    return client.callToolWithoutWait(toolName, payload, {
         userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
-        onTaskUpdate: invocation.onTaskUpdate,
     });
 }
 
@@ -262,6 +188,9 @@ function normalizeAnswer(payload) {
         const description = trim(backgroundTask.description);
         return description ? `Task started: ${description}` : 'GPTResearcher task started.';
     }
+    if (trim(payload?.metadata?.taskId || payload?.result?.metadata?.taskId)) {
+        return 'GPTResearcher task started.';
+    }
     if (payload.ok === false && payload.error) {
         return formatFailurePayload(payload);
     }
@@ -296,7 +225,6 @@ export async function action(invocation = {}) {
 
     try {
         const result = parseTaskResult(await callAgentTool(TARGET_AGENT, TOOL_NAME, buildPayload(input), {
-            onTaskUpdate: makeTaskUpdateReporter(invocation),
             agentClient: invocation.agentClient,
             userDelegationToken: invocation.userDelegationToken,
             context: invocation.context,

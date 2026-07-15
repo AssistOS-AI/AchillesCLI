@@ -7,7 +7,7 @@ import { action as launchResearch } from '../src/skills/launch-gpt-researcher/sr
 
 function detachedClient(description) {
     return {
-        callTool: async () => ({
+        callToolWithoutWait: async () => ({
             metadata: {
                 taskId: 'remote-1',
                 backgroundTask: { detached: true, id: 'task_123', description },
@@ -20,4 +20,16 @@ test('agent launchers report detached WebChat work as started', async () => {
     assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient: detachedClient('build artifacts') }), 'Task started: build artifacts');
     assert.equal(await launchPi({ promptText: 'run tests', agentClient: detachedClient('run tests') }), 'Task started: run tests');
     assert.equal(await launchResearch({ promptText: 'research topic', agentClient: detachedClient('research topic') }), 'Task started: research topic');
+});
+
+test('agent launchers report unclaimed asynchronous work as started', async () => {
+    const agentClient = {
+        callToolWithoutWait: async () => ({
+            metadata: { taskId: 'remote-1', status: 'queued' },
+        }),
+    };
+
+    assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient }), 'OpenCode task started.');
+    assert.equal(await launchPi({ promptText: 'run tests', agentClient }), 'PI task started.');
+    assert.equal(await launchResearch({ promptText: 'research topic', agentClient }), 'GPTResearcher task started.');
 });

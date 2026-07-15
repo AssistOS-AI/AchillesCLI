@@ -86,14 +86,15 @@ Ploinky integration boundary:
     environment variable because Ploinky restores prior turns through the next
     normal prompt.
 16. In WebChat runtime mode, AchillesCLI registers a generic asynchronous-task
-    observer with Ploinky `AgentMcpClient.mjs`. Any router-mediated MCP call
-    that returns AgentServer `taskId` metadata may be detached from the current
-    reply. AchillesCLI must identify such work by target agent plus remote task
-    id, emit `__webchatTask` lifecycle envelopes, and continue polling through
-    the router-mediated task-status path. A recreated WebChat runtime must
-    reattach tasks recorded as ongoing in `<cwd>/.copilot_history/agent_tasks`.
-    The observer must not persist agent credentials, invocation grants, or raw
-    tool arguments.
+    observer with Ploinky `AgentMcpClient.mjs`. Launcher skills that delegate
+    long-running work use `callToolWithoutWait`, so an AgentServer response
+    carrying `taskId` metadata is offered to that observer instead of entering
+    client-owned blocking polling. AchillesCLI must identify such work by target
+    agent plus remote task id, emit `__webchatTask` lifecycle envelopes, and
+    continue polling through the router-mediated task-status path. A recreated
+    WebChat runtime must reattach tasks recorded as ongoing in
+    `<cwd>/.copilot_history/agent_tasks`. The observer must not persist agent
+    credentials, invocation grants, or raw tool arguments.
 17. AchillesCLI exposes `/tasks [count|all]` through its shared slash-command
     catalog and handler. Both WebChat and terminal REPL modes read the same
     Ploinky-owned workspace task journal directly from disk. Terminal mode does
@@ -178,8 +179,9 @@ Response:
 The journal and bounded task logs are already the durable workspace record,
 and the AchillesCLI process has access to that workspace in both modes. Direct
 read-only inspection avoids adding an authenticated router API for a local CLI
-operation and does not change the existing rule that terminal launchers wait
-for their delegated task result.
+    operation. Blocking callers use `AgentMcpClient.callTool`; launcher skills
+    intentionally use the separate non-blocking method that is observed in
+    WebChat mode.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

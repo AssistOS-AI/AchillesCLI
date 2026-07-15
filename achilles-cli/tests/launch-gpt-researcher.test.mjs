@@ -9,7 +9,7 @@ test('action calls GPTResearcher MCP tool with plain prompt', async () => {
         promptText: 'research the workspace',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
-            callTool: async (toolName, payload, options) => {
+            callToolWithoutWait: async (toolName, payload, options) => {
                 calls.push({ toolName, payload, options });
                 return {
                     content: [{ type: 'text', text: JSON.stringify({ ok: true, report: 'research complete' }) }],
@@ -27,7 +27,7 @@ test('action calls GPTResearcher MCP tool with plain prompt', async () => {
         query: 'research the workspace',
         workingDir: '/workspace/project',
     });
-    assert.equal(typeof calls[0].options.onTaskUpdate, 'function');
+    assert.equal(calls[0].options.onTaskUpdate, undefined);
 });
 
 test('action accepts JSON input with query, context, reportType, and useLocalDocs', async () => {
@@ -41,7 +41,7 @@ test('action accepts JSON input with query, context, reportType, and useLocalDoc
         }),
         mainAgent: { startDir: '/workspace/current' },
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 assert.equal(toolName, TOOL_NAME);
                 assert.deepEqual(payload, {
                     query: 'build a research brief',
@@ -68,7 +68,7 @@ test('action accepts context and reportType with text prompt', async () => {
         reportType: 'research_report',
         mainAgent: { startDir: '/workspace/text-prompt' },
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return {
                     content: [{ type: 'text', text: JSON.stringify({ ok: true, report: 'summary' }) }],
@@ -91,7 +91,7 @@ test('action falls back to compact JSON when report is absent', async () => {
         promptText: 'research',
         mainAgent: { startDir: '/workspace/fallback' },
         agentClient: {
-            callTool: async () => ({
+            callToolWithoutWait: async () => ({
                 content: [{ type: 'text', text: JSON.stringify({ ok: true, sourceUrls: ['https://example.com'] }) }],
             }),
         },
@@ -104,7 +104,7 @@ test('action reports delegated failures as plain text', async () => {
     const result = await action({
         promptText: 'research',
         agentClient: {
-            callTool: async () => {
+            callToolWithoutWait: async () => {
                 throw new Error('router unavailable');
             },
         },
@@ -117,7 +117,7 @@ test('action reports failed task payloads as plain text', async () => {
     const result = await action({
         promptText: 'research',
         agentClient: {
-            callTool: async () => {
+            callToolWithoutWait: async () => {
                 const error = new Error('task failed');
                 error.task = {
                     content: [{ type: 'text', text: JSON.stringify({ ok: false, error: 'missing OPENAI_API_KEY' }) }],

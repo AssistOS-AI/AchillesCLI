@@ -9,7 +9,7 @@ test('action calls piAgent execute-task with default model', async () => {
         promptText: 'create a report',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true, projectDir: payload.projectDir, model: payload.model };
             },
@@ -34,7 +34,7 @@ test('action accepts JSON input with prompt and model override', async () => {
             model: 'override/model',
         }),
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 assert.equal(toolName, 'execute-task');
                 assert.equal(payload.model, 'override/model');
                 return { ok: true, outputText: 'ok' };
@@ -50,7 +50,7 @@ test('action accepts text input with model and task fields', async () => {
     const result = await action({
         promptText: 'model: claude-test task: build a component: keep it small',
         agentClient: {
-            callTool: async (toolName, payload) => {
+            callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true, outputText: 'ok' };
             },
@@ -63,23 +63,13 @@ test('action accepts text input with model and task fields', async () => {
     assert.equal(calls[0].payload.prompt, 'build a component: keep it small');
 });
 
-test('action forwards task updates from callback and completes on final response', async () => {
-    const progress = [];
+test('action uses the non-blocking client path without callback polling', async () => {
+    let capturedOptions = null;
     const result = await action({
         promptText: 'create a script',
-        progressWriter: { write: (entry) => progress.push(entry) },
         agentClient: {
-            callTool: async (_toolName, _payload, { onTaskUpdate }) => {
-                onTaskUpdate({
-                    status: 'running',
-                    logTail: '[pi stdout] first\n',
-                    logSeq: 1,
-                });
-                onTaskUpdate({
-                    status: 'completed',
-                    logTail: '[pi stdout] first\n[pi stdout] done\n',
-                    logSeq: 2,
-                });
+            callToolWithoutWait: async (_toolName, _payload, options) => {
+                capturedOptions = options;
                 return {
                     ok: true,
                     outputText: 'final output',
@@ -89,9 +79,7 @@ test('action forwards task updates from callback and completes on final response
     });
 
     assert.equal(result, 'PI task completed.\n\nfinal output');
-    assert.equal(progress.length, 2);
-    assert.equal(progress[0].tool, 'launch-pi');
-    assert.deepEqual(progress.map((entry) => entry.type), ['tool_reason', 'tool_reason']);
+    assert.equal(capturedOptions.onTaskUpdate, undefined);
 });
 
 test('action reports failed async task as plain text', async () => {
@@ -105,7 +93,7 @@ test('action reports failed async task as plain text', async () => {
     const result = await action({
         promptText: 'create a script',
         agentClient: {
-            callTool: async () => {
+            callToolWithoutWait: async () => {
                 throw failed;
             },
         },

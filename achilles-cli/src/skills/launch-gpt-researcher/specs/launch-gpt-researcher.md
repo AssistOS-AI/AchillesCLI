@@ -31,6 +31,7 @@ The skill returns plain text only. Successful runs return
 If no report is present, it falls back to `outputText`, `result`, or the compact
 JSON payload. Failed runs return the agent error text or an MCP failure message.
 
-The call path uses `AgentMcpClient` directly via `createAgentClient` and passes
-`onTaskUpdate` to `callTool`; polling is handled internally by the MCP client,
-with intermediate `logTail` updates emitted as `tool_reason`.
+The call path uses `AgentMcpClient` directly via `createAgentClient` and invokes
+`callToolWithoutWait`. Async task metadata is offered to the process-local
+background-task observer, which owns subsequent router-mediated status polling
+and log reporting.

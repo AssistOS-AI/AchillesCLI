@@ -21,18 +21,18 @@ The skill returns plain text only. Successful runs return
 `opencodeAgent.execute-task` when that field is non-empty. Failed runs return
 the agent error text or an MCP failure message.
 
-When `execute-task` is registered as an async MCP tool and returns a task id, the
-skill passes `onTaskUpdate` to `AgentMcpClient.callTool`, which handles polling
-internally (5 seconds). New bounded `logTail` content from the task queue is
-emitted through the invocation progress writer or supervisor output writer as
-intermediate progress. The final user-visible return value remains plain text.
+The skill calls `AgentMcpClient.callToolWithoutWait`. When `execute-task` is
+registered as an async MCP tool and returns a task id, the client offers it to
+the process-local background-task observer and returns without client-owned
+polling. The observer owns subsequent router-mediated status polling and log
+reporting.
 
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The skill imports that client directly from the mounted
 `/Agent/client/AgentMcpClient.mjs` path with a normal static ESM import. The
-client must call `opencodeAgent` through the router at `/opencodeAgent/mcp` and
-poll `/opencodeAgent/task`; the skill must not use AchillesCLI's legacy MCP
-helper or any local path fallback.
+client must call `opencodeAgent` through the router at `/opencodeAgent/mcp`;
+observer-owned status reads use `/opencodeAgent/task`. The skill must not use
+AchillesCLI's legacy MCP helper or any local path fallback.
 
 ## Decisions & Questions
 

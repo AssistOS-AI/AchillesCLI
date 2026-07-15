@@ -38,13 +38,14 @@ The skill returns plain text only. Successful runs return
 agent returns it. Failed runs return the agent error text or an MCP failure
 message.
 
-If the target tool is registered as an async MCP tool and the call returns
-AgentServer task metadata, AchillesCLI WebChat must detach the task through its
-generic background-task observer. The skill returns `Task started` immediately,
-allowing the conversation to continue, while the observer polls through the
+The launcher uses `AgentMcpClient.callToolWithoutWait`. If the target tool is
+registered as an async MCP tool and the call returns AgentServer task metadata,
+AchillesCLI WebChat detaches the task through its generic background-task
+observer. The skill returns `Task started` immediately, allowing the
+conversation to continue, while the observer polls through the
 Ploinky-mediated task-status path and emits task lifecycle and log envelopes.
-Outside WebChat, where that observer is not installed, the existing blocking
-polling and final plain-text result behavior remains available.
+Callers that require the terminal result use the separate blocking `callTool`
+method instead of the launcher path.
 
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The AchillesCLI runtime must have `PLOINKY_AGENT_ID` and
