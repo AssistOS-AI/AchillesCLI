@@ -13,6 +13,7 @@
     "ACHILLES_DEBUG"
   ],
   "enable": [
+    "proxies/soul-gateway",
     "opencodeAgent global",
     "piAgent global",
     "codexAgent global no-wait",

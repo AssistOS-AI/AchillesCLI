@@ -9,14 +9,13 @@
 import { formatSlashResult } from '../ui/ResultFormatter.mjs';
 import { showHelp, getQuickReference } from '../ui/HelpSystem.mjs';
 import { BUILT_IN_SKILLS, getAllSkillTypeNames, DOC_SCAFFOLD_TYPES } from '../lib/constants.mjs';
+import { loadSoulGatewayModels } from '../lib/soulGatewayModels.mjs';
 
-// Import tier/model utilities from achillesAgentLib
+// Import tier utilities from achillesAgentLib
 let _listTiersFromCache = null;
-let _listModelsFromCache = null;
 try {
     const llmClient = await import('achillesAgentLib/utils/LLMClient.mjs');
     _listTiersFromCache = llmClient.listTiersFromCache;
-    _listModelsFromCache = llmClient.listModelsFromCache;
 } catch {
     // achillesAgentLib not available
 }
@@ -166,10 +165,11 @@ export const COMMAND_DEFINITIONS = {
         needsSkillArg: false,
     },
     'model': {
-        usage: '/model [name|clear]',
-        description: 'Pin a specific model or clear pin',
+        usage: '/model <model-name>',
+        description: 'Select the model used by AchillesCLI',
         args: 'optional',
         needsSkillArg: false,
+        argMatchMode: 'fragment',
     },
     'raw': {
         usage: '/raw',
@@ -307,6 +307,10 @@ export function buildSlashCommandCatalog() {
             args: def.args || 'optional',
             skill: def.skill || null,
             needsSkillArg: Boolean(def.needsSkillArg),
+            argMatchMode: def.argMatchMode || 'prefix',
+            argSuggestionLimit: Number.isInteger(def.argSuggestionLimit)
+                ? def.argSuggestionLimit
+                : null,
             subCommands,
         });
     }
@@ -342,14 +346,17 @@ export class SlashCommandHandler {
      * @param {Function} options.getSkills - Function to get all skills: () => Array
      * @param {HistoryManager} [options.historyManager] - Command history manager
      * @param {Function} [options.getTaskSummary] - Read and format workspace task status
+     * @param {Function} [options.loadModels] - Load selectable Soul Gateway models
      */
-    constructor({ executeSkill, buildSkills, getUserSkills, getSkills, historyManager, getTaskSummary }) {
+    constructor({ executeSkill, buildSkills, getUserSkills, getSkills, historyManager, getTaskSummary, loadModels }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
         this.getUserSkills = getUserSkills;
         this.getSkills = getSkills;
         this.historyManager = historyManager;
         this.getTaskSummary = getTaskSummary;
+        this.loadModels = loadModels || loadSoulGatewayModels;
+        this.availableModels = [];
     }
 
     /**
@@ -732,18 +739,14 @@ export class SlashCommandHandler {
     }
 
     /**
-     * Get available model names from achillesAgentLib cache.
-     * @returns {string[]}
+     * Get available model names from Soul Gateway.
+     * @returns {Promise<string[]>}
      */
-    getAvailableModels() {
+    async getAvailableModels() {
         try {
-            const tiers = _listTiersFromCache?.();
-            if (!tiers) return [];
-            const seen = new Set();
-            for (const models of Object.values(tiers)) {
-                for (const m of models) seen.add(m);
-            }
-            return [...seen];
+            const models = await this.loadModels();
+            this.availableModels = models.map((model) => model.name);
+            return this.availableModels.slice();
         } catch {
             return [];
         }
@@ -773,26 +776,24 @@ export class SlashCommandHandler {
      * Handle /model command.
      * @private
      */
-    _handleModelCommand(args) {
-        const tiers = _listTiersFromCache?.();
-        if (!tiers) {
-            return { handled: true, error: 'Could not load models — achillesAgentLib not available' };
-        }
+    async _handleModelCommand(args) {
         if (!args) {
             return { handled: true, showModelPicker: true };
         }
         const requested = args.trim();
-        if (requested.toLowerCase() === 'clear') {
-            return { handled: true, modelChange: null };
+        let models;
+        try {
+            models = await this.loadModels();
+        } catch (error) {
+            return { handled: true, error: error.message };
         }
-        const allModels = new Set();
-        for (const models of Object.values(tiers)) {
-            for (const m of models) allModels.add(m);
+        this.availableModels = models.map((model) => model.name);
+        const exactModel = models.find((model) => model.name === requested)
+            || models.find((model) => model.name.toLowerCase() === requested.toLowerCase());
+        if (!exactModel) {
+            return { handled: true, error: `Unknown model "${requested}". Use /model autocomplete to select a model.` };
         }
-        if (!allModels.has(requested)) {
-            return { handled: true, error: `Unknown model "${requested}". Use /model to see available models.` };
-        }
-        return { handled: true, modelChange: requested };
+        return { handled: true, modelChange: exactModel.name };
     }
 
     /**
@@ -921,9 +922,8 @@ export class SlashCommandHandler {
             }
 
             if (command === 'model') {
-                const options = ['clear', ...this.getAvailableModels()];
-                const matching = options
-                    .filter(m => m.toLowerCase().startsWith(argPrefix))
+                const matching = this.availableModels
+                    .filter(m => m.toLowerCase().includes(argPrefix))
                     .map(m => `/${command} ${m}`);
                 return [matching, line];
             }

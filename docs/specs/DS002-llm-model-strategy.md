@@ -3,7 +3,7 @@ id: DS002
 title: LLM Tier and Model Strategy
 status: active
 owner: AchillesCLI Maintainers
-summary: Defines mandatory LLM routing, tier semantics, model selection, and session-level overrides.
+summary: Defines mandatory LLM routing, tier semantics, and persisted workspace model selection.
 ---
 
 # DS002-llm-model-strategy
@@ -22,16 +22,18 @@ Tier semantics:
 2. `standard` is the default balanced tier for general CLI work.
 3. `premium` is reserved for heavier reasoning or high-fidelity generation paths.
 
-Session-level controls:
-1. `/tier` updates or clears session tier preferences.
-2. `/model` updates or clears pinned model names.
-3. Session-selected tier/model must be reflected in subsequent LLM requests for that session.
+Runtime controls:
+1. `/tier` updates the session tier preference and removes any persisted explicit model selection.
+2. `/model <model-name>` selects one exact Soul Gateway model. There is no `/model clear` command.
+3. The selected model is stored in `<workspace>/.achilles-cli/settings.json`, restored by later terminal and WebChat runtimes for that workspace, and reflected in prompt, skill, and startup-intro LLM requests.
 
 Model selection behavior:
 1. Runtime configuration may provide provider defaults and tier maps.
 2. Manual configuration overrides are applied before environment-derived defaults.
 3. Missing mandatory model/provider details must produce explicit errors.
-4. The current hosted Soul Gateway fallback through an explicit `SOUL_GATEWAY_API_KEY` is temporary and not canonical AchillesCLI model strategy. It exists only for the migration period in which `soul.axiologic.dev` is still required; the canonical future path is AchillesAgentLib using generated Ploinky credentials against the local Soul Gateway deployment.
+4. Selectable model names are loaded from the authenticated local Soul Gateway `GET /services/soul-gateway/v1/models` route. AchillesCLI uses its generated Ploinky agent identity and must not expose that credential to WebChat.
+5. Model aliases reported only as Soul Gateway compatibility aliases are excluded, while direct models and named cascades remain selectable.
+6. The current hosted Soul Gateway fallback through an explicit `SOUL_GATEWAY_API_KEY` is temporary and not canonical AchillesCLI model strategy. It exists only for the migration period in which `soul.axiologic.dev` is still required; the canonical future path is AchillesAgentLib using generated Ploinky credentials against the local Soul Gateway deployment.
 
 Task metadata requirements:
 1. Routing-sensitive operations must carry explicit tags.
@@ -49,5 +51,10 @@ Safety and visibility:
 Response:
 AchillesCLI currently needs to run from Explorer workspaces whose nearest parent `.env` may carry a hosted `SOUL_GATEWAY_API_KEY`. Letting that explicit key configure the initial LLM provider keeps startup working during the migration window, but it is not the canonical model-routing rule. DS010 records the exact manifest offset for this temporary agent-level opt-in.
 
+### Question #2: Why does WebChat receive the complete model catalog instead of requesting pages from Soul Gateway?
+
+Response:
+Soul Gateway can expose hundreds of direct models and cascades, but the minimal credential-free catalog remains small enough to search locally. AchillesCLI returns it once, ordered with the current selection and common cascades first. The generic WebChat autocomplete keeps every matching model selectable while progressively adding bounded DOM batches behind a fixed-height scrollable viewport, avoiding both per-keystroke network requests and a single large render.
+
 ## Conclusion
-All LLM execution in AchillesCLI must remain centralized through `LLMAgent`, governed by explicit tier/model policy, and controllable through session-aware runtime commands.
+All LLM execution in AchillesCLI must remain centralized through `LLMAgent`, governed by explicit tier/model policy, and controllable through workspace-aware runtime commands.

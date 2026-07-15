@@ -97,6 +97,7 @@ export function startIntroSkill(agent, options = {}) {
         workingDir,
         context = {},
         logger = agent.logger,
+        model = null,
         onStart = null,
         write = async (message) => {
             process.stdout.write(message);
@@ -109,6 +110,7 @@ export function startIntroSkill(agent, options = {}) {
             await onStart(payload);
         }
         const result = await agent.executeSkill(skillRecord.name, JSON.stringify(payload), {
+            ...(model ? { model } : {}),
             context: {
                 ...context,
                 introStartup: true,

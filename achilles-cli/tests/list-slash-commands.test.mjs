@@ -97,3 +97,29 @@ test('command catalog exposes the workspace task summary command', async () => {
     assert.match(tasks.description, /background task status/i);
     assert.deepEqual(tasks.argCompletions, []);
 });
+
+test('command catalog exposes Soul Gateway models only as /model arguments', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?models=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) {
+            await unlink(localDependencyPath);
+        }
+    }
+
+    const modelCompletions = [
+        { value: 'fast', label: 'fast', description: 'soul-gateway · Cascade · 2 models' },
+        { value: 'anthropic/claude-sonnet', label: 'anthropic/claude-sonnet', description: 'anthropic · reasoning' },
+    ];
+    const catalog = toAutocompleteCatalog({ dir: repoRoot, modelCompletions });
+    const model = catalog.commands.find((command) => command.name === '/model');
+    const exec = catalog.commands.find((command) => command.name === '/exec');
+
+    assert.equal(model.usage, '/model <model-name>');
+    assert.equal(model.argMatchMode, 'fragment');
+    assert.equal(model.argSuggestionLimit, null);
+    assert.deepEqual(model.argCompletions, modelCompletions);
+    assert.equal(exec.argCompletions.some((entry) => entry.value === 'fast'), false);
+});

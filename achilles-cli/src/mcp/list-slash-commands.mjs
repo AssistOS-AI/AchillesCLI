@@ -6,6 +6,8 @@ import { dirname, resolve } from 'node:path';
 import { discoverSkills, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
 import { parseSkillDocument } from 'achillesAgentLib/utils/skillDocumentParser.mjs';
 import { buildSlashCommandCatalog } from '../repl/SlashCommandHandler.mjs';
+import { getSelectedModel } from '../lib/achillesSettings.mjs';
+import { loadSoulGatewayModels, toModelCompletions } from '../lib/soulGatewayModels.mjs';
 
 const OPTIONAL_SKILL_ARG_COMMANDS = new Set(['/test', '/run-tests']);
 const NOOP_LOGGER = { debug() {}, warn() {}, info() {}, log() {}, error() {} };
@@ -117,7 +119,10 @@ function commandUsesSkillArgument(command) {
     return Boolean(command?.needsSkillArg) || OPTIONAL_SKILL_ARG_COMMANDS.has(command?.name);
 }
 
-function buildArgCompletions(command, skillCompletions) {
+function buildArgCompletions(command, skillCompletions, modelCompletions) {
+    if (command?.name === '/model') {
+        return modelCompletions;
+    }
     if (!commandUsesSkillArgument(command)) {
         return [];
     }
@@ -132,10 +137,15 @@ function buildArgCompletions(command, skillCompletions) {
 
 export function toAutocompleteCatalog(options = {}) {
     const skillCompletions = buildSkillCompletions(options.dir);
+    const modelCompletions = Array.isArray(options.modelCompletions)
+        ? options.modelCompletions
+        : [];
     const commands = buildSlashCommandCatalog().map((command) => ({
         name: command.name,
         usage: command.usage,
         description: command.description,
+        argMatchMode: command.argMatchMode,
+        argSuggestionLimit: command.argSuggestionLimit,
         subCommands: Array.isArray(command.subCommands)
             ? command.subCommands.map((subCommand) => ({
                 name: subCommand.name,
@@ -144,7 +154,7 @@ export function toAutocompleteCatalog(options = {}) {
                 argCompletions: subCommand.needsSkillArg ? skillCompletions : [],
             }))
             : [],
-        argCompletions: buildArgCompletions(command, skillCompletions),
+        argCompletions: buildArgCompletions(command, skillCompletions, modelCompletions),
     }));
 
     return {
@@ -154,10 +164,24 @@ export function toAutocompleteCatalog(options = {}) {
     };
 }
 
+export async function loadAutocompleteCatalog(options = {}) {
+    const selectedModel = options.dir ? getSelectedModel(options.dir) : null;
+    let models = [];
+    try {
+        models = await loadSoulGatewayModels({ selectedModel });
+    } catch {
+        // Keep the command catalog available when Soul Gateway is starting.
+    }
+    return toAutocompleteCatalog({
+        ...options,
+        modelCompletions: toModelCompletions(models),
+    });
+}
+
 async function main() {
     const payload = parsePayload(await readStdin());
     const input = extractInput(payload);
-    process.stdout.write(`${JSON.stringify(toAutocompleteCatalog({ dir: input.dir }))}\n`);
+    process.stdout.write(`${JSON.stringify(await loadAutocompleteCatalog({ dir: input.dir }))}\n`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {

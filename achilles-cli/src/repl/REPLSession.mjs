@@ -34,14 +34,21 @@ import {
     refreshWorkspaceSkillsNow,
 } from '../lib/workspaceSkillRefresh.mjs';
 import { formatWorkspaceTaskSummary } from '../lib/workspaceTasks.mjs';
+import {
+    formatSoulGatewayModelDescription,
+    loadSoulGatewayModels,
+} from '../lib/soulGatewayModels.mjs';
+import {
+    clearSelectedModel,
+    getSelectedModel,
+    setSelectedModel,
+} from '../lib/achillesSettings.mjs';
 
-// Import tier/model utilities from achillesAgentLib (direct path — not re-exported from index)
+// Import tier utilities from achillesAgentLib (direct path — not re-exported from index)
 let _listTiersFromCache = null;
-let _listModelsFromCache = null;
 try {
     const llmClient = await import('achillesAgentLib/utils/LLMClient.mjs');
     _listTiersFromCache = llmClient.listTiersFromCache;
-    _listModelsFromCache = llmClient.listModelsFromCache;
 } catch {
     // achillesAgentLib not available — tier commands will show an error
 }
@@ -80,8 +87,8 @@ export class REPLSession {
         // Active LLM tier for all prompt executions
         this.activeTier = options.tier || TIERS.FAST;
 
-        // Pinned model (bypasses tier cascade when set)
-        this.pinnedModel = null;
+        // Workspace-selected model (bypasses tier cascade when set)
+        this.pinnedModel = getSelectedModel(this.workingDir);
 
         // History manager
         this.historyManager = options.historyManager || new HistoryManager({
@@ -371,7 +378,7 @@ export class REPLSession {
         // Show LLM tier and model info
         try {
             if (this.pinnedModel) {
-                console.log(`  ${style('llm', 'cyan')}  ${this.pinnedModel} ${style('[pinned]', 'yellow')}`);
+                console.log(`  ${style('llm', 'cyan')}  ${this.pinnedModel} ${style('[selected]', 'yellow')}`);
             } else {
                 const tierModels = _listTiersFromCache?.();
                 const tierModelList = tierModels?.[this.activeTier];
@@ -478,6 +485,7 @@ export class REPLSession {
             workingDir: this.workingDir,
             context: this.context,
             logger: this.agent.logger,
+            model: this.pinnedModel || this.activeTier,
             write: async (message) => {
                 console.log(String(message || '').trimEnd());
             },
@@ -570,6 +578,7 @@ export class REPLSession {
                 } else if (result.tierChange) {
                     this.activeTier = result.tierChange;
                     this.pinnedModel = null;
+                    clearSelectedModel(this.workingDir);
                     const tierModels = _listTiersFromCache?.() || {};
                     const models = tierModels[this.activeTier] || [];
                     const primaryModel = models[0] || 'unknown';
@@ -582,11 +591,8 @@ export class REPLSession {
                     await this._handleModelPicker();
                 } else if (result.hasOwnProperty('modelChange')) {
                     this.pinnedModel = result.modelChange;
-                    if (this.pinnedModel) {
-                        spinner.succeed(`Model pinned: ${this.pinnedModel}`);
-                    } else {
-                        spinner.succeed('Model pin cleared — using tier-based selection');
-                    }
+                    setSelectedModel(this.workingDir, this.pinnedModel);
+                    spinner.succeed(`Model selected: ${this.pinnedModel}`);
                 } else if (result.toggleMarkdown) {
                     this.markdownEnabled = !this.markdownEnabled;
                     spinner.succeed(`Markdown rendering ${this.markdownEnabled ? 'enabled' : 'disabled'}`);
@@ -857,6 +863,7 @@ export class REPLSession {
 
         this.activeTier = selected.name;
         this.pinnedModel = null; // Clear model pin on tier switch
+        clearSelectedModel(this.workingDir);
 
         const models = tiers[this.activeTier] || [];
         const primaryModel = models[0] || 'unknown';
@@ -870,13 +877,18 @@ export class REPLSession {
      * @private
      */
     async _handleModelPicker() {
-        const tiers = _listTiersFromCache?.();
-        if (!tiers || Object.keys(tiers).length === 0) {
-            console.log('\nNo models available.\n');
+        let models;
+        try {
+            models = await loadSoulGatewayModels({ selectedModel: this.pinnedModel });
+        } catch (error) {
+            console.log(`\n${error.message}\n`);
             return;
         }
 
-        const selected = await showModelSelector(tiers, {
+        const selected = await showModelSelector(models.map((model) => ({
+            name: model.name,
+            description: formatSoulGatewayModelDescription(model),
+        })), {
             theme: UIContext.getTheme(),
         });
 
@@ -885,7 +897,8 @@ export class REPLSession {
         }
 
         this.pinnedModel = selected.name;
-        console.log(`Model pinned: ${this.pinnedModel}`);
+        setSelectedModel(this.workingDir, this.pinnedModel);
+        console.log(`Model selected: ${this.pinnedModel}`);
 
         this.historyManager.add(`/model ${this.pinnedModel}`);
     }

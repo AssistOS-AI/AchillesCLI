@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url';
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(TEST_DIR, '..');
 
+test('AchillesCLI starts Soul Gateway before model discovery', async () => {
+    const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
+
+    assert.ok(Array.isArray(manifest.enable));
+    assert.ok(manifest.enable.includes('proxies/soul-gateway'));
+});
+
 test('AchillesCLI keeps GPTResearcher as a no-wait dependency', async () => {
     const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
 

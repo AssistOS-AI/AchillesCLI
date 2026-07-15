@@ -35,7 +35,7 @@ Ploinky integration boundary:
 3. Session/webchat runtime paths should keep durable-state assumptions aligned with orchestrated process lifecycles.
 4. The Ploinky agent manifest should use the shared `docker.io/assistos/ploinky-node:24-bookworm-tools` image so Explorer cold starts reuse the same Node 24 glibc runtime and preinstalled dependency-cache tools as the rest of the default agent graph.
 5. The Ploinky agent manifest temporarily declares `SOUL_GATEWAY_API_KEY` as a `sharedGeneratedSecret` with `explicitOverride: true` so Explorer-launched AchillesCLI can honor a hosted Soul Gateway key from parent `.env` files. This is not canonical AchillesCLI integration behavior and must be removed when the local deployed Soul Gateway is the only supported provider path.
-6. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI slash commands are provided through a dedicated MCP catalog tool that returns a structured command/sub-command payload and does not execute chat prompts. That catalog tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill.
+6. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI slash commands are provided through a dedicated MCP catalog tool that returns a structured command/sub-command payload and does not execute chat prompts. That catalog tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill. The same server-side catalog call queries the local Soul Gateway with the generated agent identity and publishes minimal model completions for `/model`; credentials and raw provider configuration never enter the browser payload. The command declares generic fragment matching and leaves the full filtered result set available to Ploinky's progressively rendered menu, so Ploinky does not hardcode AchillesCLI command names.
 7. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
 8. The webchat interactive mode must treat `@open-interpreter` and other
    `@agent`-shaped tokens as ordinary chat text. Provider dispatch is semantic
@@ -101,6 +101,7 @@ Ploinky integration boundary:
     not install the WebChat observer or detach new launcher work; it only
     inspects task records already persisted for that workspace. This read-only
     command does not add a router route, MCP execution tool, or policy surface.
+18. The AchillesCLI manifest enables `proxies/soul-gateway` as a blocking dependency before model discovery. Model listing uses the router-mediated `/services/soul-gateway/v1/models` route and the existing generated Ploinky agent credential; it does not add a public HTTP service, delegation, or MCP execution tool.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
@@ -182,6 +183,11 @@ read-only inspection avoids adding an authenticated router API for a local CLI
     operation. Blocking callers use `AgentMcpClient.callTool`; launcher skills
     intentionally use the separate non-blocking method that is observed in
     WebChat mode.
+
+### Question #5: Why is Soul Gateway model discovery performed by the command-catalog tool?
+
+Response:
+The MCP catalog tool already supplies agent-owned slash metadata to WebChat and runs inside AchillesCLI's authenticated server context. Fetching Soul Gateway there keeps the generated agent credential out of the browser, preserves one generic WebChat contract, and lets the selected agent decide which models and recommendation metadata it exposes.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

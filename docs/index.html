@@ -87,6 +87,15 @@
     If no tools are available, clients silently fall back to an empty command list.
   </div>
 
+  <h2>Workspace Model Selection</h2>
+  <div class="card">
+    <code>/model &lt;model-name&gt;</code> selects an exact model or cascade from the authenticated local
+    Soul Gateway catalog and stores it in <code>.achilles-cli/settings.json</code> for the current workspace.
+    WebChat keeps the full catalog searchable inside a fixed-height, progressively rendered suggestion list;
+    typing part of a model, provider, tag, or description narrows the list. The terminal uses an interactive
+    search selector. Running <code>/tier</code> removes the explicit saved model selection.
+  </div>
+
   <h2>Semantic Copilot Routing</h2>
   <div class="card">
     AchillesCLI Copilot owns semantic provider routing. Ploinky WebChat supplies only the generic

@@ -1019,31 +1019,28 @@ ${C.dim}Available tiers depend on Soul Gateway configuration.${C.reset}
     },
 
     model: {
-        title: '/model - Pin a Specific Model',
+        title: '/model - Select an LLM Model',
         content: `
-${C.bold}${C.cyan}/model - Pin a Specific Model${C.reset}
+${C.bold}${C.cyan}/model - Select an LLM Model${C.reset}
 
 ${C.bold}${C.yellow}Usage:${C.reset}
-  ${C.green}/model${C.reset}              Interactive model picker
-  ${C.green}/model <name>${C.reset}       Pin a specific model for this session
-  ${C.green}/model clear${C.reset}        Clear the pin, return to tier-based selection
+  ${C.green}/model${C.reset}              Interactive model picker in the terminal
+  ${C.green}/model <name>${C.reset}       Select a Soul Gateway model
 
 ${C.bold}${C.yellow}Description:${C.reset}
-  Pins a specific model for all subsequent LLM calls in this session.
-  When a model is pinned, it bypasses the tier cascade and uses that
-  model directly. Switching tiers with /tier also clears the pin.
+  Selects the model used for subsequent AchillesCLI LLM calls and stores
+  it in .achilles-cli/settings.json for the current workspace. WebChat
+  provides searchable autocomplete after typing /model and a space.
+  Switching tiers with /tier removes the saved model selection.
 
 ${C.bold}${C.yellow}Examples:${C.reset}
   ${C.green}>${C.reset} /model
   ${C.dim}Shows interactive picker with all available models${C.reset}
 
-  ${C.green}>${C.reset} /model copilot-gpt-4.1
-  ${C.dim}Pins copilot-gpt-4.1 for all calls${C.reset}
+  ${C.green}>${C.reset} /model anthropic/claude-sonnet-4-6
+  ${C.dim}Selects and saves anthropic/claude-sonnet-4-6${C.reset}
 
-  ${C.green}>${C.reset} /model clear
-  ${C.dim}Clears the pin, goes back to tier-based selection${C.reset}
-
-${C.dim}Available models depend on Soul Gateway configuration.${C.reset}
+${C.dim}The model catalog is loaded from Soul Gateway.${C.reset}
 `,
     },
 

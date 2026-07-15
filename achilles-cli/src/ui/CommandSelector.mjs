@@ -1154,12 +1154,12 @@ export async function showTierSelector(tiers, currentTier, options = {}) {
 /**
  * Show an interactive model selector and return the selected model
  *
- * @param {Object} tiers - Tiers object from listTiersFromCache() { tierName: [model1, ...] }
+ * @param {Object|Array} catalog - Soul Gateway model items or legacy tiers object
  * @param {Object} options - Options
  * @param {Object} [options.theme] - Theme object (uses baseTheme if not provided)
  * @returns {Promise<{name: string}|null>} - Selected model or null if cancelled
  */
-export async function showModelSelector(tiers, options = {}) {
+export async function showModelSelector(catalog, options = {}) {
     const theme = options.theme || baseTheme;
     const colors = theme.colors;
     const {
@@ -1168,21 +1168,34 @@ export async function showModelSelector(tiers, options = {}) {
         maxVisible = 12,
     } = options;
 
-    if (!tiers || Object.keys(tiers).length === 0) {
+    if (!catalog || Object.keys(catalog).length === 0) {
         return null;
     }
 
-    // Flatten tiers into model items, deduplicating (show first tier only)
     const seen = new Set();
     const modelItems = [];
-    for (const [tierName, models] of Object.entries(tiers)) {
-        for (const model of models) {
-            if (!seen.has(model)) {
-                seen.add(model);
+    if (Array.isArray(catalog)) {
+        for (const model of catalog) {
+            const name = typeof model === 'string' ? model : model?.name;
+            if (name && !seen.has(name)) {
+                seen.add(name);
                 modelItems.push({
-                    name: model,
-                    description: `[${tierName}]`,
+                    name,
+                    description: typeof model === 'object' ? model.description || '' : '',
                 });
+            }
+        }
+    } else {
+        // Preserve compatibility with callers that still pass { tier: [model] }.
+        for (const [tierName, models] of Object.entries(catalog)) {
+            for (const model of models) {
+                if (!seen.has(model)) {
+                    seen.add(model);
+                    modelItems.push({
+                        name: model,
+                        description: `[${tierName}]`,
+                    });
+                }
             }
         }
     }

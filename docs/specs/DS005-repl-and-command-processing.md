@@ -54,12 +54,13 @@ Hierarchical command structure:
 4. The command picker (`/`) is the primary discovery mechanism for all available commands.
 
 Session control behavior:
-1. REPL session stores and applies current tier/model preferences.
+1. REPL session applies the current tier and restores an explicit model selection from `<workspace>/.achilles-cli/settings.json` when present.
 2. Cancellation/interruption paths must preserve terminal recoverability.
 3. ESC interruption is supported for both natural-language processing and slash-command execution paths.
 4. Slash-command execution forwards AbortSignal and interruption intent to skill runtime calls.
 5. Context-sensitive help and command selection remain available in interactive mode.
 6. Webchat runtime mode (non-TTY stdin) accepts ESC as a standalone line (`\x1b`) to abort the current prompt execution. The agent must respond with `[cancelled]` and resume accepting input.
+7. `/model` without arguments opens the terminal search selector. `/model <model-name>` validates the exact name against Soul Gateway and persists it for the workspace; `/tier` removes that explicit selection.
 
 Operational invariants:
 1. Deterministic slash flows must avoid unnecessary LLM routing.

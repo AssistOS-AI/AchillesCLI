@@ -6,7 +6,7 @@ Generated from DS frontmatter by `skills/gamp-specs/scripts/generate_specs_matri
 | --- | --- | --- | --- | --- |
 | [DS000](specsLoader.html?spec=DS000-vision.md) | Repository Vision | [[status:active]] | AchillesCLI Maintainers | Defines AchillesCLI mission, boundaries, and the authoritative documentation model. |
 | [DS001](specsLoader.html?spec=DS001-coding-style.md) | Coding Style and Runtime Conventions | [[status:active]] | AchillesCLI Maintainers | Defines coding, runtime, and documentation conventions for all AchillesCLI components. |
-| [DS002](specsLoader.html?spec=DS002-llm-model-strategy.md) | LLM Tier and Model Strategy | [[status:active]] | AchillesCLI Maintainers | Defines mandatory LLM routing, tier semantics, model selection, and session-level overrides. |
+| [DS002](specsLoader.html?spec=DS002-llm-model-strategy.md) | LLM Tier and Model Strategy | [[status:active]] | AchillesCLI Maintainers | Defines mandatory LLM routing, tier semantics, and persisted workspace model selection. |
 | [DS003](specsLoader.html?spec=DS003-global-architecture.md) | Global Architecture | [[status:active]] | AchillesCLI Maintainers | Defines the top-level runtime architecture, execution planes, and cross-module invariants. |
 | [DS004](specsLoader.html?spec=DS004-entrypoint-runtime-bootstrap.md) | Entrypoint and Runtime Bootstrap | [[status:active]] | AchillesCLI Maintainers | Specifies CLI startup, dependency loading, argument parsing, and runtime-mode selection. |
 | [DS005](specsLoader.html?spec=DS005-repl-and-command-processing.md) | REPL and Command Processing | [[status:active]] | AchillesCLI Maintainers | Defines interactive session behavior, hierarchical command routing, and natural-language processing flow. |

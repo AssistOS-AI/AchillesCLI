@@ -35,6 +35,11 @@ import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMe
 import { createAKUSessionState } from './lib/akuMemory/akuSessionState.mjs';
 import { createWebchatBackgroundTaskManager } from './lib/webchatBackgroundTasks.mjs';
 import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
+import {
+    clearSelectedModel,
+    getSelectedModel,
+    setSelectedModel,
+} from './lib/achillesSettings.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,7 +87,7 @@ async function main() {
     let prompt = null;
     let verbose = false;
     let debug = false;
-    let selectedModel = 'deep';
+    let selectedModel = null;
     let renderMarkdown = true;
     let uiStyle = process.env.ACHILLES_CLI_UI || 'claude-code'; // Default UI style
     let skipBashPermissions = false; // Skip bash command permission prompts
@@ -185,6 +190,7 @@ async function main() {
     // Ensure .achilles-cli directory structure exists
     ensureAchillesCliDir(workingDir);
     ensureAgentLibLinksForRepos(workingDir);
+    const persistedModel = getSelectedModel(workingDir);
 
     // Merge all skill roots: built-in + CLI flags + node_modules + deployed Ploinky repo skills
     const allSkillRoots = [
@@ -267,10 +273,12 @@ async function main() {
                 logger,
             });
             agent.context = context;
+            const executionModel = selectedModel || persistedModel || 'deep';
             await startIntroSkill(agent, {
                 workingDir,
                 context,
                 logger,
+                model: executionModel,
                 write: async (message) => {
                     process.stdout.write(message);
                 },
@@ -278,7 +286,7 @@ async function main() {
 
             let result = await agent.executePrompt(akuPrompt.prompt, {
                 context,
-                model: selectedModel,
+                model: executionModel,
                 systemPrompt: buildOrchestratorSystemPrompt(),
             });
             await drainWorkspaceSkillsRefresh(agent, { logger });
@@ -502,7 +510,7 @@ async function runWebchatInteractive(agent, options) {
     const akuSessionState = createAKUSessionState();
     const slashState = {
         activeTier: TIERS.FAST,
-        pinnedModel: null,
+        pinnedModel: getSelectedModel(workingDir),
         markdownEnabled: renderMarkdown !== false,
     };
     const context = {
@@ -520,6 +528,7 @@ async function runWebchatInteractive(agent, options) {
         workingDir,
         context,
         logger: agent.logger,
+        model: slashState.pinnedModel || slashState.activeTier,
         onStart: async () => {
             emitWebchatProgress('intro-skill', 'Generating workspace intro');
         },
@@ -836,11 +845,13 @@ async function executeWebchatSlashCommand({
     if (result.tierChange) {
         slashState.activeTier = result.tierChange;
         slashState.pinnedModel = null;
+        clearSelectedModel(context.workingDir);
         return { output: `Tier set to ${slashState.activeTier}.` };
     }
     if (result.modelChange !== undefined) {
         slashState.pinnedModel = result.modelChange;
-        return { output: slashState.pinnedModel ? `Model pinned: ${slashState.pinnedModel}` : 'Model pin cleared.' };
+        setSelectedModel(context.workingDir, slashState.pinnedModel);
+        return { output: `Model selected: ${slashState.pinnedModel}` };
     }
     if (result.toggleMarkdown) {
         slashState.markdownEnabled = !slashState.markdownEnabled;
@@ -854,9 +865,8 @@ async function executeWebchatSlashCommand({
         return { output: `Current tier: ${slashState.activeTier}\nAvailable tiers: ${tiers.join(', ')}` };
     }
     if (result.showModelPicker) {
-        const models = slashHandler.getAvailableModels();
-        const current = slashState.pinnedModel || '(none)';
-        return { output: `Pinned model: ${current}\nAvailable models:\n${models.map((model) => `- ${model}`).join('\n')}` };
+        const current = slashState.pinnedModel || slashState.activeTier;
+        return { output: `Current model: ${current}\nUsage: /model <model-name>. Type /model followed by a space to search models.` };
     }
     if (result.showTestPicker) {
         return { output: 'Usage: /test <skill-name>' };
