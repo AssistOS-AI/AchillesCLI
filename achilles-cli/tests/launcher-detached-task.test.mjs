@@ -17,9 +17,9 @@ function detachedClient(description) {
 }
 
 test('agent launchers report detached WebChat work as started', async () => {
-    assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient: detachedClient('build artifacts') }), 'opencodeAgent started the task.');
-    assert.equal(await launchPi({ promptText: 'run tests', agentClient: detachedClient('run tests') }), 'piAgent started the task.');
-    assert.equal(await launchResearch({ promptText: 'research topic', agentClient: detachedClient('research topic') }), 'GPTResearcher started the task.');
+    assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient: detachedClient('build artifacts') }), 'Task started.');
+    assert.equal(await launchPi({ promptText: 'run tests', agentClient: detachedClient('run tests') }), 'Task started.');
+    assert.equal(await launchResearch({ promptText: 'research topic', agentClient: detachedClient('research topic') }), 'Task started.');
 });
 
 test('agent launchers report unclaimed asynchronous work as started', async () => {
@@ -29,7 +29,7 @@ test('agent launchers report unclaimed asynchronous work as started', async () =
         }),
     };
 
-    assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient }), 'opencodeAgent started the task.');
-    assert.equal(await launchPi({ promptText: 'run tests', agentClient }), 'piAgent started the task.');
-    assert.equal(await launchResearch({ promptText: 'research topic', agentClient }), 'GPTResearcher started the task.');
+    assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient }), 'Task started.');
+    assert.equal(await launchPi({ promptText: 'run tests', agentClient }), 'Task started.');
+    assert.equal(await launchResearch({ promptText: 'research topic', agentClient }), 'Task started.');
 });

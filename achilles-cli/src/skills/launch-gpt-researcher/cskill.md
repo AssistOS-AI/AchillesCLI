@@ -29,4 +29,4 @@ The skill always sends the current AchillesCLI working directory to
 GPTResearcher. Callers cannot override it.
 
 ## Output Format
-Returns plain text `GPTResearcher started the task.` for asynchronous execution or a completed result for blocking execution; treat both as success.
+Returns plain text `Task started.` for asynchronous execution or a completed result for blocking execution; treat both as success.

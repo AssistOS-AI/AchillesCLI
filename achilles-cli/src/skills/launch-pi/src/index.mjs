@@ -142,10 +142,10 @@ function normalizeAnswer(payload) {
     }
     const backgroundTask = payload?.metadata?.backgroundTask;
     if (backgroundTask?.detached) {
-        return `${TARGET_AGENT} started the task.`;
+        return 'Task started.';
     }
     if (trim(payload?.metadata?.taskId || payload?.result?.metadata?.taskId)) {
-        return `${TARGET_AGENT} started the task.`;
+        return 'Task started.';
     }
     if (payload.ok === false && payload.error) {
         return formatFailurePayload(payload);

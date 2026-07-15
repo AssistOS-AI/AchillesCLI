@@ -24,4 +24,4 @@ The call path uses `AgentMcpClient` directly via `createAgentClient` and invokes
 it to the process-local background-task observer and returns without
 client-owned polling. The observer owns subsequent router-mediated status
 polling and log reporting. Detached or otherwise asynchronous calls return the
-exact acknowledgement `piAgent started the task.`.
+generic acknowledgement `Task started.` because the task module shows the agent id and description.

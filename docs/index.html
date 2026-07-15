@@ -52,7 +52,7 @@
     The startup intro is skipped when <code>PLOINKY_WEBCHAT_HAS_HISTORY=1</code> and otherwise runs normally;
     no WebChat session-id environment variable is required by AchillesCLI.
     Asynchronous AgentServer tools are detached from the active WebChat reply: AchillesCLI acknowledges the start with
-    the exact target runtime id in the form <code>&lt;AgentName&gt; started the task.</code>,
+    the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,
     follows the remote task through the router, and emits dedicated lifecycle and log envelopes. Ongoing tasks are
     reattached from the workspace task journal if the WebChat runtime is recreated.
   </div>
