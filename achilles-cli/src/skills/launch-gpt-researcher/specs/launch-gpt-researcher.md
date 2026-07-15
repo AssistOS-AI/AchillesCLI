@@ -34,4 +34,5 @@ JSON payload. Failed runs return the agent error text or an MCP failure message.
 The call path uses `AgentMcpClient` directly via `createAgentClient` and invokes
 `callToolWithoutWait`. Async task metadata is offered to the process-local
 background-task observer, which owns subsequent router-mediated status polling
-and log reporting.
+and log reporting. Detached or otherwise asynchronous calls return the exact
+acknowledgement `GPTResearcher started the task.`.

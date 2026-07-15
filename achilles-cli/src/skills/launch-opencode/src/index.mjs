@@ -141,11 +141,10 @@ function normalizeAnswer(payload) {
     }
     const backgroundTask = payload?.metadata?.backgroundTask;
     if (backgroundTask?.detached) {
-        const description = trim(backgroundTask.description);
-        return description ? `Task started: ${description}` : 'OpenCode task started.';
+        return `${TARGET_AGENT} started the task.`;
     }
     if (trim(payload?.metadata?.taskId || payload?.result?.metadata?.taskId)) {
-        return 'OpenCode task started.';
+        return `${TARGET_AGENT} started the task.`;
     }
     if (payload.ok === false && payload.error) {
         return formatFailurePayload(payload);

@@ -25,7 +25,8 @@ The skill calls `AgentMcpClient.callToolWithoutWait`. When `execute-task` is
 registered as an async MCP tool and returns a task id, the client offers it to
 the process-local background-task observer and returns without client-owned
 polling. The observer owns subsequent router-mediated status polling and log
-reporting.
+reporting. Detached or otherwise asynchronous calls return the exact
+acknowledgement `opencodeAgent started the task.`.
 
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The skill imports that client directly from the mounted

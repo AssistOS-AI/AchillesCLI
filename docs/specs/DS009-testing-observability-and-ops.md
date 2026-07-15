@@ -29,6 +29,7 @@ Operational controls:
 3. Runtime command handlers (`/help`, `/debug`, `/tier`, `/model`, `/reload`, `/version`, `/status`, `/tasks`) provide explicit operational control points.
 4. ESC interruption is an operational control for long-running LLM and skill-execution flows.
 5. `/tasks` provides bounded workspace-local task diagnostics. It must suppress live log tails for ongoing tasks, strip terminal control sequences, and reject symlinked task storage or log files.
+6. A detached launcher must acknowledge the task with the exact target runtime id in the form `<AgentName> started the task.`; the generic task envelope remains the source of task id, description, status, and log data for WebChat.
 
 Reliability invariants:
 1. Runtime failures should surface explicit diagnostics without leaking sensitive internals in non-debug output.

@@ -23,4 +23,5 @@ The call path uses `AgentMcpClient` directly via `createAgentClient` and invokes
 `callToolWithoutWait`. When `execute-task` returns a task id, the client offers
 it to the process-local background-task observer and returns without
 client-owned polling. The observer owns subsequent router-mediated status
-polling and log reporting.
+polling and log reporting. Detached or otherwise asynchronous calls return the
+exact acknowledgement `piAgent started the task.`.

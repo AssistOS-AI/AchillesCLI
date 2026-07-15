@@ -13,4 +13,4 @@ Optionally accepts an explicit model using:
 If `model:` is omitted, the skill uses its default OpenCode model.
 
 ## Output Format
-Returns plain text "Task started" or "Task completed" depending on the env where the task is executed, treat both as success.
+Returns plain text `opencodeAgent started the task.` for asynchronous execution or a completed result for blocking execution; treat both as success.

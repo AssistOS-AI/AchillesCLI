@@ -41,7 +41,7 @@ message.
 The launcher uses `AgentMcpClient.callToolWithoutWait`. If the target tool is
 registered as an async MCP tool and the call returns AgentServer task metadata,
 AchillesCLI WebChat detaches the task through its generic background-task
-observer. The skill returns `Task started` immediately, allowing the
+observer. The skill returns `opencodeAgent started the task.` immediately, allowing the
 conversation to continue, while the observer polls through the
 Ploinky-mediated task-status path and emits task lifecycle and log envelopes.
 Callers that require the terminal result use the separate blocking `callTool`
