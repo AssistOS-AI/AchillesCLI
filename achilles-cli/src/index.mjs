@@ -22,6 +22,7 @@ import { buildOrchestratorSystemPrompt } from './prompts/orchestrator-prompt.mjs
 import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
 import { normalizeWebchatMessage } from './lib/webchatEnvelope.mjs';
+import { formatWebchatError } from './lib/webchatError.mjs';
 import { materializeWebchatContext } from './lib/webchatResources.mjs';
 import { startIntroSkill, startWebchatIntroSkill } from './lib/introSkillBoot.mjs';
 import {
@@ -661,7 +662,9 @@ async function runWebchatInteractive(agent, options) {
                 if (activeAbortController?.signal?.aborted || error?.name === 'AbortError') {
                     process.stdout.write('[cancelled]\n');
                 } else {
-                    process.stdout.write(`[error] ${error.message}\n`);
+                    process.stdout.write(`${formatWebchatError(error, {
+                        publicBaseUrl: context?.webchatOrigin?.publicBaseUrl,
+                    })}\n`);
                 }
             } finally {
                 await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });

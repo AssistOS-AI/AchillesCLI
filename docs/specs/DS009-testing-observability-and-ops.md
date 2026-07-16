@@ -30,6 +30,7 @@ Operational controls:
 4. ESC interruption is an operational control for long-running LLM and skill-execution flows.
 5. `/tasks` provides bounded workspace-local task diagnostics. It must suppress live log tails for ongoing tasks, strip terminal control sequences, and reject symlinked task storage or log files.
 6. A detached launcher must acknowledge the task with the generic text `Task started.`; the task module receives the target runtime id, task id, description, status, and log data from the generic task envelope.
+7. WebChat runtime errors must preserve the user-safe error message and may expose the first mapped source frame as a Markdown link through Ploinky's authenticated `/workspace-files/` route. Source mapping is restricted to known AchillesCLI, AchillesAgentLib, and bundled Ploinky runtime roots; arbitrary absolute stack paths must not enter conversation output.
 
 Reliability invariants:
 1. Runtime failures should surface explicit diagnostics without leaking sensitive internals in non-debug output.
@@ -49,6 +50,11 @@ Cancellation test coverage requirements:
 
 Response:
 The command is a bounded status snapshot rather than a second live-monitoring surface. WebChat already receives lifecycle updates through dedicated task envelopes, while terminal callers only need durable task state and bounded final diagnostics.
+
+### Question #2: Why do WebChat errors link only mapped runtime sources?
+
+Response:
+The authenticated workspace-file route provides a useful path from an error to editable source without publishing raw container paths. Restricting links to known package and runtime roots keeps internal or provider-specific absolute paths out of persisted conversation history.
 
 ## Conclusion
 Testing and observability contracts ensure AchillesCLI remains maintainable, diagnosable, and operationally predictable as the runtime evolves.
