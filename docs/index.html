@@ -126,6 +126,10 @@
     GPTResearcher starts Search Agent first.
     The OpenCode and PI launchers accept only the plain task text and leave model
     selection entirely to their target agents.
+    Both workers run their provider CLI in its normal text mode, relay stdout and stderr
+    chunks unchanged into the live task log, and return captured stdout as plain MCP text.
+    The provider's final answer therefore arrives as the last live log output without a
+    second terminal-result copy.
     This contract is specified in
     <a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012</a>.
   </div>

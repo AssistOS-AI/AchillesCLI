@@ -1,90 +1,45 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
-import { execSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
-const PI_BIN_CANDIDATES = [
-    '/usr/local/bin/pi',
-];
+const PI_BIN_CANDIDATES = ['/usr/local/bin/pi'];
+const PI_TIMEOUT_MS = 300000;
+const LOG_TAIL_LIMIT = 16 * 1024;
 
-function resolvePiBinary() {
+function resolvePiBinary(env = process.env) {
+    if (typeof env.PI_BIN === 'string' && env.PI_BIN.trim()) return env.PI_BIN.trim();
     for (const candidate of PI_BIN_CANDIDATES) {
-        if (!candidate) {
-            continue;
-        }
-        if (candidate.includes('/') && fs.existsSync(candidate)) {
-            return candidate;
-        }
+        if (candidate.includes('/') && fs.existsSync(candidate)) return candidate;
         try {
-            const which = execSync(`command -v ${candidate}`, {
+            const resolved = execFileSync('sh', ['-c', `command -v "$1"`, 'sh', candidate], {
                 stdio: ['ignore', 'pipe', 'ignore'],
                 encoding: 'utf8',
             }).trim();
-            if (which) {
-                return which;
-            }
+            if (resolved) return resolved;
         } catch {
-            // try next candidate
         }
     }
     return 'pi';
 }
 
-const PI_BIN = resolvePiBinary();
-const PI_TIMEOUT_MS = 300000;
-const LOG_TAIL_LIMIT = 16 * 1024;
-
 function createContainerLogStream() {
-    const containerStderr = '/proc/1/fd/2';
     return {
         write(message) {
             try {
                 process.stderr.write(message);
             } catch {
             }
-            try {
-                fs.writeFileSync(containerStderr, message);
-            } catch {
-            }
         },
     };
 }
 
-function trim(value) {
-    return typeof value === 'string' ? value.trim() : '';
-}
-
-function logLine(logStream, message) {
-    logStream.write(`${message}\n`);
-}
-
 function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
     const next = `${current}${chunk}`;
-    if (next.length <= limit) {
-        return next;
-    }
-    return next.slice(next.length - limit);
+    return next.length <= limit ? next : next.slice(next.length - limit);
 }
 
-function streamChunkWithPrefix(logStream, prefix, chunk, state) {
-    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk ?? '');
-    state.buffer += text;
-    const lines = state.buffer.split(/\r?\n/);
-    state.buffer = lines.pop() ?? '';
-    for (const line of lines) {
-        logLine(logStream, `${prefix}${line}`);
-    }
-}
-
-function flushPrefixedBuffer(logStream, prefix, state) {
-    if (!state.buffer) {
-        return;
-    }
-    logLine(logStream, `${prefix}${state.buffer}`);
-    state.buffer = '';
-}
-
-function runPi({ projectDir, model, prompt, logStream }) {
+function runPi({ projectDir, model, prompt, logStream, env = process.env }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
         const args = [
@@ -93,11 +48,11 @@ function runPi({ projectDir, model, prompt, logStream }) {
             ...(model ? ['--model', model] : []),
             prompt,
         ];
-
-        const child = spawn(PI_BIN, args, {
+        const child = spawn(resolvePiBinary(env), args, {
             cwd: projectDir,
             env: {
                 ...process.env,
+                ...env,
                 HOME: '/root',
                 PI_CODING_AGENT_DIR: '/code',
                 PI_OFFLINE: '1',
@@ -105,15 +60,12 @@ function runPi({ projectDir, model, prompt, logStream }) {
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
-
         let stdoutTail = '';
         let stderrTail = '';
         let timedOut = false;
-        const stdoutState = { buffer: '' };
-        const stderrState = { buffer: '' };
         const timeout = setTimeout(() => {
             timedOut = true;
-            logLine(logStream, `[piAgent/execute-task] timeout after ${PI_TIMEOUT_MS / 1000}s; sending SIGTERM`);
+            logStream.write(`PI task timed out after ${PI_TIMEOUT_MS / 1000}s; sending SIGTERM\n`);
             try {
                 child.kill('SIGTERM');
             } catch {
@@ -121,26 +73,19 @@ function runPi({ projectDir, model, prompt, logStream }) {
         }, PI_TIMEOUT_MS);
 
         child.stdout.on('data', (chunk) => {
-            const text = chunk.toString('utf8');
-            stdoutTail = appendBoundedTail(stdoutTail, text);
-            streamChunkWithPrefix(logStream, '[pi stdout] ', chunk, stdoutState);
+            stdoutTail = appendBoundedTail(stdoutTail, chunk.toString('utf8'));
+            logStream.write(chunk);
         });
-
         child.stderr.on('data', (chunk) => {
-            const text = chunk.toString('utf8');
-            stderrTail = appendBoundedTail(stderrTail, text);
-            streamChunkWithPrefix(logStream, '[pi stderr] ', chunk, stderrState);
+            stderrTail = appendBoundedTail(stderrTail, chunk.toString('utf8'));
+            logStream.write(chunk);
         });
-
         child.on('error', (error) => {
             clearTimeout(timeout);
             reject(error);
         });
-
         child.on('close', (code, signal) => {
             clearTimeout(timeout);
-            flushPrefixedBuffer(logStream, '[pi stdout] ', stdoutState);
-            flushPrefixedBuffer(logStream, '[pi stderr] ', stderrState);
             resolve({
                 code,
                 signal,
@@ -154,25 +99,21 @@ function runPi({ projectDir, model, prompt, logStream }) {
 }
 
 function summarizeFailure(result) {
-    const tail = (result.stderrTail || result.stdoutTail || '').trim();
-    const base = result.timedOut
+    return result.timedOut
         ? `PI task timed out after ${PI_TIMEOUT_MS / 1000}s`
         : `PI task failed with exit code ${result.code ?? 'unknown'}${result.signal ? ` signal ${result.signal}` : ''}`;
-    return tail ? `${base}. Output tail:\n${tail}` : base;
 }
 
 function summarizeOutput(result, { preferStderr = false } = {}) {
-    const source = preferStderr
+    const output = preferStderr
         ? (result.stderrTail || result.stdoutTail || '')
         : (result.stdoutTail || result.stderrTail || '');
-    return source.trim();
+    return output.trim();
 }
 
 function parseInput(raw) {
     const trimmed = String(raw ?? '').trim();
-    if (!trimmed) {
-        return null;
-    }
+    if (!trimmed) return null;
     try {
         const parsed = JSON.parse(trimmed);
         return parsed.input && typeof parsed.input === 'object' ? parsed.input : parsed;
@@ -182,90 +123,55 @@ function parseInput(raw) {
 }
 
 async function readStdin() {
-    if (process.stdin.isTTY) {
-        return '';
-    }
+    if (process.stdin.isTTY) return '';
     process.stdin.setEncoding('utf8');
     let data = '';
-    for await (const chunk of process.stdin) {
-        data += chunk;
-    }
+    for await (const chunk of process.stdin) data += chunk;
     return data;
 }
 
 export async function executeTask({ prompt, projectDir, model } = {}) {
     const logStream = createContainerLogStream();
-
     if (typeof prompt !== 'string' || !prompt.trim()) {
-        process.stdout.write(JSON.stringify({ ok: false, error: 'prompt is required and must be a non-empty string.' }));
+        process.stderr.write('prompt is required and must be a non-empty string.\n');
         process.exitCode = 1;
         return;
     }
-
-    if (!projectDir || typeof projectDir !== 'string' || !projectDir.trim()) {
-        process.stdout.write(JSON.stringify({ ok: false, error: 'projectDir is required and must be a non-empty string.' }));
+    if (typeof projectDir !== 'string' || !projectDir.trim()) {
+        process.stderr.write('projectDir is required and must be a non-empty string.\n');
         process.exitCode = 1;
         return;
     }
 
     const resolvedModel = typeof model === 'string' ? model.trim() : '';
-    const startedAt = Date.now();
-
-    logLine(
-        logStream,
-        `[piAgent/execute-task] start projectDir=${projectDir} model=${JSON.stringify(resolvedModel || '(default)')}`
-    );
-
     try {
         const result = await runPi({
-            projectDir,
+            projectDir: projectDir.trim(),
             model: resolvedModel,
-            prompt,
+            prompt: prompt.trim(),
             logStream,
         });
         if (result.timedOut || result.code !== 0) {
-            const errorText = summarizeFailure(result);
-            logLine(logStream, `[piAgent/execute-task] exit code=${result.code}${result.signal ? ` signal=${result.signal}` : ''}`);
-            process.stdout.write(JSON.stringify({
-                ok: false,
-                error: errorText,
-                outputText: summarizeOutput(result, { preferStderr: result.code !== 0 || result.timedOut }),
-                projectDir,
-                model: resolvedModel,
-                durationMs: Date.now() - startedAt,
-            }));
+            process.stderr.write(`${summarizeFailure(result)}\n`);
             process.exitCode = 1;
             return;
         }
-
-        process.stdout.write(JSON.stringify({
-            ok: true,
-            outputText: summarizeOutput(result),
-            projectDir,
-            model: resolvedModel,
-            durationMs: Date.now() - startedAt,
-        }));
+        process.stdout.write(summarizeOutput(result));
     } catch (error) {
-        logLine(logStream, `[piAgent/execute-task] crashed: ${error?.message || 'unknown error'}`);
-        process.stdout.write(JSON.stringify({
-            ok: false,
-            error: error?.message || 'pi execution crashed.',
-            outputText: '',
-            projectDir,
-            model: resolvedModel,
-        }));
+        process.stderr.write(`PI task failed: ${error?.message || 'unknown error'}\n`);
         process.exitCode = 1;
     }
 }
 
 try {
     const input = parseInput(await readStdin());
-    await executeTask(input);
+    if (!input) {
+        process.stderr.write('Invalid or missing input. Expected JSON with prompt and projectDir.\n');
+        process.exitCode = 1;
+    } else {
+        await executeTask(input);
+    }
 } catch (error) {
-    process.stdout.write(JSON.stringify({
-        ok: false,
-        error: error?.message || 'pi execution crashed.',
-        outputText: '',
-    }));
+    process.stderr.write(`PI task failed: ${error?.message || 'unknown error'}\n`);
     process.exitCode = 1;
 }

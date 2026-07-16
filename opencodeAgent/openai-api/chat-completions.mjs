@@ -143,7 +143,6 @@ export async function handleChatCompletions(payload, {
         logStream,
         env,
         createProjectDir: false,
-        logPrefix: 'chat-completions',
     });
 
     if (!result.ok) {

@@ -40,6 +40,15 @@ The skill returns plain text only. Successful runs return
 agent returns it. Failed runs return the agent error text or an MCP failure
 message.
 
+The `opencodeAgent` command wrapper must execute the normal OpenCode text
+format. It must relay each child stdout and stderr chunk unchanged to the
+AgentServer live-log channel as the chunk arrives. It must not parse OpenCode
+events, buffer output until newline boundaries, add stream prefixes, or emit
+routine start and exit diagnostics. Child stdout must also become the wrapper's
+plain-text MCP result, without serializing wrapper metadata as JSON. This makes
+OpenCode's final answer the last live-log output while preserving one separate
+result value for blocking MCP callers.
+
 The launcher uses `AgentMcpClient.callToolWithoutWait`. If the target tool is
 registered as an async MCP tool and the call returns AgentServer task metadata,
 AchillesCLI WebChat detaches the task through its generic background-task
@@ -135,6 +144,13 @@ out of the manifest breaks the recursive startup chain, while the launcher's
 status-first Marketplace flow enables it in explicit global mode, preserves a
 deterministic first invocation, and avoids sending `enable_agent` again after
 the runtime is already available.
+
+### Question #7: Why is the final answer present in both live output and the MCP result?
+Response: OpenCode itself emits the answer through stdout, so relaying that
+stream gives WebChat a live final answer without synthesis. The wrapper also
+returns the captured stdout for the MCP command contract. Ploinky keeps the
+wrapper result channel out of the live task log and never appends the terminal
+result afterward, so the task item still contains only one visible copy.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users

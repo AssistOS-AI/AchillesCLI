@@ -34,10 +34,7 @@ async function main() {
     const input = parseInput(stdinData);
 
     if (!input) {
-        process.stdout.write(JSON.stringify({
-            ok: false,
-            error: 'Invalid or missing input. Expected JSON with prompt and projectDir.',
-        }));
+        process.stderr.write('Invalid or missing input. Expected JSON with prompt and projectDir.\n');
         process.exitCode = 1;
         return;
     }
@@ -45,13 +42,13 @@ async function main() {
     const { prompt, projectDir, model } = input;
 
     if (typeof prompt !== 'string' || !prompt.trim()) {
-        process.stdout.write(JSON.stringify({ ok: false, error: 'prompt is required and must be a non-empty string.' }));
+        process.stderr.write('prompt is required and must be a non-empty string.\n');
         process.exitCode = 1;
         return;
     }
 
     if (!projectDir || typeof projectDir !== 'string' || !projectDir.trim()) {
-        process.stdout.write(JSON.stringify({ ok: false, error: 'projectDir is required and must be a non-empty string.' }));
+        process.stderr.write('projectDir is required and must be a non-empty string.\n');
         process.exitCode = 1;
         return;
     }
@@ -61,13 +58,14 @@ async function main() {
         projectDir: projectDir.trim(),
         model,
         createProjectDir: true,
-        logPrefix: 'execute-task',
     });
 
-    process.stdout.write(JSON.stringify(result));
     if (!result.ok) {
+        process.stderr.write(`${result.error || 'OpenCode task failed.'}\n`);
         process.exitCode = 1;
+        return;
     }
+    process.stdout.write(result.outputText || '');
 }
 
 const currentFilePath = fileURLToPath(import.meta.url);

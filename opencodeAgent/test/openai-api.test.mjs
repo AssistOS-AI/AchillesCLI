@@ -21,7 +21,9 @@ async function makeFakeOpenCodeBin(dir) {
 import fs from 'node:fs';
 
 fs.writeFileSync(process.env.OPENCODE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));
-process.stdout.write('fake opencode output');
+process.stdout.write('fake opencode ');
+await new Promise((resolve) => setTimeout(resolve, 25));
+process.stdout.write('output');
 `, 'utf8');
     await fs.chmod(binPath, 0o755);
     return binPath;
@@ -116,11 +118,10 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
     });
 
     assert.equal(result.code, 0, result.stderr);
-    const payload = JSON.parse(result.stdout);
-    assert.equal(payload.ok, true);
-    assert.equal(payload.projectDir, projectDir);
-    assert.equal(payload.effectiveProjectDir, projectDir);
-    assert.equal(payload.model, 'xai/grok-4.3');
+    assert.equal(result.stdout, 'fake opencode output');
+    assert.equal(result.stderr, 'fake opencode output');
+    assert.doesNotMatch(result.stdout, /^\s*\{/);
+    assert.doesNotMatch(result.stderr, /\[opencode|start projectDir|exit code/);
 
     const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
     assert.equal(args[3], projectDir);

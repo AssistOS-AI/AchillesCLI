@@ -3,7 +3,6 @@ import { readOngoingTasks } from './workspaceTasks.mjs';
 
 const TASK_POLL_INTERVAL_MS = 5000;
 const DESCRIPTION_LIMIT = 240;
-const RESULT_LIMIT = 256 * 1024;
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -38,28 +37,6 @@ function normalizeStatus(status) {
     if (value === 'cancelled') return 'stopped';
     if (value === 'failed' || value === 'not_found') return 'error';
     return 'ongoing';
-}
-
-function resultText(result) {
-    if (result === undefined || result === null) return '';
-    let text = '';
-    if (typeof result === 'string') {
-        text = result;
-    } else {
-        const content = Array.isArray(result?.content) ? result.content : [];
-        text = content
-            .filter((entry) => entry?.type === 'text' && typeof entry.text === 'string')
-            .map((entry) => entry.text)
-            .join('\n');
-        if (!text) {
-            try {
-                text = JSON.stringify(result, null, 2);
-            } catch (_) {
-                text = String(result);
-            }
-        }
-    }
-    return text.length > RESULT_LIMIT ? text.slice(text.length - RESULT_LIMIT) : text;
 }
 
 function emitTaskEvent(payload) {
@@ -117,7 +94,6 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
                         tail: typeof task?.logTail === 'string' ? task.logTail : '',
                         seq: logSeq,
                         truncated: task?.logTruncated === true,
-                        result: status === 'finished' ? resultText(task?.result) : '',
                     },
                 });
             }
