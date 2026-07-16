@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { action as launchOpenCode } from '../src/skills/launch-opencode/src/index.mjs';
 import { action as launchPi } from '../src/skills/launch-pi/src/index.mjs';
 import { action as launchResearch } from '../src/skills/launch-gpt-researcher/src/index.mjs';
+import { __testables as runtimeTestables } from '../src/lib/ploinkyAgentRuntime.mjs';
 
 function detachedClient(description) {
     return {
@@ -32,4 +33,13 @@ test('agent launchers report unclaimed asynchronous work as started', async () =
     assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient }), 'Task started.');
     assert.equal(await launchPi({ promptText: 'run tests', agentClient }), 'Task started.');
     assert.equal(await launchResearch({ promptText: 'research topic', agentClient }), 'Task started.');
+});
+
+test('startup retry classification accepts only router agent-starting errors', () => {
+    assert.equal(runtimeTestables.isAgentStillStarting(
+        new Error("Agent 'opencodeAgent' is still starting. Try again in a moment.")
+    ), true);
+    assert.equal(runtimeTestables.isAgentStillStarting(
+        new Error('The provider asked us to try again in a moment.')
+    ), false);
 });

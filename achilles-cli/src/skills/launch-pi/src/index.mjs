@@ -1,3 +1,5 @@
+import { callToolWhenReady, ensureAgentsRunning } from '../../../lib/ploinkyAgentRuntime.mjs';
+
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
@@ -70,24 +72,15 @@ function parseTaskResult(payload) {
 
 async function callAgentTool(agentName, toolName, payload, invocation = {}) {
     const client = await resolveAgentClient(agentName, invocation);
-    return client.callToolWithoutWait(toolName, payload, {
+    await ensureAgentsRunning(client, [TARGET_AGENT_REF], invocation);
+    return callToolWhenReady(() => client.callToolWithoutWait(toolName, payload, {
         userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
-    });
+    }));
 }
 
 export const TARGET_AGENT = 'piAgent';
+export const TARGET_AGENT_REF = 'AchillesCLI/piAgent';
 export const TOOL_NAME = 'execute-task';
-
-function parseModelTaskText(text) {
-    const match = trim(text).match(/^model\s*:\s*(\S+)\s+task\s*:\s*([\s\S]+)$/i);
-    if (!match) {
-        return { prompt: trim(text), model: '' };
-    }
-    return {
-        model: trim(match[1]),
-        prompt: trim(match[2]),
-    };
-}
 
 function normalizePrompt(invocation = {}) {
     const candidate = typeof invocation.promptText === 'string'
@@ -95,29 +88,7 @@ function normalizePrompt(invocation = {}) {
         : typeof invocation.prompt === 'string'
         ? invocation.prompt
         : '';
-    const text = trim(candidate);
-    if (!text) {
-        return { prompt: '', model: '' };
-    }
-    try {
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            return {
-                prompt: trim(parsed.prompt || parsed.task || parsed.taskDescription),
-                model: trim(parsed.model || parsed.agentModel || parsed.llm),
-            };
-        }
-    } catch {
-    }
-    return parseModelTaskText(text);
-}
-
-function resolvePromptModel(invocation = {}) {
-    const parsed = normalizePrompt(invocation);
-    return {
-        prompt: trim(parsed.prompt),
-        model: trim(parsed.model || invocation.model),
-    };
+    return trim(candidate);
 }
 
 function resolveProjectDir(invocation = {}) {
@@ -158,7 +129,7 @@ function normalizeAnswer(payload) {
 }
 
 export async function action(invocation = {}) {
-    const { prompt, model } = resolvePromptModel(invocation);
+    const prompt = normalizePrompt(invocation);
     if (!prompt) {
         return 'PI needs a natural-language task to run.';
     }
@@ -167,9 +138,6 @@ export async function action(invocation = {}) {
         prompt,
         projectDir: resolveProjectDir(invocation),
     };
-    if (model) {
-        payload.model = model;
-    }
 
     try {
         const result = parseTaskResult(await callAgentTool(TARGET_AGENT, TOOL_NAME, payload, {

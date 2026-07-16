@@ -17,9 +17,11 @@ handling into an unrestricted agent invocation surface, while also allowing
 Soul Gateway to discover and call OpenCode as an agent-backed provider.
 
 ## Core Content
-The public skill input must be plain task text. The target agent is not part of
-the public grammar. The skill must reject missing task text before making any
-MCP request.
+The public skill input must be plain task text. The target agent and model are
+not part of the public grammar. The launcher must treat the complete non-empty
+input string as the task, including text that resembles JSON or prefixed
+fields, without parsing or rejecting it. The skill must reject missing task
+text before making any MCP request.
 
 The fixed target is `opencodeAgent`, and the fixed MCP tool is `execute-task`.
 The `copilot-router` oskill resolves explicit `opencode` or `opencodeAgent`
@@ -27,11 +29,11 @@ user requests to `launch-opencode` so users do not provide agent names as skill
 input. The skill must not shell out to OpenCode or any other provider command
 directly.
 
-The delegated MCP payload must include `prompt`, `projectDir`, and `model`,
-because `opencodeAgent.execute-task` requires that schema. `prompt` is the task
-description. `projectDir` comes from `invocation.mainAgent.startDir`, the
-AchillesCLI session working directory. `model` is hardcoded to
-`xai/grok-4.20-0309-non-reasoning`.
+The delegated MCP payload must include only `prompt` and `projectDir`. `prompt`
+is the complete task text. `projectDir` comes from
+`invocation.mainAgent.startDir`, the AchillesCLI session working directory. The
+launcher must not inherit the AchillesCLI session model or forward any model
+parameter; the target agent owns model selection.
 
 The skill returns plain text only. Successful runs return
 `OpenCode task completed.` and append bounded final OpenCode output when the
@@ -61,9 +63,13 @@ general execution-provider launchers when the user explicitly asks for
 `opencode` or `opencodeAgent`. This keeps named-provider intent from being
 captured by generic Open Interpreter routing.
 
-The AchillesCLI Ploinky manifest must enable `copilot-agents/opencodeAgent
-global` as a blocking dependency so the OpenCode agent runs against the same
-workspace as Copilot.
+The AchillesCLI Ploinky manifest must omit `opencodeAgent` from its `enable`
+dependencies so Explorer startup is not blocked by an optional coding worker.
+Before invoking MCP, `launch-opencode` must use `AgentMcpClient` to read the
+installed agent's Marketplace status, submit `enable_agent` for
+`AchillesCLI/opencodeAgent` only when it is not already running, and wait until
+the runtime reports ready. A transient router response that the new route is
+still starting may be retried only inside the bounded startup window.
 
 The `opencodeAgent` manifest must expose AgentServer `endpoints.chatCompletions`
 and `endpoints.models` handlers. The chat-completions handler must reuse the
@@ -95,11 +101,11 @@ name, policy expectations, and user-facing routing semantics remain auditable.
 Additional agents require separate launchers or an explicitly designed generic
 caller with its own security contract.
 
-### Question #2: Why is the model not part of the public input?
-Response: The requested user interface is intentionally minimal:
-task description only. The model is fixed to
-`xai/grok-4.20-0309-non-reasoning` so the launcher behavior is stable and does
-not depend on session or environment model configuration.
+### Question #2: Why is the model excluded from the public input?
+Response: The launcher has one stable input contract: the plain task text.
+Model selection belongs to `opencodeAgent`, so AchillesCLI does not translate
+its generic session model into an OpenCode provider model or expose a second
+launcher grammar.
 
 ### Question #3: Why does WebChat detach async task polling?
 Response: OpenCode tasks can run long enough that blocking the orchestrator
@@ -122,6 +128,13 @@ Response: Soul Gateway treats each Ploinky agent as a provider and discovers
 its concrete models from the agent. OpenCode already owns the provider/model
 catalog, so `opencodeAgent` must publish those models through AgentServer
 instead of relying on a synthetic fallback model.
+
+### Question #6: Why is OpenCode started by the launcher instead of the manifest?
+Response: OpenCode is optional for ordinary AchillesCLI sessions. Keeping it
+out of the manifest breaks the recursive startup chain, while the launcher's
+status-first Marketplace flow enables it in explicit global mode, preserves a
+deterministic first invocation, and avoids sending `enable_agent` again after
+the runtime is already available.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users

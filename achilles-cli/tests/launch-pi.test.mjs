@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { action, HARDCODED_MODEL } from '../src/skills/launch-pi/src/index.mjs';
+import { action, TARGET_AGENT_REF } from '../src/skills/launch-pi/src/index.mjs';
 
-test('action calls piAgent execute-task with default model', async () => {
+test('action lets piAgent select its model when no override is provided', async () => {
     const calls = [];
+    const starts = [];
     const result = await action({
         promptText: 'create a report',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
+            ensureAgentRunning: async (agentRef, options) => starts.push({ agentRef, options }),
             callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true, projectDir: payload.projectDir, model: payload.model };
@@ -17,26 +19,31 @@ test('action calls piAgent execute-task with default model', async () => {
     });
 
     assert.equal(result, 'PI task completed.');
+    assert.deepEqual(starts, [{
+        agentRef: TARGET_AGENT_REF,
+        options: { mode: 'global', timeoutMs: 180000 },
+    }]);
     assert.deepEqual(calls, [{
         toolName: 'execute-task',
         payload: {
             prompt: 'create a report',
             projectDir: '/workspace/project',
-            model: HARDCODED_MODEL,
         },
     }]);
 });
 
-test('action accepts JSON input with prompt and model override', async () => {
+test('action treats JSON-shaped text as the literal task', async () => {
+    const task = JSON.stringify({
+        prompt: 'build a component',
+        model: 'override/model',
+    });
     const result = await action({
-        promptText: JSON.stringify({
-            prompt: 'build a component',
-            model: 'override/model',
-        }),
+        promptText: task,
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
                 assert.equal(toolName, 'execute-task');
-                assert.equal(payload.model, 'override/model');
+                assert.equal(payload.model, undefined);
+                assert.equal(payload.prompt, task);
                 return { ok: true, outputText: 'ok' };
             },
         },
@@ -45,10 +52,11 @@ test('action accepts JSON input with prompt and model override', async () => {
     assert.equal(result, 'PI task completed.\n\nok');
 });
 
-test('action accepts text input with model and task fields', async () => {
+test('action treats model-shaped text as the literal task and ignores invocation.model', async () => {
     const calls = [];
     const result = await action({
         promptText: 'model: claude-test task: build a component: keep it small',
+        model: 'fast',
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
@@ -59,8 +67,8 @@ test('action accepts text input with model and task fields', async () => {
 
     assert.equal(result, 'PI task completed.\n\nok');
     assert.equal(calls[0].toolName, 'execute-task');
-    assert.equal(calls[0].payload.model, 'claude-test');
-    assert.equal(calls[0].payload.prompt, 'build a component: keep it small');
+    assert.equal(calls[0].payload.model, undefined);
+    assert.equal(calls[0].payload.prompt, 'model: claude-test task: build a component: keep it small');
 });
 
 test('action uses the non-blocking client path without callback polling', async () => {

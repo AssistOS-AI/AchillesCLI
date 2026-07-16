@@ -32,7 +32,12 @@ If no report is present, it falls back to `outputText`, `result`, or the compact
 JSON payload. Failed runs return the agent error text or an MCP failure message.
 
 The call path uses `AgentMcpClient` directly via `createAgentClient` and invokes
-`callToolWithoutWait`. Async task metadata is offered to the process-local
+`callToolWithoutWait`. Before invoking research, it checks Marketplace status
+and starts optional workers in dependency order: first `proxies/searchAgent`,
+then `AchillesCLI/GPTResearcher`. Each worker receives `enable_agent` only when
+it is not already running, each activation explicitly requests `global` mode,
+and the tool call waits for both runtimes to become
+ready. Async task metadata is offered to the process-local
 background-task observer, which owns subsequent router-mediated status polling
 and log reporting. Detached or otherwise asynchronous calls return the generic
 acknowledgement `Task started.` because the task module shows the agent id and description.

@@ -119,6 +119,13 @@
     <code>/v1/chat/completions</code> and <code>/v1/models</code> handlers through AgentServer.
     Chat completions execute OpenCode in the Ploinky-provided <code>WORKSPACE_PATH</code>,
     and model discovery returns the OpenCode provider/model catalog for Soul Gateway.
+    AchillesCLI does not include OpenCode, PI, Codex, GPTResearcher, or Search Agent in
+    its manifest dependency graph, and those workers declare <code>startup: manual</code>.
+    Their launchers check Marketplace runtime state, enable an installed target in explicit
+    global mode only when needed, wait for readiness, and then invoke MCP;
+    GPTResearcher starts Search Agent first.
+    The OpenCode and PI launchers accept only the plain task text and leave model
+    selection entirely to their target agents.
     This contract is specified in
     <a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012</a>.
   </div>

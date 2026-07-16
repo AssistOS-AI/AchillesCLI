@@ -102,6 +102,7 @@ Ploinky integration boundary:
     inspects task records already persisted for that workspace. This read-only
     command does not add a router route, MCP execution tool, or policy surface.
 18. The AchillesCLI manifest enables `proxies/soul-gateway` as a blocking dependency before model discovery. Model listing uses the router-mediated `/services/soul-gateway/v1/models` route and the existing generated Ploinky agent credential; it does not add a public HTTP service, delegation, or MCP execution tool.
+19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation of Codex remains owned by the generic `ploinky cli codexAgent` path, which also enables missing targets globally.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
@@ -135,17 +136,26 @@ Provider launcher discovery:
    route is unavailable, but it must not tell the user to run an enable-research
    command to make the provider selectable.
 6. `launch-opencode` is the bounded exception for direct named-agent
-   delegation. It calls the allowlisted `opencodeAgent.execute-task` MCP tool
-   through the router, uses the hardcoded model
-   `xai/grok-4.20-0309-non-reasoning`, returns plain text, and must not accept
+   delegation. It starts the installed `AchillesCLI/opencodeAgent` through the
+   existing Marketplace enable path in explicit `global` mode only when
+   runtime status is not already running, then calls the allowlisted
+   `opencodeAgent.execute-task` MCP tool
+   through the router. `launch-opencode` and `launch-pi` accept only the plain
+   task text, pass that text unchanged as `prompt`, and never inherit or forward
+   the AchillesCLI session model. They return plain text and must not accept
    arbitrary target agent names or bypass Ploinky MCP authorization.
-7. The AchillesCLI Ploinky manifest must enable
-   `copilot-agents/opencodeAgent global` so OpenCode runs in the same workspace
-   context as Copilot.
-8. The AchillesCLI Ploinky manifest must keep `copilot-agents/GPTResearcher`
-   as a `no-wait` dependency so GPTResearcher runtime setup failures do not
-   block Explorer startup while the Python package installation path remains a
-   temporary integration.
+7. The AchillesCLI Ploinky manifest must not enable `opencodeAgent`, `piAgent`,
+   `codexAgent`, `GPTResearcher`, or `proxies/searchAgent`. These optional
+   workers are activation-time dependencies of their launcher or direct CLI
+   invocation, not startup-time dependencies of AchillesCLI. Their own
+   manifests must declare `startup: manual` so a later general workspace boot
+   does not revive a dormant worker merely because it remains registered.
+8. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
+   it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
+   duplicate `enable_agent` request when Marketplace already reports the agent
+   as running. When activation is required, both requests use explicit
+   `global` mode; the research MCP call must wait until both runtimes are
+   ready.
 
 ## Decisions & Questions
 
@@ -188,6 +198,11 @@ read-only inspection avoids adding an authenticated router API for a local CLI
 
 Response:
 The MCP catalog tool already supplies agent-owned slash metadata to WebChat and runs inside AchillesCLI's authenticated server context. Fetching Soul Gateway there keeps the generated agent credential out of the browser, preserves one generic WebChat contract, and lets the selected agent decide which models and recommendation metadata it exposes.
+
+### Question #6: Why are optional workers omitted from the AchillesCLI manifest?
+
+Response:
+Ploinky recursively expands manifest `enable` dependencies, so listing coding and research workers there makes every Explorer session pay their startup cost even when no launcher uses them. Omitting those entries breaks the dependency chain, while `startup: manual` prevents already registered but dormant workers from joining later general boots. The launcher restores availability at the actual invocation boundary through a status-first Marketplace enable flow and explicitly chooses global mode for these workspace-scoped coding and research tasks. Soul Gateway remains the only blocking dependency required for core AchillesCLI model discovery.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

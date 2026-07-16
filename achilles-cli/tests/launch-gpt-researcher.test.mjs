@@ -1,14 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { action, TARGET_AGENT, TOOL_NAME } from '../src/skills/launch-gpt-researcher/src/index.mjs';
+import {
+    action,
+    SEARCH_AGENT_REF,
+    TARGET_AGENT,
+    TARGET_AGENT_REF,
+    TOOL_NAME,
+} from '../src/skills/launch-gpt-researcher/src/index.mjs';
 
 test('action calls GPTResearcher MCP tool with plain prompt', async () => {
     const calls = [];
+    const starts = [];
     const result = await action({
         promptText: 'research the workspace',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
+            ensureAgentRunning: async (agentRef, options) => starts.push({ agentRef, options }),
             callToolWithoutWait: async (toolName, payload, options) => {
                 calls.push({ toolName, payload, options });
                 return {
@@ -21,6 +29,10 @@ test('action calls GPTResearcher MCP tool with plain prompt', async () => {
     assert.equal(result, 'GPTResearcher task completed.\n\nresearch complete');
     assert.equal(TARGET_AGENT, 'GPTResearcher');
     assert.equal(TOOL_NAME, 'start_research');
+    assert.deepEqual(starts, [
+        { agentRef: SEARCH_AGENT_REF, options: { mode: 'global', timeoutMs: 180000 } },
+        { agentRef: TARGET_AGENT_REF, options: { mode: 'global', timeoutMs: 180000 } },
+    ]);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].toolName, TOOL_NAME);
     assert.deepEqual(calls[0].payload, {

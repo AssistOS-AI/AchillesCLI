@@ -1,5 +1,6 @@
 {
     "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
+    "startup": "manual",
     "lite-sandbox": true,
     "about": "OpenCode CLI agent. Executes one-shot build tasks via opencode CLI to construct AKU from WAC data.",
     "profiles": {

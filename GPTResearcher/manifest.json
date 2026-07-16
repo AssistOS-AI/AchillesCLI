@@ -1,5 +1,6 @@
 {
     "container": "docker.io/assistos/bwrap-runner:node24-python-bookworm",
+    "startup": "manual",
     "lite-sandbox": true,
     "about": "GPTResearcher agent. Runs GPT Researcher through the Python package and exposes research through a Ploinky MCP tool.",
     "readiness": {

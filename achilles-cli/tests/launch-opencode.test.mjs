@@ -4,17 +4,19 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { action, HARDCODED_MODEL } from '../src/skills/launch-opencode/src/index.mjs';
+import { action, TARGET_AGENT_REF } from '../src/skills/launch-opencode/src/index.mjs';
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(TEST_DIR, '..');
 
-test('action calls opencodeAgent execute-task with default model', async () => {
+test('action lets opencodeAgent select its model when no override is provided', async () => {
     const calls = [];
+    const starts = [];
     const result = await action({
         promptText: 'build artifacts',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
+            ensureAgentRunning: async (agentRef, options) => starts.push({ agentRef, options }),
             callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
                 return { ok: true, projectDir: payload.projectDir, model: payload.model };
@@ -23,20 +25,24 @@ test('action calls opencodeAgent execute-task with default model', async () => {
     });
 
     assert.equal(result, 'OpenCode task completed.');
+    assert.deepEqual(starts, [{
+        agentRef: TARGET_AGENT_REF,
+        options: { mode: 'global', timeoutMs: 180000 },
+    }]);
     assert.deepEqual(calls, [{
         toolName: 'execute-task',
         payload: {
             prompt: 'build artifacts',
             projectDir: '/workspace/project',
-            model: HARDCODED_MODEL,
         },
     }]);
 });
 
-test('action accepts text input with model and task fields', async () => {
+test('action treats model-shaped text as the literal task and ignores invocation.model', async () => {
     const calls = [];
     const result = await action({
         promptText: 'model: anthropic/claude-test task: build artifacts: include tests',
+        model: 'fast',
         mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
@@ -47,17 +53,18 @@ test('action accepts text input with model and task fields', async () => {
     });
 
     assert.equal(result, 'OpenCode task completed.');
-    assert.equal(calls[0].payload.model, 'anthropic/claude-test');
-    assert.equal(calls[0].payload.prompt, 'build artifacts: include tests');
+    assert.equal(calls[0].payload.model, undefined);
+    assert.equal(calls[0].payload.prompt, 'model: anthropic/claude-test task: build artifacts: include tests');
 });
 
-test('action accepts JSON input with model override', async () => {
+test('action treats JSON-shaped text as the literal task', async () => {
     const calls = [];
+    const task = JSON.stringify({
+        task: 'run checks',
+        model: 'openrouter/model',
+    });
     await action({
-        promptText: JSON.stringify({
-            task: 'run checks',
-            model: 'openrouter/model',
-        }),
+        promptText: task,
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
@@ -66,8 +73,8 @@ test('action accepts JSON input with model override', async () => {
         },
     });
 
-    assert.equal(calls[0].payload.model, 'openrouter/model');
-    assert.equal(calls[0].payload.prompt, 'run checks');
+    assert.equal(calls[0].payload.model, undefined);
+    assert.equal(calls[0].payload.prompt, task);
 });
 
 test('action fails clearly when Ploinky AgentMcpClient credentials are unavailable', async () => {
@@ -93,7 +100,7 @@ test('action fails clearly when Ploinky AgentMcpClient credentials are unavailab
 test('action uses mainAgent.startDir as the current AchillesCLI working directory', async () => {
     const calls = [];
     await action({
-        promptText: JSON.stringify({ prompt: 'run checks' }),
+        promptText: 'run checks',
         mainAgent: { startDir: '/workspace/copilot' },
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
@@ -105,7 +112,7 @@ test('action uses mainAgent.startDir as the current AchillesCLI working director
 
     assert.equal(calls[0].payload.prompt, 'run checks');
     assert.equal(calls[0].payload.projectDir, '/workspace/copilot');
-    assert.equal(calls[0].payload.model, HARDCODED_MODEL);
+    assert.equal(calls[0].payload.model, undefined);
 });
 
 test('action returns successful opencode output as plain text', async () => {
@@ -208,10 +215,10 @@ test('action returns plain MCP exception text', async () => {
     assert.equal(result, 'OpenCode task failed: router unavailable');
 });
 
-test('AchillesCLI manifest enables opencodeAgent globally', async () => {
+test('AchillesCLI manifest leaves delegated coding agents out of eager dependencies', async () => {
     const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
 
     assert.ok(Array.isArray(manifest.enable));
-    assert.ok(manifest.enable.includes('copilot-agents/opencodeAgent global'));
-    assert.ok(manifest.enable.includes('copilot-agents/piAgent global'));
+    assert.ok(!manifest.enable.some((entry) => String(entry).includes('opencodeAgent')));
+    assert.ok(!manifest.enable.some((entry) => String(entry).includes('piAgent')));
 });

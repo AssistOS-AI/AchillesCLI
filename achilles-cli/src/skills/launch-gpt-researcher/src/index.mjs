@@ -1,3 +1,5 @@
+import { callToolWhenReady, ensureAgentsRunning } from '../../../lib/ploinkyAgentRuntime.mjs';
+
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
@@ -93,12 +95,15 @@ function parseTaskResult(payload) {
 
 async function callAgentTool(agentName, toolName, payload, invocation = {}) {
     const client = await resolveAgentClient(agentName, invocation);
-    return client.callToolWithoutWait(toolName, payload, {
+    await ensureAgentsRunning(client, [SEARCH_AGENT_REF, TARGET_AGENT_REF], invocation);
+    return callToolWhenReady(() => client.callToolWithoutWait(toolName, payload, {
         userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
-    });
+    }));
 }
 
 export const TARGET_AGENT = 'GPTResearcher';
+export const TARGET_AGENT_REF = 'AchillesCLI/GPTResearcher';
+export const SEARCH_AGENT_REF = 'proxies/searchAgent';
 export const TOOL_NAME = 'start_research';
 
 function normalizeInput(invocation = {}) {

@@ -4,17 +4,16 @@
 
 The `launch-opencode` C-Skill delegates a natural-language task to the
 workspace `opencodeAgent` by calling its `execute-task` MCP tool. The public
-input is task text, optionally prefixed as `model: <model> task: <task text>`.
-The agent name is intentionally not part of the public grammar because OpenCode
-is a named provider launcher, not a generic agent-dispatch utility.
+input is only the plain task text. The agent name and model are intentionally
+not part of the public grammar because OpenCode is a named provider launcher,
+not a generic agent-dispatch utility.
 
 The skill maps the task text into the `prompt` argument required by
 `opencodeAgent.execute-task`. It resolves `projectDir` from
 `invocation.mainAgent.startDir`, which is the AchillesCLI session working
-directory, and uses the hardcoded model
-`xai/grok-4.20-0309-non-reasoning` unless the input provides an explicit model
-override. The resulting MCP payload must contain `prompt`, `projectDir`, and
-`model`.
+directory. The resulting MCP payload contains only `prompt` and `projectDir`.
+The launcher does not parse structured input, inherit the AchillesCLI session
+model, or forward a model override; `opencodeAgent` owns model selection.
 
 The skill returns plain text only. Successful runs return
 `OpenCode task completed.` and append the bounded `outputText` returned by
@@ -31,7 +30,9 @@ acknowledgement `Task started.` because the task module shows the agent id and d
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The skill imports that client directly from the mounted
 `/Agent/client/AgentMcpClient.mjs` path with a normal static ESM import. The
-client must call `opencodeAgent` through the router at `/opencodeAgent/mcp`;
+client first checks Marketplace status for `AchillesCLI/opencodeAgent`, sends
+the existing `enable_agent` action in explicit `global` mode only when it is not already running, and
+waits for runtime readiness. It then calls `opencodeAgent` through the router at `/opencodeAgent/mcp`;
 observer-owned status reads use `/opencodeAgent/task`. The skill must not use
 AchillesCLI's legacy MCP helper or any local path fallback.
 
@@ -41,7 +42,7 @@ AchillesCLI's legacy MCP helper or any local path fallback.
    `launch-open-interpreter` and `launch-web-search` provider-launcher pattern.
 2. `opencodeAgent` is fixed internally for this version. A future generic
    agent caller would be a separate skill with a different security contract.
-3. The default model is `xai/grok-4.20-0309-non-reasoning`; callers may override
-   it with the explicit `model: <model> task: <task text>` input form.
+3. The target agent owns model selection. The launcher accepts task text only
+   and never forwards a model parameter.
 4. Async polling uses the task id returned by AgentServer metadata, not the
    human-readable queued-task message.

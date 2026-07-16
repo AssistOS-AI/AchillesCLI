@@ -1,5 +1,6 @@
 {
     "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
+    "startup": "manual",
     "lite-sandbox": true,
     "about": "PI coding agent. Executes delegated prompt tasks through the `pi` binary and returns bounded command output.",
     "profiles": {
