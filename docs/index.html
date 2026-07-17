@@ -44,6 +44,13 @@
     In webchat runtime mode (non-TTY stdin), ESC is accepted as a standalone input line to abort the current prompt.
   </div>
 
+  <h2>Orchestrated Response Policy</h2>
+  <div class="card">
+    AchillesCLI asks for user-facing responses that are short and to the point, but it does not prefer one-word answers.
+    This presentation guidance does not replace the structured planner contract owned by AchillesAgentLib; natural-language
+    turns still require a valid planner decision before any text is returned through the reserved final-answer tool.
+  </div>
+
   <h2>WebChat Progress</h2>
   <div class="card">
     In webchat runtime mode, AchillesCLI emits structured progress metadata before loop-session tool calls.

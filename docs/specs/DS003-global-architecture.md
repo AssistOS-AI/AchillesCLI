@@ -43,5 +43,17 @@ State and lifecycle invariants:
 2. Skill catalog refresh (`reloadSkills`) must preserve runtime consistency after write/delete operations.
 3. Cancellation paths (for interactive execution) must leave terminal state recoverable.
 
+Communication prompt invariants:
+1. The AchillesCLI orchestrator system prompt must prefer user-facing responses that are short and to the point while preserving enough content to answer the request correctly.
+2. The orchestrator system prompt must not prefer one-word responses as a general optimization rule.
+3. User-facing brevity guidance must remain subordinate to the structured planner decision contract enforced by AchillesAgentLib.
+
+## Decisions & Questions
+
+### Question #1: Why does the communication policy avoid preferring one-word answers?
+
+Response:
+A one-word preference can remove context required for a useful answer and can interfere with an enclosing planner contract. Describing concise, direct responses as preferable preserves the intended user experience without turning minimum length into a higher-priority output rule.
+
 ## Conclusion
 AchillesCLI architecture remains a layered CLI system where deterministic command execution and LLM orchestration coexist under a single runtime contract.
