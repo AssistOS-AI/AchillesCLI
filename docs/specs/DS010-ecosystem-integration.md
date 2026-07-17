@@ -36,12 +36,13 @@ Ploinky integration boundary:
 4. The Ploinky agent manifest should use the shared `docker.io/assistos/ploinky-node:24-bookworm-tools` image so Explorer cold starts reuse the same Node 24 glibc runtime and preinstalled dependency-cache tools as the rest of the default agent graph.
 5. The Ploinky agent manifest temporarily declares `SOUL_GATEWAY_API_KEY` as a `sharedGeneratedSecret` with `explicitOverride: true` so Explorer-launched AchillesCLI can honor a hosted Soul Gateway key from parent `.env` files. This is not canonical AchillesCLI integration behavior and must be removed when the local deployed Soul Gateway is the only supported provider path.
 6. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI slash commands are provided through a dedicated MCP catalog tool that returns a structured command/sub-command payload and does not execute chat prompts. That catalog tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill.
-7. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
-8. The webchat interactive mode must treat `@open-interpreter` and other
+7. GPTResearcher is an explicit authenticated HTTP target on TCP `8000` under `/services/gpt-researcher/`. Its exact source commit and upstream requirements bytes are verified before use. The complete CPython 3.11.2 dependency environment is installed only from two repository-owned, fully hashed locks whose amd64 and arm64 resolutions are byte-identical. Reuse revalidates the sealed Git worktree, exact venv launcher/configuration, runtime policy, installed-file inventory digest, and `pip check`; any partial, pre-v5, or tampered state requires explicit removal and agent recreation, with no repair, resolver, migration, or artifact fallback. The application is fronted by a fail-closed base-path adapter that incrementally rewrites textual root references while preserving streaming SSE and binary responses. Its UI and AgentServer are supervised as one lifecycle; either child exit terminates the other instead of leaving a partial service active.
+8. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
+9. The webchat interactive mode must treat `@open-interpreter` and other
    `@agent`-shaped tokens as ordinary chat text. Provider dispatch is semantic
    and launcher-driven; Ploinky WebChat remains only the envelope and
    invocation-token transport.
-9. Generic WebChat envelope and resource helpers live in AchillesCLI. These
+10. Generic WebChat envelope and resource helpers live in AchillesCLI. These
    helpers normalize envelope text, extract the
    invocation token, and materialize browser attachments or workspace
    references only from supported WebChat storage: legacy shared blob ids under
@@ -50,7 +51,7 @@ Ploinky integration boundary:
    upload paths must stay inside the working directory after realpath
    resolution, reject traversal, `.secrets`/`*.secrets`, and upload metadata
    internals, and preserve the same byte caps as other forwarded resources.
-10. Non-slash WebChat turns are routed through the built-in `copilot-router`
+11. Non-slash WebChat turns are routed through the built-in `copilot-router`
    oskill. The router may call deterministic launcher cskills such as
    `launch-open-interpreter`, `launch-web-search`, or `launch-opencode`.
    When the user explicitly names `opencode` or `opencodeAgent`, the router
@@ -66,15 +67,15 @@ Ploinky integration boundary:
    message instead of a later relay submission error. Directory and other
    non-file workspace references may be represented in Copilot prompt context,
    but launchers must forward only file path strings in relay `paths` payloads.
-11. The Explorer Copilot launcher may consume runtime plugin metadata from
+12. The Explorer Copilot launcher may consume runtime plugin metadata from
    `file-exp:copilot-launch-extension` to add generic WebChat launch query
    parameters such as `forward-envelope=1` and `workspace-dir`. It must not add
    provider backend ids, provider agent ids, or provider MCP tool names to the
    WebChat URL; the visible Explorer action remains the
    normal `Open Copilot here` action.
-12. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
-13. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
-14. In webchat runtime mode, AchillesCLI preserves the sanitized
+13. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
+14. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
+15. In webchat runtime mode, AchillesCLI preserves the sanitized
     `origin.publicBaseUrl` field from forwarded WebChat envelopes in launcher
     context. Launcher skills may use this same-origin router base for
     user-facing browser links, while ignoring malformed or non-HTTP origin
@@ -119,10 +120,13 @@ Provider launcher discovery:
 7. The AchillesCLI Ploinky manifest must enable
    `copilot-agents/opencodeAgent global` so OpenCode runs in the same workspace
    context as Copilot.
-8. The AchillesCLI Ploinky manifest must keep `copilot-agents/GPTResearcher`
-   as a `no-wait` dependency so GPTResearcher runtime setup failures do not
-   block Explorer startup while the Python package installation path remains a
-   temporary integration.
+8. The AchillesCLI Ploinky manifest must keep `GPTResearcher global no-wait`
+   as a dependency. GPTResearcher uses a pinned source commit, verified source
+   requirements digest, fully hashed cross-architecture dependency locks, and
+   image digest; declares its explicit private HTTP target; and serves the
+   browser only below `/services/gpt-researcher/` through Router. Its settings
+   plugin resolves the current authenticated topology projection instead of
+   constructing a host.
 
 ## Decisions & Questions
 
@@ -141,6 +145,16 @@ achilles-cli/manifest.json:L6-L10
 
 Response:
 The editor changes AchillesCLI-owned skill-management workflow configuration while using Explorer only as the host surface for folder context menus and file persistence. Keeping the plugin under `achilles-cli/IDE-plugins/` lets AchillesCLI own the UX and manifest contract without adding Explorer-specific routes, tools, or policy behavior.
+
+### Question #3: Why does GPTResearcher bind the full installed environment into its v5 marker?
+
+Response:
+Pinning only the upstream commit does not pin transitive Python resolution,
+wheel selection, build frontends, generated entry points, or installed bytes.
+The repository-owned hash locks make clean amd64 and arm64 installs
+reproducible, while the environment inventory and marker prove that a reused
+venv still contains the exact validated generation. Failing closed on any
+drift avoids turning startup into an unreviewed repair or compatibility path.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

@@ -8,7 +8,7 @@ import urllib.request
 
 checks = [
     ("AgentServer", "http://127.0.0.1:7000/health", True),
-    ("GPT Researcher UI", "http://127.0.0.1:8000/", False),
+    ("GPT Researcher UI", "http://127.0.0.1:8000/services/gpt-researcher/", False),
 ]
 
 for label, url, expect_json_ok in checks:

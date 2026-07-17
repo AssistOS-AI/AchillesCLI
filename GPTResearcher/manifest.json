@@ -1,5 +1,5 @@
 {
-    "container": "docker.io/assistos/bwrap-runner:node24-python-bookworm",
+    "container": "docker.io/assistos/bwrap-runner@sha256:b7cde1d6a32f08553e86e11c14801b63d9616c6cba5da9c96ad1dec6d17d85f4",
     "lite-sandbox": true,
     "about": "GPTResearcher agent. Runs GPT Researcher through the Python package and exposes research through a Ploinky MCP tool.",
     "readiness": {
@@ -17,15 +17,15 @@
     "agent": "sh /code/scripts/start-gpt-researcher.sh",
     "profiles": {
         "default": {
-            "install": "sh /code/scripts/install-gpt-researcher.sh",
-            "additionalServerPort": 8000
+            "install": "sh /code/scripts/install-gpt-researcher.sh"
         }
     },
     "httpServices": [
         {
             "slug": "gpt-researcher",
             "externalPrefix": "/services/gpt-researcher/",
-            "internalPrefix": "/",
+            "internalPrefix": "/services/gpt-researcher/",
+            "port": 8000,
             "access": "authenticated"
         }
     ],

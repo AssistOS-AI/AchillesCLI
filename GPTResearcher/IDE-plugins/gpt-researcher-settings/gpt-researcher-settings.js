@@ -175,6 +175,18 @@ function groupModelsByProvider(models) {
     return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+export function parseTopologyBrowserUrl(payload) {
+    const rawUrl = trim(payload?.browserUrl);
+    if (!rawUrl) {
+        throw new Error('GPTResearcher topology response has no active browser URL.');
+    }
+    const url = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('GPTResearcher topology returned an invalid browser URL.');
+    }
+    return url;
+}
+
 export class GPTResearcherSettings {
     constructor(element, invalidate) {
         this.element = element;
@@ -291,11 +303,26 @@ export class GPTResearcherSettings {
         }
     }
 
-    openResearcherUi() {
-        const { protocol, port } = window.location;
-        const portPart = port ? `:${port}` : '';
-        const url = `${protocol}//gptresearcher.localhost${portPart}/`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+    async openResearcherUi() {
+        try {
+            const params = new URLSearchParams({ routeKey: 'GPTResearcher', slug: 'gpt-researcher' });
+            const response = await window.fetch(`/api/edge/topology?${params}`, {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { accept: 'application/json' }
+            });
+            if (!response.ok) {
+                throw new Error(`GPTResearcher topology is unavailable (${response.status}).`);
+            }
+            const payload = await response.json();
+            const url = parseTopologyBrowserUrl(payload);
+            window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        } catch (error) {
+            logError('Failed to resolve active GPTResearcher topology.', error);
+            this.setStatus(getErrorMessage(error, 'GPTResearcher UI is unavailable.'), 'error');
+            throw error;
+        }
     }
 
     async loadInitialData() {

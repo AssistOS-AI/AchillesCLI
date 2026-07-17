@@ -102,6 +102,26 @@ test('GPTResearcher settings UI exposes search provider control', async () => {
     assert.match(html, /Search provider/);
     assert.match(source, /searchProvider/);
     assert.match(source, /searchProviders/);
+    assert.match(source, /\/api\/edge\/topology/);
+    assert.match(source, /cache: 'no-store'/);
+    assert.doesNotMatch(source, /gptresearcher\.localhost/);
+});
+
+test('GPTResearcher topology locator consumes only the canonical Router browserUrl response', async () => {
+    const { parseTopologyBrowserUrl } = await import(`${new URL('../IDE-plugins/gpt-researcher-settings/gpt-researcher-settings.js', import.meta.url).href}?topology=${Date.now()}`);
+
+    assert.equal(
+        parseTopologyBrowserUrl({ browserUrl: 'https://research.example.test/services/gpt/' }).toString(),
+        'https://research.example.test/services/gpt/',
+    );
+    assert.throws(
+        () => parseTopologyBrowserUrl({ activeBrowserUrl: 'https://legacy.example.test/' }),
+        /no active browser URL/,
+    );
+    assert.throws(
+        () => parseTopologyBrowserUrl({ browserUrl: 'javascript:alert(1)' }),
+        /invalid browser URL/,
+    );
 });
 
 test('GPTResearcher SearchAgent bridge forwards configured provider', async () => {

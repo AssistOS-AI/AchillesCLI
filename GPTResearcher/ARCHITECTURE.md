@@ -10,6 +10,51 @@ GPTResearcher este un agent Ploinky care ruleaza libraria GPT Researcher si o co
 
 Agentul poate fi folosit prin UI-ul oficial GPT Researcher sau prin tool-uri MCP. Integrarea principala cu AchillesCLI foloseste tool-ul MCP `start_research`.
 
+## Contract de rutare v5
+
+Aplicatia browser este un target HTTP privat pe portul `8000`, declarat prin
+serviciul `gpt-researcher` si montat exclusiv sub
+`/services/gpt-researcher/`. Adapterul ASGI respinge cererile din afara
+prefixului, rescrie linkurile, asset-urile si redirecturile root-relative si nu
+expune originea privata. Raspunsurile sunt transmise incremental: adapterul
+rescrie numai continut textual, pastreaza granitele corecte intre chunk-uri si
+nu buffer-eaza SSE sau continut binar pana la inchiderea upstream-ului.
+
+Pluginul Explorer obtine locatorul activ din proiectia autentificata, `no-store`,
+a topologiei Ploinky. Nu construieste domenii din id-ul agentului si nu retine
+un URL de startup. Un selector inactiv sau o generatie invalida esueaza inchis.
+
+Sursa oficiala este instalata numai la commit-ul imuabil
+`5cdad9cb434754188b78bd998df18dd8d502cf7e`, iar fisierul upstream
+`requirements.txt` trebuie sa aiba SHA-256
+`f8c36b147c9f53d96bd20f41df303943889ac90323603285fafe97dcc9a84b60`.
+Imaginea de baza este fixata prin digest.
+
+Dependentele Python nu sunt rezolvate la instalare. Intrarea de rezolvare este
+`scripts/gpt-researcher-requirements.in`, iar toate cele 196 de pachete
+tranzitive sunt fixate cu hash-uri de artefact in
+`scripts/gpt-researcher-requirements.lock` (SHA-256
+`3c81338133667f49c3c7366b36c943f9e456663faa27eb3486bf8fd7bf08f6bb`).
+Frontend-ul de build pentru cele trei dependente fara wheel este separat in
+`scripts/gpt-researcher-bootstrap.lock` (SHA-256
+`4e5068e06240daf19cf2ca08370a5413e5af634d3a3cb70198cfe4b0b9289386`).
+Ambele rezolvari de aplicatie, pentru `linux/x86_64` si `linux/aarch64`, trebuie
+sa fie byte-identice pentru CPython `3.11.2`; orice alta platforma sau versiune
+Python este respinsa.
+
+Instalarea foloseste numai lock-urile cu `pip --require-hashes --isolated`, fara
+cache si fara bytecode. Checkout-ul este verificat prin commit, origine,
+`git fsck`, tip/mod/exact Git blob pentru fiecare fisier si absenta oricarui
+fisier sau director neinregistrat, apoi este sigilat read-only. Markerul v5 leaga
+schema, commit-ul, hash-urile lock-urilor, runtime-ul, configuratia venv,
+politica de runtime si digestul complet al mediului instalat. La reutilizare se
+reverifica toate aceste elemente si `pip check` inainte de executie.
+
+Un checkout, venv sau marker existent care nu corespunde exact contractului v5
+este refuzat si cere stergerea explicita a ambelor directoare plus recrearea
+agentului. Nu exista reparare, upgrade automat, rezolvare de dependente, cleanup
+sau fallback la o ramura ori la un artefact flotant.
+
 ## Componente
 
 La instalare, agentul creeaza un virtual environment Python in:
@@ -24,7 +69,11 @@ Aplicatia oficiala GPT Researcher este instalata in:
 /opt/gpt-researcher-app
 ```
 
-La start, `/code/scripts/start-gpt-researcher.sh` porneste aplicatia oficiala si apoi Ploinky AgentServer. AgentServer citeste `mcp-config.json` si expune tool-urile MCP.
+La start, `/code/scripts/start-gpt-researcher.sh` porneste aplicatia oficiala
+prin adapterul de base path si Ploinky AgentServer sub acelasi supervisor.
+Terminarea oricarui proces opreste si celalalt proces, astfel incat un UI sau
+AgentServer orfan nu poate ramane disponibil. AgentServer citeste
+`mcp-config.json` si expune tool-urile MCP.
 
 `PYTHONPATH` include `/code/scripts`, deci Python incarca `sitecustomize.py`. Acest hook aplica patch-urile locale pentru Soul Gateway si SearchAgent si seteaza aceleasi modele pe care le foloseste si tool-ul `start_research`.
 

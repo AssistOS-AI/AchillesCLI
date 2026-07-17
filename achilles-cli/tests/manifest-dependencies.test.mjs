@@ -11,6 +11,6 @@ test('AchillesCLI keeps GPTResearcher as a no-wait dependency', async () => {
     const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
 
     assert.ok(Array.isArray(manifest.enable));
-    assert.ok(manifest.enable.includes('copilot-agents/GPTResearcher no-wait'));
-    assert.ok(!manifest.enable.includes('copilot-agents/GPTResearcher'));
+    assert.ok(manifest.enable.includes('GPTResearcher global no-wait'));
+    assert.ok(!manifest.enable.includes('GPTResearcher global'));
 });

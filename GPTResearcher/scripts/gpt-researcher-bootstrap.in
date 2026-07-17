@@ -1,0 +1,8 @@
+# Hash-lock the build frontend used for the three explicitly allowed
+# source-only dependencies in gpt-researcher-requirements.lock.
+## Regenerate with uv 0.11.3 for CPython 3.11 using --generate-hashes and
+## --exclude-newer 2026-07-15T00:00:00Z.
+
+pip==25.1.1
+setuptools==80.9.0
+wheel==0.45.1
