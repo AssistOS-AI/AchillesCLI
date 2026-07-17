@@ -4,7 +4,7 @@ import test from 'node:test';
 import { formatWebchatError } from '../src/lib/webchatError.mjs';
 
 test('WebChat errors link AchillesAgentLib stack frames to the workspace source copy', () => {
-    const error = new Error('Planner did not return a valid markdown decision.');
+    const error = new Error('The LLM planner returned an empty response instead of the required Markdown decision.');
     error.stack = [
         `Error: ${error.message}`,
         '    at requestDecision (file:///code/node_modules/achillesAgentLib/LLMAgents/LoopAgenticSession/execution.mjs:171:15)',
@@ -12,7 +12,7 @@ test('WebChat errors link AchillesAgentLib stack frames to the workspace source 
     ].join('\n');
 
     assert.equal(formatWebchatError(error), [
-        '[error] Planner did not return a valid markdown decision.',
+        '[error] The LLM planner returned an empty response instead of the required Markdown decision.',
         'Source: [achillesAgentLib/LLMAgents/LoopAgenticSession/execution.mjs:171:15](/workspace-files/ploinky/node_modules/achillesAgentLib/LLMAgents/LoopAgenticSession/execution.mjs)',
     ].join('\n'));
 });
