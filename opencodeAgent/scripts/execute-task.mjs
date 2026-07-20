@@ -3,6 +3,11 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executeOpenCodeTask } from './opencode-runner.mjs';
+import {
+    continuationDescriptor,
+    createContinuationHandle,
+    writeContinuationRecord,
+} from './continuation-store.mjs';
 
 async function readStdin() {
     if (process.stdin.isTTY) {
@@ -57,6 +62,7 @@ async function main() {
         prompt,
         projectDir: projectDir.trim(),
         model,
+        captureSession: true,
         createProjectDir: true,
     });
 
@@ -65,7 +71,20 @@ async function main() {
         process.exitCode = 1;
         return;
     }
-    process.stdout.write(result.outputText || '');
+    if (!result.sessionId) {
+        process.stderr.write('OpenCode did not report a resumable session id.\n');
+        process.exitCode = 1;
+        return;
+    }
+    const handle = createContinuationHandle();
+    writeContinuationRecord(handle, {
+        sessionId: result.sessionId,
+        projectDir: projectDir.trim(),
+    });
+    process.stdout.write(JSON.stringify({
+        outputText: result.outputText || '',
+        continuation: continuationDescriptor(handle),
+    }));
 }
 
 const currentFilePath = fileURLToPath(import.meta.url);

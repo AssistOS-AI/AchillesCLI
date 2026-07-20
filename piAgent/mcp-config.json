@@ -3,12 +3,14 @@
         {
             "name": "execute-task",
             "title": "Execute PI Task",
-            "description": "Execute a one-shot PI coding task from a caller-supplied prompt and model.",
+            "description": "Execute a PI coding task from a caller-supplied prompt and model and persist its provider session behind an opaque continuation handle.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/execute-task.mjs"],
             "cwd": "/code",
             "async": true,
             "timeoutMs": 300000,
+            "taskLogRetention": "full",
+            "continuationTool": "continue-task",
             "tags": ["internal"],
             "inputSchema": {
                 "prompt": {
@@ -25,6 +27,29 @@
                     "type": "string",
                     "description": "PI model identifier selected by the caller.",
                     "optional": true
+                }
+            }
+        },
+        {
+            "name": "continue-task",
+            "title": "Continue PI Task",
+            "description": "Continue a previously completed PI task through its opaque Ploinky continuation handle.",
+            "command": "/usr/local/bin/node",
+            "args": ["/code/scripts/continue-task.mjs"],
+            "cwd": "/code",
+            "async": true,
+            "timeoutMs": 300000,
+            "taskLogRetention": "full",
+            "inputSchema": {
+                "handle": {
+                    "type": "string",
+                    "description": "Opaque continuation handle issued by a completed PI task.",
+                    "optional": false
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "New user message to execute in the existing PI session.",
+                    "optional": false
                 }
             }
         }

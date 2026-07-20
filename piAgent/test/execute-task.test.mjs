@@ -6,6 +6,23 @@ import { spawn } from 'node:child_process';
 import test from 'node:test';
 
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
+const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
+
+function runTaskScript(scriptPath, input, env) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [scriptPath], {
+            env: { ...process.env, ...env },
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+        child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+        child.on('error', reject);
+        child.on('close', (code) => resolve({ code, stdout, stderr }));
+        child.stdin.end(JSON.stringify({ input }));
+    });
+}
 
 async function makeFakePiBin(directory) {
     const binPath = path.join(directory, 'fake-pi.mjs');
@@ -21,10 +38,12 @@ process.stdout.write('answer');
     return binPath;
 }
 
-test('PI wrapper streams raw text and returns the final output as plain text', async () => {
+test('PI wrapper creates a resumable session and returns a continuation handle', async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-test-'));
     const projectDir = path.join(temporaryDirectory, 'project');
     const argsPath = path.join(temporaryDirectory, 'args.json');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const sessionRoot = path.join(temporaryDirectory, 'sessions');
     await fs.mkdir(projectDir);
     const piBin = await makeFakePiBin(temporaryDirectory);
 
@@ -34,6 +53,8 @@ test('PI wrapper streams raw text and returns the final output as plain text', a
                 ...process.env,
                 PI_BIN: piBin,
                 PI_ARGS_PATH: argsPath,
+                PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+                PLOINKY_PI_SESSION_DIR: sessionRoot,
             },
             stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -47,11 +68,58 @@ test('PI wrapper streams raw text and returns the final output as plain text', a
     });
 
     assert.equal(result.code, 0, result.stderr);
-    assert.equal(result.stdout, 'Pi answer');
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.outputText, 'Pi answer');
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    assert.match(payload.continuation.handle, /^[0-9a-f-]{36}$/i);
     assert.equal(result.stderr, 'Pi answer');
-    assert.doesNotMatch(result.stdout, /^\s*\{/);
     assert.doesNotMatch(result.stderr, /\[pi|start projectDir|exit code/);
 
     const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.deepEqual(args.slice(0, 2), ['-p', '--no-session']);
+    assert.deepEqual(args.slice(0, 4), [
+        '-p',
+        '--session-id',
+        payload.continuation.handle,
+        '--session-dir',
+    ]);
+    assert.equal(args[4], path.join(sessionRoot, payload.continuation.handle));
+});
+
+test('PI continuation reuses the exact session id and session directory', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-resume-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const sessionRoot = path.join(temporaryDirectory, 'sessions');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
+    const env = {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: sessionRoot,
+    };
+    const initial = await runTaskScript(executeTaskPath, {
+        prompt: 'Initial task',
+        projectDir,
+    }, env);
+    assert.equal(initial.code, 0, initial.stderr);
+    const firstPayload = JSON.parse(initial.stdout);
+
+    const resumed = await runTaskScript(continueTaskPath, {
+        handle: firstPayload.continuation.handle,
+        prompt: 'Continue same PI session',
+    }, env);
+    assert.equal(resumed.code, 0, resumed.stderr);
+    const resumedPayload = JSON.parse(resumed.stdout);
+    assert.equal(resumedPayload.continuation.handle, firstPayload.continuation.handle);
+    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.deepEqual(args.slice(0, 5), [
+        '-p',
+        '--session-id',
+        firstPayload.continuation.handle,
+        '--session-dir',
+        path.join(sessionRoot, firstPayload.continuation.handle),
+    ]);
+    assert.equal(args.at(-1), 'Continue same PI session');
 });

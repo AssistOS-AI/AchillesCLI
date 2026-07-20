@@ -40,14 +40,25 @@ The skill returns plain text only. Successful runs return
 agent returns it. Failed runs return the agent error text or an MCP failure
 message.
 
-The `opencodeAgent` command wrapper must execute the normal OpenCode text
-format. It must relay each child stdout and stderr chunk unchanged to the
-AgentServer live-log channel as the chunk arrives. It must not parse OpenCode
-events, buffer output until newline boundaries, add stream prefixes, or emit
-routine start and exit diagnostics. Child stdout must also become the wrapper's
-plain-text MCP result, without serializing wrapper metadata as JSON. This makes
-OpenCode's final answer the last live-log output while preserving one separate
-result value for blocking MCP callers.
+The `opencodeAgent` task wrapper must execute OpenCode with JSON events so it can
+capture the provider-issued session id. It must extract text parts into the
+AgentServer live-log channel without stream prefixes or routine start/exit
+diagnostics. Its stdout must be one structured result containing `outputText`
+and a versioned continuation descriptor. TaskQueue exposes only `outputText` as
+ordinary MCP result text and retains the validated descriptor as result
+metadata, so provider session details do not enter the visible result or log.
+The OpenAI-compatible chat-completions path does not create resumable tasks and
+continues to use normal OpenCode text output.
+
+Successful initial task execution must store the OpenCode session id and
+resolved project directory in agent-private persistent storage behind a random
+UUID continuation handle. The record and its parent directory must reject
+symlinks and use restrictive file permissions. `continue-task` accepts only
+that handle and a non-empty prompt, loads the record, invokes
+`opencode run --session <session-id>` in the original project directory, and
+returns the same handle with the new result. The handle is an authority scoped
+to the authenticated MCP policy path; WebChat must not receive the real
+OpenCode session id or choose a replacement project directory.
 
 The launcher uses `AgentMcpClient.callToolWithoutWait`. If the target tool is
 registered as an async MCP tool and the call returns AgentServer task metadata,
@@ -57,6 +68,12 @@ conversation to continue, while the observer polls through the
 Ploinky-mediated task-status path and emits task lifecycle and log envelopes.
 Callers that require the terminal result use the separate blocking `callTool`
 method instead of the launcher path.
+
+Both `execute-task` and `continue-task` are asynchronous, request full
+task-log retention, and use a five-minute execution timeout. `execute-task`
+advertises `continue-task` as its generic continuation capability. Every
+continuation creates a new AgentServer remote task, while Ploinky WebChat keeps
+the original local task id and increments its turn.
 
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The AchillesCLI runtime must have `PLOINKY_AGENT_ID` and
@@ -152,10 +169,18 @@ returns the captured stdout for the MCP command contract. Ploinky keeps the
 wrapper result channel out of the live task log and never appends the terminal
 result afterward, so the task item still contains only one visible copy.
 
+### Question #8: Why is the OpenCode session hidden behind a Ploinky continuation handle?
+Response: The session id is provider state, and resuming it also requires the
+original project directory. Keeping both in the agent's persistent private
+store avoids placing filesystem authority in WebChat task data. The router
+invokes only the stored target and continuation tool after normal user and MCP
+policy checks, while the UUID handle remains generic across providers.
+
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users
 explicitly ask for OpenCode work while preserving Ploinky router mediation,
 fixed tool dispatch, deterministic argument mapping, and plain text results.
+Completed task results additionally carry an opaque continuation capability.
 The same agent also provides an OpenAI-compatible provider surface for Soul
 Gateway, with model discovery delegated to OpenCode and execution constrained
 to the Ploinky-provided `WORKSPACE_PATH`.

@@ -40,6 +40,8 @@ export function runOpenCode({
     projectDir,
     model,
     prompt,
+    sessionId = '',
+    captureSession = false,
     logStream,
     env = process.env,
     opencodeBin = process.env.OPENCODE_BIN || DEFAULT_OPENCODE_BIN,
@@ -49,9 +51,15 @@ export function runOpenCode({
         const args = [
             'run',
             '--dangerously-skip-permissions',
-            '--dir',
-            projectDir,
         ];
+        const jsonMode = captureSession || Boolean(sessionId);
+        if (jsonMode) {
+            args.push('--format', 'json');
+        }
+        args.push('--dir', projectDir);
+        if (sessionId) {
+            args.push('--session', sessionId);
+        }
         if (model) {
             args.push('--model', model);
         }
@@ -69,6 +77,9 @@ export function runOpenCode({
 
         let stdoutTail = '';
         let stderrTail = '';
+        let stdoutBuffer = '';
+        let resolvedSessionId = sessionId;
+        const outputParts = [];
         let timedOut = false;
         const timeout = setTimeout(() => {
             timedOut = true;
@@ -82,7 +93,36 @@ export function runOpenCode({
         child.stdout.on('data', (chunk) => {
             const text = chunk.toString('utf8');
             stdoutTail = appendBoundedTail(stdoutTail, text);
-            logStream.write(chunk);
+            if (!jsonMode) {
+                logStream.write(chunk);
+                return;
+            }
+            stdoutBuffer += text;
+            const lines = stdoutBuffer.split(/\r?\n/);
+            stdoutBuffer = lines.pop() || '';
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const event = JSON.parse(line);
+                    resolvedSessionId = String(
+                        event?.sessionID
+                        || event?.sessionId
+                        || event?.part?.sessionID
+                        || event?.properties?.sessionID
+                        || resolvedSessionId
+                    ).trim();
+                    const part = event?.part || event?.properties?.part || event?.data?.part;
+                    const output = part?.type === 'text'
+                        ? part.text
+                        : (event?.type === 'text' ? event.text : '');
+                    if (typeof output === 'string' && output) {
+                        outputParts.push(output);
+                        logStream.write(output);
+                    }
+                } catch {
+                    logStream.write(`${line}\n`);
+                }
+            }
         });
 
         child.stderr.on('data', (chunk) => {
@@ -98,6 +138,28 @@ export function runOpenCode({
 
         child.on('close', (code, signal) => {
             clearTimeout(timeout);
+            if (jsonMode && stdoutBuffer.trim()) {
+                try {
+                    const event = JSON.parse(stdoutBuffer);
+                    resolvedSessionId = String(
+                        event?.sessionID
+                        || event?.sessionId
+                        || event?.part?.sessionID
+                        || event?.properties?.sessionID
+                        || resolvedSessionId
+                    ).trim();
+                    const part = event?.part || event?.properties?.part || event?.data?.part;
+                    const output = part?.type === 'text'
+                        ? part.text
+                        : (event?.type === 'text' ? event.text : '');
+                    if (typeof output === 'string' && output) {
+                        outputParts.push(output);
+                        logStream.write(output);
+                    }
+                } catch {
+                    logStream.write(stdoutBuffer);
+                }
+            }
             resolve({
                 code,
                 signal,
@@ -105,6 +167,8 @@ export function runOpenCode({
                 durationMs: Date.now() - startedAt,
                 stdoutTail,
                 stderrTail,
+                sessionId: resolvedSessionId,
+                outputText: outputParts.join(''),
             });
         });
     });
@@ -132,6 +196,8 @@ export async function executeOpenCodeTask({
     prompt,
     projectDir,
     model = '',
+    sessionId = '',
+    captureSession = false,
     logStream = createContainerLogStream(),
     env = process.env,
     createProjectDir = true,
@@ -160,13 +226,16 @@ export async function executeOpenCodeTask({
             projectDir: effectiveProjectDir,
             model: resolvedModel,
             prompt: taskPrompt,
+            sessionId,
+            captureSession,
             logStream,
             env,
             opencodeBin: env.OPENCODE_BIN || DEFAULT_OPENCODE_BIN,
         });
 
         const semanticFailure = detectSemanticFailure(result);
-        const outputText = summarizeOutput(result, { preferStderr: result.code !== 0 || semanticFailure });
+        const outputText = result.outputText
+            || summarizeOutput(result, { preferStderr: result.code !== 0 || semanticFailure });
         if (result.code !== 0 || semanticFailure) {
             return {
                 ok: false,
@@ -177,6 +246,7 @@ export async function executeOpenCodeTask({
                 projectDir: resolvedProjectDir,
                 effectiveProjectDir,
                 model: resolvedModel,
+                sessionId: result.sessionId || sessionId,
             };
         }
 
@@ -186,6 +256,7 @@ export async function executeOpenCodeTask({
             projectDir: resolvedProjectDir,
             effectiveProjectDir,
             model: resolvedModel,
+            sessionId: result.sessionId || sessionId,
         };
     } catch (error) {
         return {

@@ -86,6 +86,17 @@ function normalizeTask(raw) {
         createdAt,
         updatedAt: validTimestamp(raw.updatedAt) || createdAt,
         error: String(raw.error || '').trim().slice(0, 1000),
+        ...(raw.logRetention === 'full' ? { logRetention: 'full' } : {}),
+        ...(raw.continuation && typeof raw.continuation === 'object' ? {
+            continuation: {
+                version: 1,
+                targetAgent: String(raw.continuation.targetAgent || raw.targetAgent || '').slice(0, 160),
+                toolName: String(raw.continuation.toolName || '').slice(0, 160),
+                ...(String(raw.continuation.handle || '').trim()
+                    ? { handle: String(raw.continuation.handle).trim().slice(0, 200) }
+                    : {}),
+            },
+        } : {}),
     };
 }
 

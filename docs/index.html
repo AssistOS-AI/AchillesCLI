@@ -62,6 +62,8 @@
     the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,
     follows the remote task through the router, and emits dedicated lifecycle and log envelopes. Ongoing tasks are
     reattached from the workspace task journal if the WebChat runtime is recreated.
+    Resumable coding tasks forward a generic opaque continuation handle after completion. The provider session stays
+    private to its agent; WebChat starts later turns as new remote executions while keeping one stable local task id.
     Runtime errors include the first recognized AchillesCLI, AchillesAgentLib, or Ploinky source frame as
     a Markdown link through the authenticated workspace-file route. The underlying AchillesAgentLib message is
     preserved so missing model text, invalid planner output, provider status failures, and execution limits remain
@@ -137,10 +139,12 @@
     GPTResearcher starts Search Agent first.
     The OpenCode and PI launchers accept only the plain task text and leave model
     selection entirely to their target agents.
-    Both workers run their provider CLI in its normal text mode, relay stdout and stderr
-    chunks unchanged into the live task log, and return captured stdout as plain MCP text.
-    The provider's final answer therefore arrives as the last live log output without a
-    second terminal-result copy.
+    PI runs with a persisted session id and directory; OpenCode task execution parses its
+    JSON event stream to capture the provider session id and uses <code>--session</code> when resumed.
+    Both agents keep provider session details in private persistent storage behind an opaque UUID handle,
+    expose a policy-checked <code>continue-task</code> tool, and request full log retention. Their structured
+    wrapper result exposes only answer text to ordinary MCP callers while preserving continuation metadata
+    on the asynchronous task.
     This contract is specified in
     <a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012</a>.
   </div>

@@ -104,6 +104,17 @@ Ploinky integration boundary:
 18. The AchillesCLI manifest enables `proxies/soul-gateway` as a blocking dependency before model discovery. Model listing uses the router-mediated `/services/soul-gateway/v1/models` route and the existing generated Ploinky agent credential; it does not add a public HTTP service, delegation, or MCP execution tool.
 19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation of Codex remains owned by the generic `ploinky cli codexAgent` path, which also enables missing targets globally.
 20. The WebChat background-task observer must forward only the target task's live log snapshot and lifecycle metadata. It must not copy the terminal MCP result into the task log envelope. Coding agents that need their final answer visible in the task item must emit that answer through their live process output before completion.
+21. Async `opencodeAgent` and `piAgent` executions must publish a generic
+    continuation capability and, on successful completion, an opaque versioned
+    handle. AchillesCLI forwards this capability and handle in its generic task
+    envelopes without interpreting provider session ids or storage paths.
+    Ploinky WebChat owns the stable local task id and turn progression; a
+    continuation creates a new remote AgentServer task but remains the same
+    workspace task. The provider agents expose a separate authenticated
+    `continue-task` MCP tool that accepts only the opaque handle and new prompt,
+    restores the original project directory and provider session from
+    agent-private persistent storage, and returns the same handle. Initial and
+    continued executions opt into full task-log retention.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
@@ -151,13 +162,18 @@ Provider launcher discovery:
    invocation, not startup-time dependencies of AchillesCLI. Their own
    manifests must declare `startup: manual` so a later general workspace boot
    does not revive a dormant worker merely because it remains registered.
-8. `opencodeAgent` and `piAgent` must run their provider CLIs in their normal
-   text modes. Their command wrappers must relay child stdout and stderr
-   chunks unchanged to the AgentServer live-log channel as they arrive, with
-   no stream prefixes, event parsing, or routine runner lifecycle messages.
-   Child stdout must also be retained as the plain-text MCP result. Because
-   TaskQueue keeps wrapper stdout out of the live log, this result channel must
-   not create a second task-log copy of the final answer.
+8. `piAgent` must run PI with an explicit persisted session id and session
+   directory. `opencodeAgent` must request OpenCode JSON events for task
+   executions so it can capture OpenCode's issued session id, and must pass
+   that id through `--session` on continuation. The wrappers relay only
+   provider answer text and diagnostics to the AgentServer live-log channel,
+   with no stream prefixes or routine runner lifecycle messages. Wrapper
+   stdout is a structured result containing `outputText` and a generic
+   continuation descriptor; TaskQueue exposes only `outputText` to ordinary
+   MCP callers and retains the descriptor as task metadata. Provider session
+   ids, session directories, and project paths must remain behind UUID
+   continuation handles stored in agent-private files with restrictive
+   permissions.
 9. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent
@@ -211,6 +227,16 @@ The MCP catalog tool already supplies agent-owned slash metadata to WebChat and 
 
 Response:
 Ploinky recursively expands manifest `enable` dependencies, so listing coding and research workers there makes every Explorer session pay their startup cost even when no launcher uses them. Omitting those entries breaks the dependency chain, while `startup: manual` prevents already registered but dormant workers from joining later general boots. The launcher restores availability at the actual invocation boundary through a status-first Marketplace enable flow and explicitly chooses global mode for these workspace-scoped coding and research tasks. Soul Gateway remains the only blocking dependency required for core AchillesCLI model discovery.
+
+### Question #7: Why does AchillesCLI forward an opaque handle instead of a provider session id?
+
+Response:
+OpenCode and PI have different session identifiers and storage layouts.
+AchillesCLI only needs a generic capability to describe resumable work, while
+the provider agent must retain authority over its own session files and project
+directory. The opaque handle keeps those details out of WebChat and lets the
+router bind continuation to the stored target agent and tool through the normal
+MCP policy path.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

@@ -45,3 +45,23 @@ test('remote task statuses map to the four WebChat states', () => {
     assert.equal(__testables.normalizeStatus('cancelled'), 'stopped');
     assert.equal(__testables.normalizeStatus('failed'), 'error');
 });
+
+test('continuation metadata binds the provider tool and opaque handle to its target agent', () => {
+    assert.deepEqual(__testables.normalizeContinuation({
+        version: 1,
+        toolName: 'continue-task',
+        handle: 'opaque-session-handle',
+    }, 'opencodeAgent'), {
+        version: 1,
+        targetAgent: 'opencodeAgent',
+        toolName: 'continue-task',
+        handle: 'opaque-session-handle',
+    });
+    assert.deepEqual(__testables.normalizeContinuation({
+        version: 1,
+    }, 'piAgent', 'continue-task'), {
+        version: 1,
+        targetAgent: 'piAgent',
+        toolName: 'continue-task',
+    });
+});

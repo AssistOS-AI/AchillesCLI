@@ -3,12 +3,14 @@
         {
             "name": "execute-task",
             "title": "Execute OpenCode Task",
-            "description": "Execute a one-shot opencode build task from a caller-supplied prompt and model. Sets up the skills symlink and runs opencode in the supplied project directory. Returns success or failure only; artifacts are written to disk by opencode.",
+            "description": "Execute an OpenCode build task from a caller-supplied prompt and model, persist its provider session behind an opaque continuation handle, and write artifacts in the supplied project directory.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/execute-task.mjs"],
             "cwd": "/code",
             "async": true,
             "timeoutMs": 300000,
+            "taskLogRetention": "full",
+            "continuationTool": "continue-task",
             "tags": ["internal"],
             "inputSchema": {
                 "prompt": {
@@ -25,6 +27,29 @@
                     "type": "string",
                     "description": "OpenCode model identifier selected by the caller.",
                     "optional": true
+                }
+            }
+        },
+        {
+            "name": "continue-task",
+            "title": "Continue OpenCode Task",
+            "description": "Continue a previously completed OpenCode task through its opaque Ploinky continuation handle.",
+            "command": "/usr/local/bin/node",
+            "args": ["/code/scripts/continue-task.mjs"],
+            "cwd": "/code",
+            "async": true,
+            "timeoutMs": 300000,
+            "taskLogRetention": "full",
+            "inputSchema": {
+                "handle": {
+                    "type": "string",
+                    "description": "Opaque continuation handle issued by a completed OpenCode task.",
+                    "optional": false
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "New user message to execute in the existing OpenCode session.",
+                    "optional": false
                 }
             }
         }

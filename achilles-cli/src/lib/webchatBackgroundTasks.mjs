@@ -39,6 +39,19 @@ function normalizeStatus(status) {
     return 'ongoing';
 }
 
+function normalizeContinuation(raw, targetAgent, fallbackTool = '') {
+    if (!raw || typeof raw !== 'object' || raw.version !== 1) return null;
+    const toolName = trim(raw.toolName) || trim(fallbackTool);
+    const handle = trim(raw.handle);
+    if (!toolName) return null;
+    return {
+        version: 1,
+        targetAgent,
+        toolName,
+        ...(handle ? { handle } : {}),
+    };
+}
+
 function emitTaskEvent(payload) {
     process.stdout.write(`${JSON.stringify({
         __webchatTask: 1,
@@ -75,6 +88,12 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
             record.remoteStatus = remoteStatus;
             record.logSeq = logSeq;
             record.status = status;
+            const resultContinuation = normalizeContinuation(
+                task?.result?.metadata?.continuation,
+                record.targetAgent,
+                record.continuation?.toolName,
+            );
+            if (resultContinuation?.handle) record.continuation = resultContinuation;
             if (changed) {
                 emitTaskEvent({
                     event: 'update',
@@ -89,6 +108,8 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
                         createdAt: record.createdAt,
                         updatedAt: task?.updatedAt || new Date().toISOString(),
                         error: trim(task?.error),
+                        ...(record.continuation ? { continuation: record.continuation } : {}),
+                        ...(record.logRetention === 'full' ? { logRetention: 'full' } : {}),
                     },
                     log: {
                         tail: typeof task?.logTail === 'string' ? task.logTail : '',
@@ -132,6 +153,10 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
             return active.get(id);
         }
         const now = new Date().toISOString();
+        const continuation = existing?.continuation || normalizeContinuation(
+            metadata?.continuationCapability,
+            agentName,
+        );
         const record = {
             id,
             targetAgent: agentName,
@@ -143,6 +168,10 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
             createdAt: metadata?.createdAt || existing?.createdAt || now,
             updatedAt: metadata?.updatedAt || now,
             logSeq: null,
+            continuation,
+            logRetention: metadata?.logRetention === 'full' || existing?.logRetention === 'full'
+                ? 'full'
+                : 'bounded',
             terminal: false,
             timer: null,
         };
@@ -158,6 +187,8 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
             createdAt: record.createdAt,
             updatedAt: record.updatedAt,
             error: '',
+            ...(record.continuation ? { continuation: record.continuation } : {}),
+            ...(record.logRetention === 'full' ? { logRetention: 'full' } : {}),
         } });
         schedulePoll(record, getTaskStatus, 0);
         return record;
@@ -215,5 +246,6 @@ export const __testables = {
     describeTask,
     localTaskId,
     normalizeStatus,
+    normalizeContinuation,
     readOngoingTasks,
 };

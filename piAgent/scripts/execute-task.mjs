@@ -2,6 +2,15 @@
 
 import fs from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+    continuationDescriptor,
+    createContinuationHandle,
+    sessionDirectory,
+    writeContinuationRecord,
+} from './continuation-store.mjs';
 
 const PI_BIN_CANDIDATES = ['/usr/local/bin/pi'];
 const PI_TIMEOUT_MS = 300000;
@@ -39,12 +48,15 @@ function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
     return next.length <= limit ? next : next.slice(next.length - limit);
 }
 
-function runPi({ projectDir, model, prompt, logStream, env = process.env }) {
+function runPi({ projectDir, model, prompt, sessionId, sessionDir, logStream, env = process.env }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
         const args = [
             '-p',
-            '--no-session',
+            '--session-id',
+            sessionId,
+            '--session-dir',
+            sessionDir,
             ...(model ? ['--model', model] : []),
             prompt,
         ];
@@ -130,48 +142,75 @@ async function readStdin() {
     return data;
 }
 
-export async function executeTask({ prompt, projectDir, model } = {}) {
+export async function executeTask({ prompt, projectDir, model, sessionId, sessionDir: suppliedSessionDir } = {}) {
     const logStream = createContainerLogStream();
     if (typeof prompt !== 'string' || !prompt.trim()) {
-        process.stderr.write('prompt is required and must be a non-empty string.\n');
-        process.exitCode = 1;
-        return;
+        return { ok: false, error: 'prompt is required and must be a non-empty string.' };
     }
     if (typeof projectDir !== 'string' || !projectDir.trim()) {
-        process.stderr.write('projectDir is required and must be a non-empty string.\n');
-        process.exitCode = 1;
-        return;
+        return { ok: false, error: 'projectDir is required and must be a non-empty string.' };
     }
 
     const resolvedModel = typeof model === 'string' ? model.trim() : '';
+    const handle = typeof sessionId === 'string' && sessionId.trim()
+        ? sessionId.trim()
+        : createContinuationHandle();
+    const resolvedSessionDir = suppliedSessionDir || sessionDirectory(handle);
+    const resolvedProjectDir = path.resolve(projectDir.trim());
     try {
         const result = await runPi({
-            projectDir: projectDir.trim(),
+            projectDir: resolvedProjectDir,
             model: resolvedModel,
             prompt: prompt.trim(),
+            sessionId: handle,
+            sessionDir: resolvedSessionDir,
             logStream,
         });
         if (result.timedOut || result.code !== 0) {
-            process.stderr.write(`${summarizeFailure(result)}\n`);
+            return {
+                ok: false,
+                error: summarizeFailure(result),
+                outputText: summarizeOutput(result, { preferStderr: true }),
+            };
+        }
+        writeContinuationRecord(handle, { projectDir: resolvedProjectDir });
+        return {
+            ok: true,
+            outputText: summarizeOutput(result),
+            continuation: continuationDescriptor(handle),
+        };
+    } catch (error) {
+        return { ok: false, error: `PI task failed: ${error?.message || 'unknown error'}` };
+    }
+}
+
+async function main() {
+    try {
+        const input = parseInput(await readStdin());
+        if (!input) {
+            process.stderr.write('Invalid or missing input. Expected JSON with prompt and projectDir.\n');
             process.exitCode = 1;
             return;
         }
-        process.stdout.write(summarizeOutput(result));
+        const result = await executeTask(input);
+        if (!result.ok) {
+            process.stderr.write(`${result.error || 'PI task failed.'}\n`);
+            process.exitCode = 1;
+            return;
+        }
+        process.stdout.write(JSON.stringify({
+            outputText: result.outputText || '',
+            continuation: result.continuation,
+        }));
     } catch (error) {
         process.stderr.write(`PI task failed: ${error?.message || 'unknown error'}\n`);
         process.exitCode = 1;
     }
 }
 
-try {
-    const input = parseInput(await readStdin());
-    if (!input) {
-        process.stderr.write('Invalid or missing input. Expected JSON with prompt and projectDir.\n');
-        process.exitCode = 1;
-    } else {
-        await executeTask(input);
-    }
-} catch (error) {
-    process.stderr.write(`PI task failed: ${error?.message || 'unknown error'}\n`);
-    process.exitCode = 1;
+const currentFilePath = fileURLToPath(import.meta.url);
+if (process.argv[1] && path.resolve(process.argv[1]) === currentFilePath) {
+    await main();
 }
+
+export const __testables = { runPi };
