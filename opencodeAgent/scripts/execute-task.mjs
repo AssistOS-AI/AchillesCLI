@@ -66,13 +66,8 @@ async function main() {
         createProjectDir: true,
     });
 
-    if (!result.ok) {
-        process.stderr.write(`${result.error || 'OpenCode task failed.'}\n`);
-        process.exitCode = 1;
-        return;
-    }
     if (!result.sessionId) {
-        process.stderr.write('OpenCode did not report a resumable session id.\n');
+        process.stderr.write(`${result.error || 'OpenCode did not report a resumable session id.'}\n`);
         process.exitCode = 1;
         return;
     }
@@ -81,10 +76,15 @@ async function main() {
         sessionId: result.sessionId,
         projectDir: projectDir.trim(),
     });
-    process.stdout.write(JSON.stringify({
+    const payload = {
         outputText: result.outputText || '',
         continuation: continuationDescriptor(handle),
-    }));
+    };
+    process.stdout.write(JSON.stringify(payload));
+    if (!result.ok) {
+        process.stderr.write(`${result.error || 'OpenCode task failed.'}\n`);
+        process.exitCode = 1;
+    }
 }
 
 const currentFilePath = fileURLToPath(import.meta.url);

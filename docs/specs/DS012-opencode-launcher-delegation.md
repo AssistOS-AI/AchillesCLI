@@ -46,24 +46,34 @@ AgentServer live-log channel without parsing, filtering, synthetic status
 messages, or stream prefixes. An initial task must receive an unpredictable
 internal title. After execution, the wrapper must query OpenCode's session-list
 interface separately and match both that title and the resolved project
-directory to capture the provider-issued session id. Session-list output must
-not enter visible task logs. The wrapper stdout must be one structured result
-containing bounded raw provider stdout as `outputText` and a versioned
-continuation descriptor. TaskQueue exposes only `outputText` as ordinary MCP
-result text and retains the validated descriptor as result metadata, so
+directory to capture the provider-issued session id. It must then inspect that
+session's exported message data and select the last assistant text as the
+bounded `outputText`. Session-list and export output must not enter visible
+task logs. The wrapper stdout must be one structured result containing that
+final answer and a versioned continuation descriptor. If provider execution
+fails after OpenCode created the session, the wrapper must still persist that
+session, emit the structured descriptor, and exit unsuccessfully. TaskQueue
+retains the descriptor as result metadata for both completed and failed tasks
+while exposing `outputText` as ordinary MCP result text only on success, so
 provider session details do not enter the visible result or log. The
 OpenAI-compatible chat-completions path does not create resumable tasks and
 continues to use normal OpenCode text output.
 
-Successful initial task execution must store the OpenCode session id and
-resolved project directory in agent-private persistent storage behind a random
-UUID continuation handle. The record and its parent directory must reject
+Initial task execution that creates an OpenCode session must store its session
+id and resolved project directory in agent-private persistent storage behind a
+random UUID continuation handle, even when the selected model subsequently
+fails. The record and its parent directory must reject
 symlinks and use restrictive file permissions. `continue-task` accepts only
-that handle and a non-empty prompt, loads the record, invokes
-`opencode run --session <session-id>` in the original project directory, and
-returns the same handle with the new result. The handle is an authority scoped
-to the authenticated MCP policy path; WebChat must not receive the real
-OpenCode session id or choose a replacement project directory.
+that handle and a non-empty prompt, loads the record, and reads OpenCode's
+agent-local model state immediately before execution. When `recent[0]`
+contains valid provider and model ids, continuation must invoke
+`opencode run --session <session-id> --model <provider/model>` in the original
+project directory. A non-default variant recorded for that model must also be
+passed through `--variant`. Missing, malformed, or unreadable model state must
+fall back to OpenCode's native session-resume selection rather than failing the
+task. The handle is an authority scoped to the authenticated MCP policy path;
+WebChat must not receive the real OpenCode session id, model selection, or a
+replacement project directory.
 
 The launcher uses `AgentMcpClient.callToolWithoutWait`. If the target tool is
 registered as an async MCP tool and the call returns AgentServer task metadata,
@@ -78,7 +88,8 @@ Both `execute-task` and `continue-task` are asynchronous, request full
 task-log retention, and use a five-minute execution timeout. `execute-task`
 advertises `continue-task` as its generic continuation capability. Every
 continuation creates a new AgentServer remote task, while Ploinky WebChat keeps
-the original local task id and increments its turn.
+the original local task id and increments its turn. A completed or failed task
+with a persisted handle remains continuable.
 
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The AchillesCLI runtime must have `PLOINKY_AGENT_ID` and
@@ -170,10 +181,11 @@ the runtime is already available.
 ### Question #7: Why is the final answer present in both live output and the MCP result?
 Response: OpenCode emits its formatted answer and activity through stdout.
 Relaying that stream unchanged gives WebChat the same output as direct
-non-interactive CLI execution. The wrapper also retains a bounded stdout tail
-for the MCP command contract. Ploinky keeps the wrapper result channel out of
-the live task log and never appends the terminal result afterward, so the task
-item still contains only one visible copy.
+non-interactive CLI execution. The wrapper separately exports the resolved
+session and selects its last assistant text for the MCP result contract.
+AchillesCLI sends that result as presentation metadata, and Ploinky uses it to
+mark the identical range already in the raw log without appending it, so the
+task item still contains only one visible copy and can style it independently.
 
 ### Question #9: Why is the initial OpenCode session resolved by title?
 Response: Default formatted output preserves the provider's native live log
@@ -188,6 +200,16 @@ original project directory. Keeping both in the agent's persistent private
 store avoids placing filesystem authority in WebChat task data. The router
 invokes only the stored target and continuation tool after normal user and MCP
 policy checks, while the UUID handle remains generic across providers.
+
+### Question #10: Why does continuation read OpenCode model state internally?
+Response: The task page is a provider-neutral continuation surface and should
+not expose an OpenCode-specific model argument. The OpenCode CLI and
+`opencodeAgent` share the same persistent provider home, so the agent can read
+the first recent model and its selected variant immediately before resuming.
+Passing that selection explicitly overrides the older model stored on the
+resumed session. Because this state file is an OpenCode implementation detail,
+invalid or unavailable state preserves native resume behavior as a safe
+compatibility fallback.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users

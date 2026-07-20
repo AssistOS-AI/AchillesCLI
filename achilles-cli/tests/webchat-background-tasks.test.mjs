@@ -65,3 +65,15 @@ test('continuation metadata binds the provider tool and opaque handle to its tar
         toolName: 'continue-task',
     });
 });
+
+test('terminal task result text is exposed separately from the live log', () => {
+    assert.equal(__testables.taskResultText({
+        result: {
+            content: [
+                { type: 'text', text: 'Final answer' },
+                { type: 'image', data: 'ignored' },
+            ],
+        },
+    }), 'Final answer');
+    assert.equal(__testables.taskResultText({ result: null }), '');
+});

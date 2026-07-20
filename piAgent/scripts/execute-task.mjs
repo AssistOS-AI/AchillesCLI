@@ -15,6 +15,8 @@ import {
 const PI_BIN_CANDIDATES = ['/usr/local/bin/pi'];
 const PI_TIMEOUT_MS = 300000;
 const LOG_TAIL_LIMIT = 16 * 1024;
+const DEFAULT_PI_HOME = '/root';
+const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
 
 function resolvePiBinary(env = process.env) {
     if (typeof env.PI_BIN === 'string' && env.PI_BIN.trim()) return env.PI_BIN.trim();
@@ -48,7 +50,46 @@ function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
     return next.length <= limit ? next : next.slice(next.length - limit);
 }
 
-function runPi({ projectDir, model, prompt, sessionId, sessionDir, logStream, env = process.env }) {
+function readJsonFile(filePath) {
+    try {
+        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+        return {};
+    }
+}
+
+export function readCurrentPiModel({ projectDir, env = process.env } = {}) {
+    const home = String(env.HOME || DEFAULT_PI_HOME);
+    const globalSettings = readJsonFile(path.join(home, '.pi', 'agent', 'settings.json'));
+    const projectSettings = typeof projectDir === 'string' && projectDir.trim()
+        ? readJsonFile(path.join(path.resolve(projectDir), '.pi', 'settings.json'))
+        : {};
+    const settings = { ...globalSettings, ...projectSettings };
+    const provider = typeof settings.defaultProvider === 'string'
+        ? settings.defaultProvider.trim()
+        : '';
+    const model = typeof settings.defaultModel === 'string'
+        ? settings.defaultModel.trim()
+        : '';
+    if (!provider || !model) return { provider: '', model: '', thinking: '' };
+    const thinking = typeof settings.defaultThinkingLevel === 'string'
+        && THINKING_LEVELS.has(settings.defaultThinkingLevel.trim())
+        ? settings.defaultThinkingLevel.trim()
+        : '';
+    return { provider, model, thinking };
+}
+
+function runPi({
+    projectDir,
+    provider,
+    model,
+    thinking,
+    prompt,
+    sessionId,
+    sessionDir,
+    logStream,
+    env = process.env,
+}) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
         const args = [
@@ -57,7 +98,9 @@ function runPi({ projectDir, model, prompt, sessionId, sessionDir, logStream, en
             sessionId,
             '--session-dir',
             sessionDir,
+            ...(provider ? ['--provider', provider] : []),
             ...(model ? ['--model', model] : []),
+            ...(thinking ? ['--thinking', thinking] : []),
             prompt,
         ];
         const child = spawn(resolvePiBinary(env), args, {
@@ -142,7 +185,15 @@ async function readStdin() {
     return data;
 }
 
-export async function executeTask({ prompt, projectDir, model, sessionId, sessionDir: suppliedSessionDir } = {}) {
+export async function executeTask({
+    prompt,
+    projectDir,
+    provider,
+    model,
+    thinking,
+    sessionId,
+    sessionDir: suppliedSessionDir,
+} = {}) {
     const logStream = createContainerLogStream();
     if (typeof prompt !== 'string' || !prompt.trim()) {
         return { ok: false, error: 'prompt is required and must be a non-empty string.' };
@@ -152,15 +203,22 @@ export async function executeTask({ prompt, projectDir, model, sessionId, sessio
     }
 
     const resolvedModel = typeof model === 'string' ? model.trim() : '';
+    const resolvedProvider = typeof provider === 'string' ? provider.trim() : '';
+    const resolvedThinking = typeof thinking === 'string' && THINKING_LEVELS.has(thinking.trim())
+        ? thinking.trim()
+        : '';
     const handle = typeof sessionId === 'string' && sessionId.trim()
         ? sessionId.trim()
         : createContinuationHandle();
     const resolvedSessionDir = suppliedSessionDir || sessionDirectory(handle);
     const resolvedProjectDir = path.resolve(projectDir.trim());
+    writeContinuationRecord(handle, { projectDir: resolvedProjectDir });
     try {
         const result = await runPi({
             projectDir: resolvedProjectDir,
+            provider: resolvedProvider,
             model: resolvedModel,
+            thinking: resolvedThinking,
             prompt: prompt.trim(),
             sessionId: handle,
             sessionDir: resolvedSessionDir,
@@ -171,6 +229,7 @@ export async function executeTask({ prompt, projectDir, model, sessionId, sessio
                 ok: false,
                 error: summarizeFailure(result),
                 outputText: summarizeOutput(result, { preferStderr: true }),
+                continuation: continuationDescriptor(handle),
             };
         }
         writeContinuationRecord(handle, { projectDir: resolvedProjectDir });
@@ -180,7 +239,11 @@ export async function executeTask({ prompt, projectDir, model, sessionId, sessio
             continuation: continuationDescriptor(handle),
         };
     } catch (error) {
-        return { ok: false, error: `PI task failed: ${error?.message || 'unknown error'}` };
+        return {
+            ok: false,
+            error: `PI task failed: ${error?.message || 'unknown error'}`,
+            continuation: continuationDescriptor(handle),
+        };
     }
 }
 
@@ -194,6 +257,12 @@ async function main() {
         }
         const result = await executeTask(input);
         if (!result.ok) {
+            if (result.continuation) {
+                process.stdout.write(JSON.stringify({
+                    outputText: result.outputText || '',
+                    continuation: result.continuation,
+                }));
+            }
             process.stderr.write(`${result.error || 'PI task failed.'}\n`);
             process.exitCode = 1;
             return;

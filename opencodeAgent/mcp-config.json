@@ -33,7 +33,7 @@
         {
             "name": "continue-task",
             "title": "Continue OpenCode Task",
-            "description": "Continue a previously completed OpenCode task through its opaque Ploinky continuation handle.",
+            "description": "Continue a previously completed or failed OpenCode task through its opaque Ploinky continuation handle.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/continue-task.mjs"],
             "cwd": "/code",
@@ -43,7 +43,7 @@
             "inputSchema": {
                 "handle": {
                     "type": "string",
-                    "description": "Opaque continuation handle issued by a completed OpenCode task.",
+                    "description": "Opaque continuation handle issued by an OpenCode task whose provider session was created.",
                     "optional": false
                 },
                 "prompt": {

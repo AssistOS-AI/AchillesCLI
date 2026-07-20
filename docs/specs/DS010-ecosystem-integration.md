@@ -103,10 +103,11 @@ Ploinky integration boundary:
     command does not add a router route, MCP execution tool, or policy surface.
 18. The AchillesCLI manifest enables `proxies/soul-gateway` as a blocking dependency before model discovery. Model listing uses the router-mediated `/services/soul-gateway/v1/models` route and the existing generated Ploinky agent credential; it does not add a public HTTP service, delegation, or MCP execution tool.
 19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation of Codex remains owned by the generic `ploinky cli codexAgent` path, which also enables missing targets globally.
-20. The WebChat background-task observer must forward only the target task's live log snapshot and lifecycle metadata. It must not copy the terminal MCP result into the task log envelope. Coding agents that need their final answer visible in the task item must emit that answer through their live process output before completion.
+20. The WebChat background-task observer must forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also forward the textual MCP result as separate presentation metadata, never as appended log content. Ploinky uses that text only to locate the already emitted final-answer range in its persisted raw log, stores the range offsets instead of duplicating the text, and renders intermediate and final output distinctly.
 21. Async `opencodeAgent` and `piAgent` executions must publish a generic
-    continuation capability and, on successful completion, an opaque versioned
-    handle. AchillesCLI forwards this capability and handle in its generic task
+    continuation capability and an opaque versioned handle once their provider
+    session exists, including when a later provider error makes the task fail.
+    AchillesCLI forwards this capability and handle in its generic task
     envelopes without interpreting provider session ids or storage paths.
     Ploinky WebChat owns the stable local task id and turn progression; a
     continuation creates a new remote AgentServer task but remains the same
@@ -168,13 +169,28 @@ Provider launcher discovery:
    `--session` on continuation. Both wrappers must relay provider stdout and
    stderr byte-for-byte to the AgentServer live-log channel without parsing,
    filtering, synthetic status messages, or stream prefixes. For initial
+   PI tasks, the provider owns model selection. Before continuation, `piAgent`
+   must merge its persistent global settings with project-local PI settings,
+   read the effective `defaultProvider`, `defaultModel`, and valid
+   `defaultThinkingLevel`, and pass them as explicit CLI overrides while
+   retaining the stored session id and directory. Missing or malformed model
+   settings fall back to PI's native session-resume behavior. For initial
    OpenCode tasks, the wrapper must assign an unpredictable internal session
    title and resolve the provider session id through the separate session-list
    interface after execution; session-list output must never enter task logs.
-   Wrapper stdout is a structured result containing the bounded raw provider
-   stdout as `outputText` and a generic continuation descriptor; TaskQueue
-   exposes only `outputText` to ordinary MCP callers and retains the descriptor
-   as task metadata. Provider session ids, session directories, project paths,
+   Before continuation, `opencodeAgent` must read the first recent model and
+   its non-default variant from its persistent OpenCode state and pass them as
+   explicit CLI overrides while retaining the stored session id. Unavailable
+   or malformed model state falls back to OpenCode's native resume behavior.
+   After resolving an OpenCode session, the wrapper must inspect its exported
+   message data outside the visible stream and use the last assistant text as
+   `outputText`; export output must never enter task logs. Wrapper stdout is a
+   structured result containing final answer text and a generic continuation
+   descriptor. A wrapper whose provider session exists must emit and persist
+   the same descriptor even when the command exits unsuccessfully. TaskQueue
+   exposes only successful `outputText` to ordinary MCP callers and retains the
+   descriptor as task metadata for completed and failed tasks. Provider session
+   ids, session directories, project paths,
    and internal lookup titles must remain behind UUID continuation handles
    stored in agent-private files with restrictive permissions.
 9. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
@@ -240,6 +256,17 @@ the provider agent must retain authority over its own session files and project
 directory. The opaque handle keeps those details out of WebChat and lets the
 router bind continuation to the stored target agent and tool through the normal
 MCP policy path.
+
+### Question #8: Why does PI continuation resolve model settings inside the provider agent?
+
+Response:
+WebChat's continuation input is provider-neutral and must not gain PI-specific
+provider, model, or thinking arguments. The PI interactive CLI and `piAgent`
+share persistent provider storage, while project-local PI settings may override
+global defaults. Resolving those settings immediately before continuation and
+passing explicit CLI flags preserves the current PI selection instead of the
+older model restored from the session. Invalid settings leave PI's native
+resume selection intact.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

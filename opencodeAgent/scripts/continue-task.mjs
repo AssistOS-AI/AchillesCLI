@@ -5,7 +5,10 @@ import {
     readContinuationRecord,
     writeContinuationRecord,
 } from './continuation-store.mjs';
-import { executeOpenCodeTask } from './opencode-runner.mjs';
+import {
+    executeOpenCodeTask,
+    readRecentOpenCodeModel,
+} from './opencode-runner.mjs';
 
 async function readStdin() {
     process.stdin.setEncoding('utf8');
@@ -29,10 +32,13 @@ async function main() {
     const prompt = String(input?.prompt || '').trim();
     if (!handle || !prompt) throw new Error('handle and prompt are required');
     const record = readContinuationRecord(handle);
+    const currentModel = await readRecentOpenCodeModel();
     const result = await executeOpenCodeTask({
         prompt,
         projectDir: record.projectDir,
         sessionId: record.sessionId,
+        model: currentModel.model,
+        variant: currentModel.variant,
         createProjectDir: false,
     });
     if (!result.ok) throw new Error(result.error || 'OpenCode continuation failed.');

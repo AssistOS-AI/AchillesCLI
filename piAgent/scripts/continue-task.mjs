@@ -5,7 +5,10 @@ import {
     readContinuationRecord,
     writeContinuationRecord,
 } from './continuation-store.mjs';
-import { executeTask } from './execute-task.mjs';
+import {
+    executeTask,
+    readCurrentPiModel,
+} from './execute-task.mjs';
 
 async function readStdin() {
     process.stdin.setEncoding('utf8');
@@ -29,9 +32,13 @@ async function main() {
     const prompt = String(input?.prompt || '').trim();
     if (!handle || !prompt) throw new Error('handle and prompt are required');
     const record = readContinuationRecord(handle);
+    const currentModel = readCurrentPiModel({ projectDir: record.projectDir });
     const result = await executeTask({
         prompt,
         projectDir: record.projectDir,
+        provider: currentModel.provider,
+        model: currentModel.model,
+        thinking: currentModel.thinking,
         sessionId: record.sessionId,
         sessionDir: record.sessionDir,
     });

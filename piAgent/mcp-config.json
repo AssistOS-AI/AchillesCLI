@@ -33,7 +33,7 @@
         {
             "name": "continue-task",
             "title": "Continue PI Task",
-            "description": "Continue a previously completed PI task through its opaque Ploinky continuation handle.",
+            "description": "Continue a previously completed or failed PI task through its opaque Ploinky continuation handle.",
             "command": "/usr/local/bin/node",
             "args": ["/code/scripts/continue-task.mjs"],
             "cwd": "/code",
@@ -43,7 +43,7 @@
             "inputSchema": {
                 "handle": {
                     "type": "string",
-                    "description": "Opaque continuation handle issued by a completed PI task.",
+                    "description": "Opaque continuation handle issued by a PI task whose provider session was created.",
                     "optional": false
                 },
                 "prompt": {

@@ -13,6 +13,12 @@ does not parse JSON or prefixed field syntax, and does not inherit or forward
 the AchillesCLI session model. `piAgent` owns model selection.
 
 The payload sent to the delegated tool contains only `prompt` and `projectDir`.
+Continuation remains provider-owned: `piAgent` reads its persistent global PI
+settings, applies project-local overrides for the original project directory,
+and passes the effective provider, model, and valid thinking level explicitly
+when resuming the stored session. Missing or malformed settings retain PI's
+native session-resume selection. Neither AchillesCLI nor WebChat sends these
+provider-specific values.
 
 The skill returns plain text only. Successful runs return `PI task completed.`
 and append the bounded `outputText` returned by `piAgent.execute-task` when that

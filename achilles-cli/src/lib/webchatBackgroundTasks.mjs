@@ -60,6 +60,15 @@ function emitTaskEvent(payload) {
     })}\n`);
 }
 
+function taskResultText(task) {
+    const content = task?.result?.content;
+    if (!Array.isArray(content)) return '';
+    return content
+        .filter((entry) => entry?.type === 'text' && typeof entry.text === 'string')
+        .map((entry) => entry.text)
+        .join('\n');
+}
+
 export async function createWebchatBackgroundTaskManager({ workingDir }) {
     const agentClientModule = await import('/Agent/client/AgentMcpClient.mjs');
     if (typeof agentClientModule.setAgentTaskObserver !== 'function') {
@@ -95,6 +104,7 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
             );
             if (resultContinuation?.handle) record.continuation = resultContinuation;
             if (changed) {
+                const finalOutput = status === 'ongoing' ? '' : taskResultText(task);
                 emitTaskEvent({
                     event: 'update',
                     task: {
@@ -116,6 +126,7 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
                         seq: logSeq,
                         truncated: task?.logTruncated === true,
                     },
+                    ...(finalOutput ? { finalOutput } : {}),
                 });
             }
             if (status !== 'ongoing') {
@@ -247,5 +258,6 @@ export const __testables = {
     localTaskId,
     normalizeStatus,
     normalizeContinuation,
+    taskResultText,
     readOngoingTasks,
 };

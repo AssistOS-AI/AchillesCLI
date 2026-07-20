@@ -7,6 +7,7 @@ export const DEFAULT_OPENCODE_BIN = '/root/.opencode/bin/opencode';
 export const OPENCODE_TIMEOUT_MS = 300000;
 
 const LOG_TAIL_LIMIT = 16 * 1024;
+const DEFAULT_OPENCODE_HOME = '/root';
 const SEMANTIC_FAILURE_PATTERNS = [
     /permission requested:\s*external_directory/i,
     /auto-rejecting/i,
@@ -35,6 +36,35 @@ function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
         return next;
     }
     return next.slice(next.length - limit);
+}
+
+export async function readRecentOpenCodeModel(env = process.env) {
+    const stateRoot = String(env.XDG_STATE_HOME || '').trim()
+        || path.join(String(env.HOME || DEFAULT_OPENCODE_HOME), '.local', 'state');
+    try {
+        const state = JSON.parse(await fs.readFile(
+            path.join(stateRoot, 'opencode', 'model.json'),
+            'utf8',
+        ));
+        const recent = state?.recent?.[0];
+        const providerID = typeof recent?.providerID === 'string'
+            ? recent.providerID.trim()
+            : '';
+        const modelID = typeof recent?.modelID === 'string'
+            ? recent.modelID.trim()
+            : '';
+        if (!providerID || !modelID) return { model: '', variant: '' };
+        const model = `${providerID}/${modelID}`;
+        const storedVariant = typeof state?.variant?.[model] === 'string'
+            ? state.variant[model].trim()
+            : '';
+        return {
+            model,
+            variant: storedVariant && storedVariant !== 'default' ? storedVariant : '',
+        };
+    } catch {
+        return { model: '', variant: '' };
+    }
 }
 
 function listOpenCodeSessions({ opencodeBin, projectDir, env }) {
@@ -86,9 +116,58 @@ async function findSessionId({ opencodeBin, projectDir, env, title }) {
     return String(match?.id || '').trim();
 }
 
+function exportSession({ opencodeBin, projectDir, env, sessionId }) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(opencodeBin, ['export', sessionId], {
+            cwd: projectDir,
+            env: {
+                ...process.env,
+                ...env,
+                HOME: '/root',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        const stdout = [];
+        const stderr = [];
+        child.stdout.on('data', (chunk) => stdout.push(chunk));
+        child.stderr.on('data', (chunk) => stderr.push(chunk));
+        child.on('error', reject);
+        child.on('close', (code) => {
+            if (code !== 0) {
+                reject(new Error(Buffer.concat(stderr).toString('utf8').trim()
+                    || `Unable to export OpenCode session (exit ${code}).`));
+                return;
+            }
+            const raw = Buffer.concat(stdout).toString('utf8');
+            const jsonStart = raw.indexOf('{');
+            if (jsonStart < 0) {
+                reject(new Error('OpenCode returned an invalid session export.'));
+                return;
+            }
+            try {
+                resolve(JSON.parse(raw.slice(jsonStart)));
+            } catch {
+                reject(new Error('OpenCode returned an invalid session export.'));
+            }
+        });
+    });
+}
+
+async function finalSessionText({ opencodeBin, projectDir, env, sessionId }) {
+    const exported = await exportSession({ opencodeBin, projectDir, env, sessionId });
+    const messages = Array.isArray(exported?.messages) ? exported.messages : [];
+    const assistant = messages.findLast((message) => message?.info?.role === 'assistant');
+    if (!assistant || !Array.isArray(assistant.parts)) return '';
+    return assistant.parts
+        .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text)
+        .join('');
+}
+
 export function runOpenCode({
     projectDir,
     model,
+    variant = '',
     prompt,
     sessionId = '',
     captureSession = false,
@@ -114,6 +193,9 @@ export function runOpenCode({
         }
         if (model) {
             args.push('--model', model);
+        }
+        if (variant) {
+            args.push('--variant', variant);
         }
         args.push(prompt);
 
@@ -172,6 +254,19 @@ export function runOpenCode({
                     return;
                 }
             }
+            let outputText = stdoutTail;
+            if (resolvedSessionId) {
+                try {
+                    outputText = await finalSessionText({
+                        opencodeBin,
+                        projectDir,
+                        env,
+                        sessionId: resolvedSessionId,
+                    }) || stdoutTail;
+                } catch {
+                    outputText = stdoutTail;
+                }
+            }
             resolve({
                 code,
                 signal,
@@ -180,7 +275,7 @@ export function runOpenCode({
                 stdoutTail,
                 stderrTail,
                 sessionId: resolvedSessionId,
-                outputText: stdoutTail,
+                outputText,
             });
         });
     });
@@ -208,6 +303,7 @@ export async function executeOpenCodeTask({
     prompt,
     projectDir,
     model = '',
+    variant = '',
     sessionId = '',
     captureSession = false,
     logStream = createContainerLogStream(),
@@ -217,6 +313,7 @@ export async function executeOpenCodeTask({
     const resolvedProjectDir = path.resolve(projectDir);
     const effectiveProjectDir = resolvedProjectDir;
     const resolvedModel = typeof model === 'string' ? model.trim() : '';
+    const resolvedVariant = typeof variant === 'string' ? variant.trim() : '';
     const taskPrompt = String(prompt || '').trim();
 
     if (createProjectDir) {
@@ -237,6 +334,7 @@ export async function executeOpenCodeTask({
         const result = await runOpenCode({
             projectDir: effectiveProjectDir,
             model: resolvedModel,
+            variant: resolvedVariant,
             prompt: taskPrompt,
             sessionId,
             captureSession,

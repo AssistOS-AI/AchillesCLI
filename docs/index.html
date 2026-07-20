@@ -142,11 +142,17 @@
     PI runs in print mode with a persisted session id and directory. OpenCode tasks use the provider's
     default formatted output and resolve the created session through a separate random-title lookup before
     using <code>--session</code> when resumed. Both wrappers relay provider stdout and stderr unchanged into
-    live task logs, without parsing or synthetic tool-status messages.
+    live task logs, without parsing or synthetic tool-status messages. OpenCode's
+    exported session data is inspected only off-stream to identify the last assistant
+    answer for final-result metadata, allowing WebChat to show intermediate output in
+    grey while keeping the raw visible stream unchanged.
     Both agents keep provider session details in private persistent storage behind an opaque UUID handle,
     expose a policy-checked <code>continue-task</code> tool, and request full log retention. Their structured
     wrapper result exposes only answer text to ordinary MCP callers while preserving continuation metadata
-    on the asynchronous task.
+    on the asynchronous task. Before resuming, each provider resolves its current model internally:
+    OpenCode reads its persistent recent-model state, while PI merges persistent global defaults with
+    project-local settings and also preserves the effective thinking level. The wrappers pass those choices
+    explicitly alongside the stored session identity; unavailable state falls back to native resume selection.
     This contract is specified in
     <a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012</a>.
   </div>
