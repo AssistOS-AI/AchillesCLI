@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 export const DEFAULT_OPENCODE_BIN = '/root/.opencode/bin/opencode';
@@ -36,6 +37,55 @@ function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
     return next.slice(next.length - limit);
 }
 
+function listOpenCodeSessions({ opencodeBin, projectDir, env }) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(opencodeBin, [
+            'session',
+            'list',
+            '--format',
+            'json',
+            '--max-count',
+            '1000',
+        ], {
+            cwd: projectDir,
+            env: {
+                ...process.env,
+                ...env,
+                HOME: '/root',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        const stdout = [];
+        const stderr = [];
+        child.stdout.on('data', (chunk) => stdout.push(chunk));
+        child.stderr.on('data', (chunk) => stderr.push(chunk));
+        child.on('error', reject);
+        child.on('close', (code) => {
+            if (code !== 0) {
+                reject(new Error(Buffer.concat(stderr).toString('utf8').trim()
+                    || `Unable to list OpenCode sessions (exit ${code}).`));
+                return;
+            }
+            try {
+                resolve(JSON.parse(Buffer.concat(stdout).toString('utf8')));
+            } catch {
+                reject(new Error('OpenCode returned an invalid session list.'));
+            }
+        });
+    });
+}
+
+async function findSessionId({ opencodeBin, projectDir, env, title }) {
+    const sessions = await listOpenCodeSessions({ opencodeBin, projectDir, env });
+    if (!Array.isArray(sessions)) return '';
+    const expectedDirectory = path.resolve(projectDir);
+    const match = sessions.find((session) => (
+        session?.title === title
+        && path.resolve(String(session?.directory || '')) === expectedDirectory
+    ));
+    return String(match?.id || '').trim();
+}
+
 export function runOpenCode({
     projectDir,
     model,
@@ -52,13 +102,15 @@ export function runOpenCode({
             'run',
             '--dangerously-skip-permissions',
         ];
-        const jsonMode = captureSession || Boolean(sessionId);
-        if (jsonMode) {
-            args.push('--format', 'json');
-        }
+        const sessionTitle = captureSession && !sessionId
+            ? `ploinky-task-${randomUUID()}`
+            : '';
         args.push('--dir', projectDir);
         if (sessionId) {
             args.push('--session', sessionId);
+        }
+        if (sessionTitle) {
+            args.push('--title', sessionTitle);
         }
         if (model) {
             args.push('--model', model);
@@ -77,9 +129,6 @@ export function runOpenCode({
 
         let stdoutTail = '';
         let stderrTail = '';
-        let stdoutBuffer = '';
-        let resolvedSessionId = sessionId;
-        const outputParts = [];
         let timedOut = false;
         const timeout = setTimeout(() => {
             timedOut = true;
@@ -93,36 +142,7 @@ export function runOpenCode({
         child.stdout.on('data', (chunk) => {
             const text = chunk.toString('utf8');
             stdoutTail = appendBoundedTail(stdoutTail, text);
-            if (!jsonMode) {
-                logStream.write(chunk);
-                return;
-            }
-            stdoutBuffer += text;
-            const lines = stdoutBuffer.split(/\r?\n/);
-            stdoutBuffer = lines.pop() || '';
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                    const event = JSON.parse(line);
-                    resolvedSessionId = String(
-                        event?.sessionID
-                        || event?.sessionId
-                        || event?.part?.sessionID
-                        || event?.properties?.sessionID
-                        || resolvedSessionId
-                    ).trim();
-                    const part = event?.part || event?.properties?.part || event?.data?.part;
-                    const output = part?.type === 'text'
-                        ? part.text
-                        : (event?.type === 'text' ? event.text : '');
-                    if (typeof output === 'string' && output) {
-                        outputParts.push(output);
-                        logStream.write(output);
-                    }
-                } catch {
-                    logStream.write(`${line}\n`);
-                }
-            }
+            logStream.write(chunk);
         });
 
         child.stderr.on('data', (chunk) => {
@@ -136,28 +156,20 @@ export function runOpenCode({
             reject(error);
         });
 
-        child.on('close', (code, signal) => {
+        child.on('close', async (code, signal) => {
             clearTimeout(timeout);
-            if (jsonMode && stdoutBuffer.trim()) {
+            let resolvedSessionId = sessionId;
+            if (sessionTitle) {
                 try {
-                    const event = JSON.parse(stdoutBuffer);
-                    resolvedSessionId = String(
-                        event?.sessionID
-                        || event?.sessionId
-                        || event?.part?.sessionID
-                        || event?.properties?.sessionID
-                        || resolvedSessionId
-                    ).trim();
-                    const part = event?.part || event?.properties?.part || event?.data?.part;
-                    const output = part?.type === 'text'
-                        ? part.text
-                        : (event?.type === 'text' ? event.text : '');
-                    if (typeof output === 'string' && output) {
-                        outputParts.push(output);
-                        logStream.write(output);
-                    }
-                } catch {
-                    logStream.write(stdoutBuffer);
+                    resolvedSessionId = await findSessionId({
+                        opencodeBin,
+                        projectDir,
+                        env,
+                        title: sessionTitle,
+                    });
+                } catch (error) {
+                    reject(error);
+                    return;
                 }
             }
             resolve({
@@ -168,7 +180,7 @@ export function runOpenCode({
                 stdoutTail,
                 stderrTail,
                 sessionId: resolvedSessionId,
-                outputText: outputParts.join(''),
+                outputText: stdoutTail,
             });
         });
     });

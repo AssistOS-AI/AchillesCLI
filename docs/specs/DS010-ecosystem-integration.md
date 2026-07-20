@@ -162,18 +162,21 @@ Provider launcher discovery:
    invocation, not startup-time dependencies of AchillesCLI. Their own
    manifests must declare `startup: manual` so a later general workspace boot
    does not revive a dormant worker merely because it remains registered.
-8. `piAgent` must run PI with an explicit persisted session id and session
-   directory. `opencodeAgent` must request OpenCode JSON events for task
-   executions so it can capture OpenCode's issued session id, and must pass
-   that id through `--session` on continuation. The wrappers relay only
-   provider answer text and diagnostics to the AgentServer live-log channel,
-   with no stream prefixes or routine runner lifecycle messages. Wrapper
-   stdout is a structured result containing `outputText` and a generic
-   continuation descriptor; TaskQueue exposes only `outputText` to ordinary
-   MCP callers and retains the descriptor as task metadata. Provider session
-   ids, session directories, and project paths must remain behind UUID
-   continuation handles stored in agent-private files with restrictive
-   permissions.
+8. `piAgent` must run PI in print mode with an explicit persisted session id
+   and session directory. `opencodeAgent` must run tasks in OpenCode's default
+   formatted-output mode and must pass the captured provider session id through
+   `--session` on continuation. Both wrappers must relay provider stdout and
+   stderr byte-for-byte to the AgentServer live-log channel without parsing,
+   filtering, synthetic status messages, or stream prefixes. For initial
+   OpenCode tasks, the wrapper must assign an unpredictable internal session
+   title and resolve the provider session id through the separate session-list
+   interface after execution; session-list output must never enter task logs.
+   Wrapper stdout is a structured result containing the bounded raw provider
+   stdout as `outputText` and a generic continuation descriptor; TaskQueue
+   exposes only `outputText` to ordinary MCP callers and retains the descriptor
+   as task metadata. Provider session ids, session directories, project paths,
+   and internal lookup titles must remain behind UUID continuation handles
+   stored in agent-private files with restrictive permissions.
 9. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent

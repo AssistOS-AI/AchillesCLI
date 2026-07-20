@@ -37,18 +37,23 @@ async function makeFakeOpenCodeBin(dir) {
     await fs.writeFile(binPath, `#!/usr/bin/env node
 import fs from 'node:fs';
 
-fs.writeFileSync(process.env.OPENCODE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));
-if (process.argv.includes('--format')) {
-    process.stdout.write(JSON.stringify({
-        type: 'text',
-        sessionID: 'ses_test_resume',
-        part: { type: 'text', text: 'fake opencode output' }
-    }) + '\\n');
-} else {
-    process.stdout.write('fake opencode ');
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    process.stdout.write('output');
+if (process.argv[2] === 'session') {
+    const title = fs.readFileSync(process.env.OPENCODE_TITLE_PATH, 'utf8');
+    process.stdout.write(JSON.stringify([{
+        id: 'ses_test_resume',
+        title,
+        directory: process.env.OPENCODE_PROJECT_DIR
+    }]));
+    process.exit(0);
 }
+fs.writeFileSync(process.env.OPENCODE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));
+const titleIndex = process.argv.indexOf('--title');
+if (titleIndex > 0) {
+    fs.writeFileSync(process.env.OPENCODE_TITLE_PATH, process.argv[titleIndex + 1]);
+}
+process.stdout.write('fake opencode ');
+await new Promise((resolve) => setTimeout(resolve, 25));
+process.stdout.write('output');
 `, 'utf8');
     await fs.chmod(binPath, 0o755);
     return binPath;
@@ -108,6 +113,7 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-agent-mcp-test-'));
     const projectDir = path.join(tmpDir, 'project');
     const argsPath = path.join(tmpDir, 'args.json');
+    const titlePath = path.join(tmpDir, 'title.txt');
     const continuationStore = path.join(tmpDir, 'continuations');
     await fs.mkdir(projectDir);
     const fakeBin = await makeFakeOpenCodeBin(tmpDir);
@@ -118,6 +124,8 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
                 ...process.env,
                 OPENCODE_BIN: fakeBin,
                 OPENCODE_ARGS_PATH: argsPath,
+                OPENCODE_TITLE_PATH: titlePath,
+                OPENCODE_PROJECT_DIR: projectDir,
                 PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
             },
             stdio: ['pipe', 'pipe', 'pipe'],
@@ -153,8 +161,10 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
     assert.doesNotMatch(result.stderr, /\[opencode|start projectDir|exit code/);
 
     const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.equal(args[5], projectDir);
-    assert.equal(args[7], 'xai/grok-4.3');
+    assert.equal(args[args.indexOf('--dir') + 1], projectDir);
+    assert.equal(args[args.indexOf('--model') + 1], 'xai/grok-4.3');
+    assert.match(args[args.indexOf('--title') + 1], /^ploinky-task-/);
+    assert.equal(args.includes('--format'), false);
     const record = JSON.parse(await fs.readFile(
         path.join(continuationStore, `${payload.continuation.handle}.json`),
         'utf8'
@@ -167,12 +177,15 @@ test('continue-task resumes the exact OpenCode session behind the opaque handle'
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-agent-resume-test-'));
     const projectDir = path.join(tmpDir, 'project');
     const argsPath = path.join(tmpDir, 'args.json');
+    const titlePath = path.join(tmpDir, 'title.txt');
     const continuationStore = path.join(tmpDir, 'continuations');
     await fs.mkdir(projectDir);
     const fakeBin = await makeFakeOpenCodeBin(tmpDir);
     const env = {
         OPENCODE_BIN: fakeBin,
         OPENCODE_ARGS_PATH: argsPath,
+        OPENCODE_TITLE_PATH: titlePath,
+        OPENCODE_PROJECT_DIR: projectDir,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
     };
 

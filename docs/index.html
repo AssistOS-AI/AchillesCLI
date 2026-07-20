@@ -139,8 +139,10 @@
     GPTResearcher starts Search Agent first.
     The OpenCode and PI launchers accept only the plain task text and leave model
     selection entirely to their target agents.
-    PI runs with a persisted session id and directory; OpenCode task execution parses its
-    JSON event stream to capture the provider session id and uses <code>--session</code> when resumed.
+    PI runs in print mode with a persisted session id and directory. OpenCode tasks use the provider's
+    default formatted output and resolve the created session through a separate random-title lookup before
+    using <code>--session</code> when resumed. Both wrappers relay provider stdout and stderr unchanged into
+    live task logs, without parsing or synthetic tool-status messages.
     Both agents keep provider session details in private persistent storage behind an opaque UUID handle,
     expose a policy-checked <code>continue-task</code> tool, and request full log retention. Their structured
     wrapper result exposes only answer text to ordinary MCP callers while preserving continuation metadata

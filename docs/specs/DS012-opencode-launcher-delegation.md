@@ -40,14 +40,19 @@ The skill returns plain text only. Successful runs return
 agent returns it. Failed runs return the agent error text or an MCP failure
 message.
 
-The `opencodeAgent` task wrapper must execute OpenCode with JSON events so it can
-capture the provider-issued session id. It must extract text parts into the
-AgentServer live-log channel without stream prefixes or routine start/exit
-diagnostics. Its stdout must be one structured result containing `outputText`
-and a versioned continuation descriptor. TaskQueue exposes only `outputText` as
-ordinary MCP result text and retains the validated descriptor as result
-metadata, so provider session details do not enter the visible result or log.
-The OpenAI-compatible chat-completions path does not create resumable tasks and
+The `opencodeAgent` task wrapper must execute OpenCode in its default formatted
+output mode. Provider stdout and stderr must be relayed byte-for-byte into the
+AgentServer live-log channel without parsing, filtering, synthetic status
+messages, or stream prefixes. An initial task must receive an unpredictable
+internal title. After execution, the wrapper must query OpenCode's session-list
+interface separately and match both that title and the resolved project
+directory to capture the provider-issued session id. Session-list output must
+not enter visible task logs. The wrapper stdout must be one structured result
+containing bounded raw provider stdout as `outputText` and a versioned
+continuation descriptor. TaskQueue exposes only `outputText` as ordinary MCP
+result text and retains the validated descriptor as result metadata, so
+provider session details do not enter the visible result or log. The
+OpenAI-compatible chat-completions path does not create resumable tasks and
 continues to use normal OpenCode text output.
 
 Successful initial task execution must store the OpenCode session id and
@@ -163,11 +168,19 @@ deterministic first invocation, and avoids sending `enable_agent` again after
 the runtime is already available.
 
 ### Question #7: Why is the final answer present in both live output and the MCP result?
-Response: OpenCode itself emits the answer through stdout, so relaying that
-stream gives WebChat a live final answer without synthesis. The wrapper also
-returns the captured stdout for the MCP command contract. Ploinky keeps the
-wrapper result channel out of the live task log and never appends the terminal
-result afterward, so the task item still contains only one visible copy.
+Response: OpenCode emits its formatted answer and activity through stdout.
+Relaying that stream unchanged gives WebChat the same output as direct
+non-interactive CLI execution. The wrapper also retains a bounded stdout tail
+for the MCP command contract. Ploinky keeps the wrapper result channel out of
+the live task log and never appends the terminal result afterward, so the task
+item still contains only one visible copy.
+
+### Question #9: Why is the initial OpenCode session resolved by title?
+Response: Default formatted output preserves the provider's native live log
+but does not expose the created session id. A random per-run title provides a
+concurrency-safe lookup key for the separate session-list interface. Matching
+the title together with the project directory avoids selecting another
+workspace's session, while continuation still uses the exact stored session id.
 
 ### Question #8: Why is the OpenCode session hidden behind a Ploinky continuation handle?
 Response: The session id is provider state, and resuming it also requires the
