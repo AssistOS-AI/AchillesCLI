@@ -52,10 +52,12 @@ Ploinky integration boundary:
    internals, and preserve the same byte caps as other forwarded resources.
 10. Non-slash WebChat turns are routed through the built-in `copilot-router`
    oskill. The router may call deterministic launcher cskills such as
-   `launch-open-interpreter`, `launch-web-search`, or `launch-opencode`.
+   `launch-open-interpreter`, `launch-web-search`, `launch-opencode`, or
+   `launch-codex`.
    When the user explicitly names `opencode` or `opencodeAgent`, the router
    must select `launch-opencode` before generic execution launchers so the
-   named provider intent is preserved. Launchers receive the
+   named provider intent is preserved. Explicit `codex` or `codexAgent`
+   requests must similarly select `launch-codex`. Launchers receive the
    normalized prompt, safe WebChat context, and current invocation token through
    the AchillesCLI skill execution context. Launchers must call external
    provider execution only through
@@ -102,9 +104,9 @@ Ploinky integration boundary:
     inspects task records already persisted for that workspace. This read-only
     command does not add a router route, MCP execution tool, or policy surface.
 18. The AchillesCLI manifest enables `proxies/soul-gateway` as a blocking dependency before model discovery. Model listing uses the router-mediated `/services/soul-gateway/v1/models` route and the existing generated Ploinky agent credential; it does not add a public HTTP service, delegation, or MCP execution tool.
-19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation of Codex remains owned by the generic `ploinky cli codexAgent` path, which also enables missing targets globally.
+19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
 20. The WebChat background-task observer must forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also forward the textual MCP result as separate presentation metadata, never as appended log content. Ploinky uses that text only to locate the already emitted final-answer range in its persisted raw log, stores the range offsets instead of duplicating the text, and renders intermediate and final output distinctly.
-21. Async `opencodeAgent` and `piAgent` executions must publish a generic
+21. Async `opencodeAgent`, `piAgent`, and `codexAgent` executions must publish a generic
     continuation capability and an opaque versioned handle once their provider
     session exists, including when a later provider error makes the task fail.
     AchillesCLI forwards this capability and handle in its generic task
@@ -148,12 +150,11 @@ Provider launcher discovery:
    WebChat toggle. A launcher may report that its relay backend or provider
    route is unavailable, but it must not tell the user to run an enable-research
    command to make the provider selectable.
-6. `launch-opencode` is the bounded exception for direct named-agent
-   delegation. It starts the installed `AchillesCLI/opencodeAgent` through the
+6. `launch-opencode`, `launch-pi`, and `launch-codex` are bounded exceptions
+   for direct named-agent delegation. Each starts its fixed installed target through the
    existing Marketplace enable path in explicit `global` mode only when
-   runtime status is not already running, then calls the allowlisted
-   `opencodeAgent.execute-task` MCP tool
-   through the router. `launch-opencode` and `launch-pi` accept only the plain
+   runtime status is not already running, then calls that agent's allowlisted
+   `execute-task` MCP tool through the router. All three accept only the plain
    task text, pass that text unchanged as `prompt`, and never inherit or forward
    the AchillesCLI session model. They return plain text and must not accept
    arbitrary target agent names or bypass Ploinky MCP authorization.
@@ -193,7 +194,20 @@ Provider launcher discovery:
    ids, session directories, project paths,
    and internal lookup titles must remain behind UUID continuation handles
    stored in agent-private files with restrictive permissions.
-9. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
+9. `codexAgent` must run initial work through `codex exec --json` without
+   ephemeral mode and must use the reported Codex thread id for continuation.
+   It forwards provider stderr byte-for-byte and extracts agent-message and
+   completed command-output text from JSONL events into the live log as those
+   events arrive, without prefixes, lifecycle decoration, raw JSON events, or
+   structured-result duplication. The last bounded agent message becomes
+   `outputText`. Its private continuation record stores only the thread id and
+   resolved original project directory; it must not store a model.
+   `continue-task` invokes `codex exec resume` in that directory without
+   `--model`, so the Codex configuration active for the new turn remains the
+   model authority. Both initial and resumed execution use Codex's explicit
+   non-interactive approval-and-sandbox bypass inside the isolated Ploinky
+   runtime.
+10. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent
    as running. When activation is required, both requests use explicit

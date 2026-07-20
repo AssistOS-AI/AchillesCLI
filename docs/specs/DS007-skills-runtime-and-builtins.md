@@ -43,6 +43,7 @@ Built-in skill responsibilities (`src/skills/`):
    - `test-code`
    - `execute-skill`
    - `skill-refiner`
+   - `launch-codex`
    - `launch-opencode`
 5. Test-generation helpers:
    - `write-tests`

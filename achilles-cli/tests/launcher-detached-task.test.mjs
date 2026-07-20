@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { action as launchCodex } from '../src/skills/launch-codex/src/index.mjs';
 import { action as launchOpenCode } from '../src/skills/launch-opencode/src/index.mjs';
 import { action as launchPi } from '../src/skills/launch-pi/src/index.mjs';
 import { action as launchResearch } from '../src/skills/launch-gpt-researcher/src/index.mjs';
@@ -18,6 +19,7 @@ function detachedClient(description) {
 }
 
 test('agent launchers report detached WebChat work as started', async () => {
+    assert.equal(await launchCodex({ promptText: 'build feature', agentClient: detachedClient('build feature') }), 'Task started.');
     assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient: detachedClient('build artifacts') }), 'Task started.');
     assert.equal(await launchPi({ promptText: 'run tests', agentClient: detachedClient('run tests') }), 'Task started.');
     assert.equal(await launchResearch({ promptText: 'research topic', agentClient: detachedClient('research topic') }), 'Task started.');
@@ -30,6 +32,7 @@ test('agent launchers report unclaimed asynchronous work as started', async () =
         }),
     };
 
+    assert.equal(await launchCodex({ promptText: 'build feature', agentClient }), 'Task started.');
     assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient }), 'Task started.');
     assert.equal(await launchPi({ promptText: 'run tests', agentClient }), 'Task started.');
     assert.equal(await launchResearch({ promptText: 'research topic', agentClient }), 'Task started.');

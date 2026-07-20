@@ -1,0 +1,117 @@
+import { callToolWhenReady, ensureAgentsRunning } from '../../../lib/ploinkyAgentRuntime.mjs';
+
+function trim(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+async function resolveAgentClient(agentName, invocation = {}) {
+    if (invocation.agentClient && typeof invocation.agentClient.callToolWithoutWait === 'function') {
+        return invocation.agentClient;
+    }
+    if (!process.env.PLOINKY_AGENT_ID || !process.env.PLOINKY_AGENT_SECRET) {
+        throw new Error('Ploinky agent credentials are required for task delegation.');
+    }
+    const module = await import('/Agent/client/AgentMcpClient.mjs');
+    if (!module?.createAgentClient || typeof module.createAgentClient !== 'function') {
+        throw new Error('Ploinky AgentMcpClient is unavailable in this runtime.');
+    }
+    return module.createAgentClient(agentName, {
+        userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
+    });
+}
+
+function parseTaskResult(payload) {
+    if (!payload || typeof payload !== 'object') return { ok: true };
+    const content = Array.isArray(payload.result?.content)
+        ? payload.result.content
+        : Array.isArray(payload.content)
+            ? payload.content
+            : [];
+    const text = trim(content.find((entry) => entry?.type === 'text' && typeof entry.text === 'string')?.text);
+    try {
+        if (!text) throw new Error('no mcp text');
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') return { ...payload, ...parsed };
+        return { ...payload, ok: true, outputText: text };
+    } catch {
+        if (text) return { ...payload, ok: true, outputText: text };
+    }
+    const hasStatus = typeof payload.status === 'string'
+        || typeof payload.logTail === 'string'
+        || typeof payload.logSeq !== 'undefined'
+        || payload?.result;
+    const hasMetadata = payload?.metadata || payload?.result?.metadata;
+    if (payload.outputText !== undefined
+        || payload.ok !== undefined
+        || typeof payload.error === 'string'
+        || hasStatus
+        || hasMetadata) {
+        return payload;
+    }
+    return { ok: true };
+}
+
+async function callAgentTool(agentName, toolName, payload, invocation = {}) {
+    const client = await resolveAgentClient(agentName, invocation);
+    await ensureAgentsRunning(client, [TARGET_AGENT_REF], invocation);
+    return callToolWhenReady(() => client.callToolWithoutWait(toolName, payload, {
+        userDelegationToken: trim(invocation.userDelegationToken || invocation.context?.userDelegationToken),
+    }));
+}
+
+export const TARGET_AGENT = 'codexAgent';
+export const TARGET_AGENT_REF = 'AchillesCLI/codexAgent';
+export const TOOL_NAME = 'execute-task';
+
+function normalizePrompt(invocation = {}) {
+    if (typeof invocation.promptText === 'string') return trim(invocation.promptText);
+    if (typeof invocation.prompt === 'string') return trim(invocation.prompt);
+    return '';
+}
+
+function resolveProjectDir(invocation = {}) {
+    return trim(invocation.mainAgent?.startDir) || process.cwd();
+}
+
+function formatFailurePayload(payload) {
+    const errorText = trim(payload.error);
+    const outputText = trim(payload.outputText || payload.logTail);
+    if (!errorText) return outputText || 'Codex task failed.';
+    if (!outputText || outputText === errorText) return errorText;
+    return `${errorText}\n\n${outputText}`;
+}
+
+function normalizeAnswer(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return 'Codex task completed without a response.';
+    }
+    if (payload?.metadata?.backgroundTask?.detached) return 'Task started.';
+    if (trim(payload?.metadata?.taskId || payload?.result?.metadata?.taskId)) return 'Task started.';
+    if (payload.ok === false && payload.error) return formatFailurePayload(payload);
+    const outputText = trim(payload.outputText);
+    return outputText ? `Codex task completed.\n\n${outputText}` : 'Codex task completed.';
+}
+
+export async function action(invocation = {}) {
+    const prompt = normalizePrompt(invocation);
+    if (!prompt) return 'Codex needs a natural-language task to run.';
+    const payload = {
+        prompt,
+        projectDir: resolveProjectDir(invocation),
+    };
+    try {
+        const result = parseTaskResult(await callAgentTool(TARGET_AGENT, TOOL_NAME, payload, {
+            agentClient: invocation.agentClient,
+            userDelegationToken: invocation.userDelegationToken,
+            context: invocation.context,
+        }));
+        return normalizeAnswer(result);
+    } catch (error) {
+        if (error?.task) {
+            return `Codex task failed: ${formatFailurePayload(parseTaskResult(error.task))}`;
+        }
+        return `Codex task failed: ${error?.message || 'delegated task failed'}`;
+    }
+}
+
+export default action;

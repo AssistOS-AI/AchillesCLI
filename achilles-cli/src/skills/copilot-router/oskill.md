@@ -28,25 +28,39 @@ Strict rules:
    URL to the user as the full absolute `http://` or `https://` URL returned by
    the launcher, on its own line. If the launcher reports unavailable, surface
    that message plainly. Do not fabricate browser session availability.
-4. Use `launch-open-interpreter` only for requests that require executing,
+4. When the user explicitly asks Codex or `codexAgent` to execute a task,
+   **call `launch-codex`**. Forward the complete task text as plain text and
+   let the fixed launcher own agent activation, model selection, and
+   asynchronous task handling.
+5. When the user explicitly asks OpenCode or `opencodeAgent` to execute a
+   task, **call `launch-opencode`** under the same fixed-provider contract.
+6. When the user explicitly asks the PI coding agent or `piAgent` to execute a
+   task, **call `launch-pi`** under the same fixed-provider contract.
+7. Use `launch-open-interpreter` only for requests that require executing,
    running, testing, debugging, building, or empirically checking code or
    scripts in a sandboxed provider.
-5. If the user asks how to run code, explain normally; do not run Open
+8. If the user asks how to run code, explain normally; do not run Open
    Interpreter unless they ask you to actually run/execute/test/check it.
-6. When the user asks for online, current, recent, news, article, or web lookup
+9. When the user asks for online, current, recent, news, article, or web lookup
    information and did not ask to use a logged-in browser service, **always call
    `launch-web-search`**. Never answer from your own knowledge for questions
    about current facts, releases, dates, or live data. If the launcher reports
    unavailable, surface that message plainly. Do not invent web search
    availability and do not fabricate current web information.
-7. If the user asks to search memory, retrieve prior work, or inspect what was
+10. If the user asks to search memory, retrieve prior work, or inspect what was
    discussed, use the normal AchillesCLI/AKU context already provided. Do not
    call web search.
-8. For ordinary coding help, explanations, skill management, file reasoning,
+11. For ordinary coding help, explanations, skill management, file reasoning,
    planning, and documentation tasks, answer normally or use existing
    AchillesCLI skills as needed.
-9. Keep diagnostics out of the final user-facing answer unless the user asks
+12. Keep diagnostics out of the final user-facing answer unless the user asks
    for debug details.
+
+Examples that **must** call fixed coding-agent launchers:
+- "Ask Codex to implement this feature." -> `launch-codex`
+- "Use codexAgent to run the tests." -> `launch-codex`
+- "Have OpenCode refactor this module." -> `launch-opencode`
+- "Ask piAgent to inspect this failure." -> `launch-pi`
 
 Examples that should call `launch-open-interpreter`:
 - "Write a Python script that lists primes up to 100 and run it."
@@ -89,6 +103,9 @@ False-positive examples that should NOT call `launch-browser-use`:
 - "Search for ChatGPT alternatives" (web search, not browser use)
 
 ## Allowed-Skills
+- launch-codex
+- launch-opencode
+- launch-pi
 - launch-open-interpreter
 - launch-web-search
 - launch-browser-use
