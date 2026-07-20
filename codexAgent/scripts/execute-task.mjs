@@ -30,6 +30,8 @@ function parseInput(raw) {
 }
 
 async function main() {
+    const cancellation = new AbortController();
+    process.on('SIGTERM', () => cancellation.abort());
     const input = parseInput(await readStdin());
     if (!input) {
         process.stderr.write('Invalid or missing input. Expected JSON with prompt and projectDir.\n');
@@ -53,6 +55,7 @@ async function main() {
         prompt,
         projectDir,
         model: input.model,
+        signal: cancellation.signal,
     });
     if (!result.threadId) {
         process.stderr.write(`${result.error || 'Codex did not report a resumable thread id.'}\n`);

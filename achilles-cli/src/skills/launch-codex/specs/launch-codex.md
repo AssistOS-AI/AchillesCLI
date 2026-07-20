@@ -26,6 +26,13 @@ continuation use the model configured at continuation time instead of storing
 or replaying the model used to start the thread. WebChat keeps the same local
 task while each continuation is a new asynchronous remote execution.
 
+The provider wrappers treat `SIGTERM` as controlled cancellation. They abort
+the active Codex subprocess and, if a thread id was already reported, persist
+and return its existing opaque continuation handle before exiting
+unsuccessfully. This lets WebChat resume a cancelled running task on the same
+local task id; queued work cancelled before Codex starts has no continuation
+capability.
+
 The call path uses Ploinky `AgentMcpClient` through
 `ensureAgentsRunning` and `callToolWhenReady`. It checks Marketplace status for
 `AchillesCLI/codexAgent`, enables the installed agent in explicit `global` mode

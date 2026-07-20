@@ -24,6 +24,8 @@ function parseInput(raw) {
 }
 
 async function main() {
+    const cancellation = new AbortController();
+    process.on('SIGTERM', () => cancellation.abort());
     const input = parseInput(await readStdin());
     const handle = String(input?.handle || '').trim();
     const prompt = String(input?.prompt || '').trim();
@@ -33,8 +35,17 @@ async function main() {
         prompt,
         projectDir: record.projectDir,
         threadId: record.threadId,
+        signal: cancellation.signal,
     });
-    if (!result.ok) throw new Error(result.error || 'Codex continuation failed.');
+    if (!result.ok) {
+        process.stdout.write(JSON.stringify({
+            outputText: result.outputText || '',
+            continuation: continuationDescriptor(handle),
+        }));
+        process.stderr.write(`${result.error || 'Codex continuation failed.'}\n`);
+        process.exitCode = 1;
+        return;
+    }
     writeContinuationRecord(handle, {
         ...record,
         threadId: result.threadId || record.threadId,

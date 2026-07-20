@@ -118,6 +118,16 @@ Ploinky integration boundary:
     restores the original project directory and provider session from
     agent-private persistent storage, and returns the same handle. Initial and
     continued executions opt into full task-log retention.
+22. Async `opencodeAgent`, `piAgent`, and `codexAgent` wrappers must treat
+    `SIGTERM` as a controlled cancellation request. Each wrapper aborts its
+    provider subprocess, waits for the runner to resolve the provider session
+    or thread when one already exists, persists the opaque continuation record,
+    emits the same structured continuation descriptor, and exits
+    unsuccessfully so AgentServer records `cancelled` rather than success.
+    AgentServer may force-terminate the process group after its two-second
+    cleanup grace period. Cancellation before provider execution creates no
+    handle; cancellation after session creation remains continuable through the
+    normal stable-local-task-id flow.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
@@ -164,12 +174,24 @@ Provider launcher discovery:
    invocation, not startup-time dependencies of AchillesCLI. Their own
    manifests must declare `startup: manual` so a later general workspace boot
    does not revive a dormant worker merely because it remains registered.
-8. `piAgent` must run PI in print mode with an explicit persisted session id
-   and session directory. `opencodeAgent` must run tasks in OpenCode's default
+8. `piAgent` must run PI in JSON event-stream mode with an explicit persisted
+   session id and session directory. The wrapper must parse PI's JSONL stdout
+   incrementally and immediately forward assistant text deltas and textual tool
+   output to the AgentServer live-log channel. Cumulative tool updates and their
+   final result must be de-duplicated. Assistant `message_end` text is the final
+   `outputText`; lifecycle events, thinking content, signatures, encrypted
+   content, and usage metadata must not enter the visible log. Non-JSON
+   diagnostic stdout and provider stderr remain visible without synthetic
+   status messages or stream prefixes. Its task runner must
+   retain `HOME=/root` and must not
+   override `PI_CODING_AGENT_DIR`, so interactive CLI login, initial tasks, and
+   continued tasks all use PI's persistent default configuration directory
+   under the agent home, including the same OAuth credentials and settings.
+   `opencodeAgent` must run tasks in OpenCode's default
    formatted-output mode and must pass the captured provider session id through
-   `--session` on continuation. Both wrappers must relay provider stdout and
-   stderr byte-for-byte to the AgentServer live-log channel without parsing,
-   filtering, synthetic status messages, or stream prefixes. For initial
+   `--session` on continuation. OpenCode must relay provider stdout and stderr
+   byte-for-byte to the AgentServer live-log channel without synthetic status
+   messages or stream prefixes. For initial
    PI tasks, the provider owns model selection. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,
    read the effective `defaultProvider`, `defaultModel`, and valid
@@ -190,7 +212,10 @@ Provider launcher discovery:
    descriptor. A wrapper whose provider session exists must emit and persist
    the same descriptor even when the command exits unsuccessfully. TaskQueue
    exposes only successful `outputText` to ordinary MCP callers and retains the
-   descriptor as task metadata for completed and failed tasks. Provider session
+   descriptor as task metadata for completed, failed, and cancelled running
+   tasks. The wrappers abort their provider subprocess on `SIGTERM` and use the
+   remaining cleanup window to save that descriptor; they do not synthesize a
+   continuation for work cancelled while still queued. Provider session
    ids, session directories, project paths,
    and internal lookup titles must remain behind UUID continuation handles
    stored in agent-private files with restrictive permissions.
@@ -206,7 +231,9 @@ Provider launcher discovery:
    `--model`, so the Codex configuration active for the new turn remains the
    model authority. Both initial and resumed execution use Codex's explicit
    non-interactive approval-and-sandbox bypass inside the isolated Ploinky
-   runtime.
+   runtime. On controlled cancellation the wrapper aborts Codex and preserves a
+   reported thread id behind the existing opaque handle before exiting
+   unsuccessfully.
 10. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent

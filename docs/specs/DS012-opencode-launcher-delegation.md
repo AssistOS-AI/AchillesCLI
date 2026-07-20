@@ -75,6 +75,14 @@ task. The handle is an authority scoped to the authenticated MCP policy path;
 WebChat must not receive the real OpenCode session id, model selection, or a
 replacement project directory.
 
+The execute and continuation wrappers must listen for `SIGTERM`, abort the
+active OpenCode subprocess, and still complete session discovery and private
+handle persistence when OpenCode created a session before cancellation. They
+then emit the structured continuation descriptor and exit unsuccessfully.
+AgentServer records the task as cancelled while retaining that descriptor, so
+WebChat may start a later turn on the same local task id. Work cancelled while
+queued never starts OpenCode and therefore has no continuation capability.
+
 The launcher uses `AgentMcpClient.callToolWithoutWait`. If the target tool is
 registered as an async MCP tool and the call returns AgentServer task metadata,
 AchillesCLI WebChat detaches the task through its generic background-task
@@ -89,7 +97,8 @@ task-log retention, and use a five-minute execution timeout. `execute-task`
 advertises `continue-task` as its generic continuation capability. Every
 continuation creates a new AgentServer remote task, while Ploinky WebChat keeps
 the original local task id and increments its turn. A completed or failed task
-with a persisted handle remains continuable.
+with a persisted handle remains continuable, as does a cancelled running task
+whose handle was persisted during controlled shutdown.
 
 The call path must remain Ploinky-mediated through Ploinky
 `AgentMcpClient.mjs`. The AchillesCLI runtime must have `PLOINKY_AGENT_ID` and

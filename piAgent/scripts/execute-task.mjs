@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -50,6 +51,108 @@ function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
     return next.length <= limit ? next : next.slice(next.length - limit);
 }
 
+function extractTextContent(value) {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) return value.map(extractTextContent).join('');
+    if (!value || typeof value !== 'object') return '';
+    if (value.type === 'text' && typeof value.text === 'string') return value.text;
+    if ('content' in value) return extractTextContent(value.content);
+    return '';
+}
+
+function unseenText(previous, next) {
+    if (!next) return '';
+    if (!previous) return next;
+    if (next.startsWith(previous)) return next.slice(previous.length);
+    if (previous.endsWith(next)) return '';
+    const overlapLimit = Math.min(previous.length, next.length);
+    for (let overlap = overlapLimit; overlap > 0; overlap -= 1) {
+        if (previous.endsWith(next.slice(0, overlap))) return next.slice(overlap);
+    }
+    return next;
+}
+
+export function createPiJsonEventParser({ onText = () => {} } = {}) {
+    const decoder = new StringDecoder('utf8');
+    const toolOutput = new Map();
+    let buffered = '';
+    let currentAssistantText = '';
+    let finalAssistantText = '';
+
+    const emit = (text) => {
+        if (typeof text === 'string' && text) onText(text);
+    };
+    const processLine = (line) => {
+        if (!line.trim()) return;
+        let event;
+        try {
+            event = JSON.parse(line);
+        } catch {
+            emit(`${line}\n`);
+            return;
+        }
+
+        if (event?.type === 'message_start' && event.message?.role === 'assistant') {
+            currentAssistantText = '';
+            return;
+        }
+        if (event?.type === 'message_update') {
+            const update = event.assistantMessageEvent;
+            if (update?.type === 'text_delta' && typeof update.delta === 'string') {
+                currentAssistantText += update.delta;
+                emit(update.delta);
+            }
+            return;
+        }
+        if (event?.type === 'message_end' && event.message?.role === 'assistant') {
+            const completeText = extractTextContent(event.message.content);
+            emit(unseenText(currentAssistantText, completeText));
+            if (completeText) finalAssistantText = completeText;
+            currentAssistantText = '';
+            return;
+        }
+        if (event?.type === 'tool_execution_update' || event?.type === 'tool_execution_end') {
+            const toolCallId = String(event.toolCallId || '');
+            const previous = toolOutput.get(toolCallId) || '';
+            const value = event.type === 'tool_execution_update'
+                ? event.partialResult
+                : event.result;
+            const completeText = extractTextContent(value);
+            const suffix = unseenText(previous, completeText);
+            emit(suffix);
+            if (event.type === 'tool_execution_end') {
+                toolOutput.delete(toolCallId);
+            } else {
+                toolOutput.set(toolCallId, `${previous}${suffix}`);
+            }
+        }
+    };
+    const consume = (text) => {
+        buffered += text;
+        let newline = buffered.indexOf('\n');
+        while (newline !== -1) {
+            const line = buffered.slice(0, newline).replace(/\r$/, '');
+            buffered = buffered.slice(newline + 1);
+            processLine(line);
+            newline = buffered.indexOf('\n');
+        }
+    };
+
+    return {
+        push(chunk) {
+            consume(decoder.write(chunk));
+        },
+        finish() {
+            consume(decoder.end());
+            if (buffered) processLine(buffered.replace(/\r$/, ''));
+            buffered = '';
+        },
+        getFinalOutputText() {
+            return finalAssistantText;
+        },
+    };
+}
+
 function readJsonFile(filePath) {
     try {
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -88,12 +191,14 @@ function runPi({
     sessionId,
     sessionDir,
     logStream,
-    env = process.env,
+    env = { ...process.env },
+    signal,
 }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
         const args = [
-            '-p',
+            '--mode',
+            'json',
             '--session-id',
             sessionId,
             '--session-dir',
@@ -109,15 +214,25 @@ function runPi({
                 ...process.env,
                 ...env,
                 HOME: '/root',
-                PI_CODING_AGENT_DIR: '/code',
                 PI_OFFLINE: '1',
                 PI_SKIP_VERSION_CHECK: '1',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+        const abort = () => {
+            try { child.kill('SIGTERM'); } catch (_) { }
+        };
+        if (signal?.aborted) abort();
+        else signal?.addEventListener?.('abort', abort, { once: true });
         let stdoutTail = '';
         let stderrTail = '';
         let timedOut = false;
+        const jsonEvents = createPiJsonEventParser({
+            onText(text) {
+                stdoutTail = appendBoundedTail(stdoutTail, text);
+                logStream.write(text);
+            },
+        });
         const timeout = setTimeout(() => {
             timedOut = true;
             logStream.write(`PI task timed out after ${PI_TIMEOUT_MS / 1000}s; sending SIGTERM\n`);
@@ -128,8 +243,7 @@ function runPi({
         }, PI_TIMEOUT_MS);
 
         child.stdout.on('data', (chunk) => {
-            stdoutTail = appendBoundedTail(stdoutTail, chunk.toString('utf8'));
-            logStream.write(chunk);
+            jsonEvents.push(chunk);
         });
         child.stderr.on('data', (chunk) => {
             stderrTail = appendBoundedTail(stderrTail, chunk.toString('utf8'));
@@ -137,17 +251,21 @@ function runPi({
         });
         child.on('error', (error) => {
             clearTimeout(timeout);
+            signal?.removeEventListener?.('abort', abort);
             reject(error);
         });
-        child.on('close', (code, signal) => {
+        child.on('close', (code, closeSignal) => {
             clearTimeout(timeout);
+            signal?.removeEventListener?.('abort', abort);
+            jsonEvents.finish();
             resolve({
                 code,
-                signal,
+                signal: closeSignal,
                 timedOut,
                 durationMs: Date.now() - startedAt,
                 stdoutTail,
                 stderrTail,
+                finalOutputText: jsonEvents.getFinalOutputText(),
             });
         });
     });
@@ -193,6 +311,7 @@ export async function executeTask({
     thinking,
     sessionId,
     sessionDir: suppliedSessionDir,
+    signal,
 } = {}) {
     const logStream = createContainerLogStream();
     if (typeof prompt !== 'string' || !prompt.trim()) {
@@ -223,6 +342,7 @@ export async function executeTask({
             sessionId: handle,
             sessionDir: resolvedSessionDir,
             logStream,
+            signal,
         });
         if (result.timedOut || result.code !== 0) {
             return {
@@ -235,7 +355,7 @@ export async function executeTask({
         writeContinuationRecord(handle, { projectDir: resolvedProjectDir });
         return {
             ok: true,
-            outputText: summarizeOutput(result),
+            outputText: result.finalOutputText || summarizeOutput(result),
             continuation: continuationDescriptor(handle),
         };
     } catch (error) {
@@ -248,6 +368,8 @@ export async function executeTask({
 }
 
 async function main() {
+    const cancellation = new AbortController();
+    process.on('SIGTERM', () => cancellation.abort());
     try {
         const input = parseInput(await readStdin());
         if (!input) {
@@ -255,7 +377,7 @@ async function main() {
             process.exitCode = 1;
             return;
         }
-        const result = await executeTask(input);
+        const result = await executeTask({ ...input, signal: cancellation.signal });
         if (!result.ok) {
             if (result.continuation) {
                 process.stdout.write(JSON.stringify({

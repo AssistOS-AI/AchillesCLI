@@ -35,6 +35,8 @@ function parseInput(raw) {
 }
 
 async function main() {
+    const cancellation = new AbortController();
+    process.on('SIGTERM', () => cancellation.abort());
     const stdinData = await readStdin();
     const input = parseInput(stdinData);
 
@@ -64,6 +66,7 @@ async function main() {
         model,
         captureSession: true,
         createProjectDir: true,
+        signal: cancellation.signal,
     });
 
     if (!result.sessionId) {

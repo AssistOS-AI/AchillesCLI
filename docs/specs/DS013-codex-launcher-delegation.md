@@ -79,6 +79,14 @@ than the model used by the initial turn. The same opaque handle is returned
 after success. Ploinky creates a new remote AgentServer task for the turn while
 keeping the stable local WebChat task id and incrementing its turn counter.
 
+Both wrappers treat `SIGTERM` as controlled cancellation: they abort the Codex
+subprocess and, when Codex already reported a thread id, persist it through the
+same opaque handle and emit the structured continuation descriptor before
+exiting unsuccessfully. AgentServer therefore records cancellation while
+retaining the provider thread needed for a later turn on the same local task
+id. A queued cancellation that never starts Codex has no thread and is not
+continuable.
+
 The provider remains `startup: manual` and absent from the AchillesCLI
 manifest dependency graph. Direct operator use through
 `ploinky cli codexAgent` remains supported independently of WebChat launcher

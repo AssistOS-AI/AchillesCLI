@@ -140,10 +140,17 @@
     GPTResearcher starts Search Agent first.
     The OpenCode, PI, and Codex launchers accept only the plain task text and leave model
     selection entirely to their target agents.
-    PI runs in print mode with a persisted session id and directory. OpenCode tasks use the provider's
+    PI tasks run in JSON event-stream mode with a persisted session id and directory.
+    The wrapper parses that stream incrementally and forwards only readable assistant text
+    and de-duplicated textual tool output into the live task log. Lifecycle events, thinking
+    metadata, signatures, encrypted content, and usage data stay out of the visible stream;
+    the final assistant message supplies the task result. Its interactive CLI,
+    initial task runner, and continuation runner share PI's persistent default configuration
+    directory under the agent home, so OAuth logins and provider settings apply consistently.
+    OpenCode tasks use the provider's
     default formatted output and resolve the created session through a separate random-title lookup before
-    using <code>--session</code> when resumed. Both wrappers relay provider stdout and stderr unchanged into
-    live task logs, without parsing or synthetic tool-status messages. OpenCode's
+    using <code>--session</code> when resumed. OpenCode relays provider stdout and stderr unchanged into
+    live task logs without synthetic tool-status messages. OpenCode's
     exported session data is inspected only off-stream to identify the last assistant
     answer for final-result metadata, allowing WebChat to show intermediate output in
     grey while keeping the raw visible stream unchanged.

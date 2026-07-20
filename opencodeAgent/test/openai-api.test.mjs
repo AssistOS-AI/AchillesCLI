@@ -17,7 +17,7 @@ const silentLogStream = { write() {} };
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
 const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
 
-function runTaskScript(scriptPath, input, env) {
+function runTaskScript(scriptPath, input, env, { signalAfterMs = 0 } = {}) {
     return new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [scriptPath], {
             env: { ...process.env, ...env },
@@ -30,6 +30,9 @@ function runTaskScript(scriptPath, input, env) {
         child.on('error', reject);
         child.on('close', (code) => resolve({ code, stdout, stderr }));
         child.stdin.end(JSON.stringify({ input }));
+        if (signalAfterMs > 0) {
+            setTimeout(() => child.kill('SIGTERM'), signalAfterMs);
+        }
     });
 }
 
@@ -65,7 +68,10 @@ if (titleIndex > 0 || process.argv.includes('--session')) {
     process.stdout.write('reading repository\\n');
 }
 process.stdout.write('fake opencode ');
-await new Promise((resolve) => setTimeout(resolve, 25));
+await new Promise((resolve) => setTimeout(
+    resolve,
+    Number(process.env.FAKE_OPENCODE_WAIT_MS || 25),
+));
 process.stdout.write('output');
 if (process.env.FAKE_OPENCODE_FAIL === '1') {
     process.stderr.write('insufficient credits');
@@ -227,6 +233,35 @@ test('failed OpenCode task returns a continuation handle when its session was cr
     ));
     assert.equal(record.sessionId, 'ses_test_resume');
     assert.equal(record.projectDir, projectDir);
+});
+
+test('cancelled OpenCode task saves the session before the wrapper exits', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-agent-cancelled-task-test-'));
+    const projectDir = path.join(tmpDir, 'project');
+    const continuationStore = path.join(tmpDir, 'continuations');
+    await fs.mkdir(projectDir);
+    const fakeBin = await makeFakeOpenCodeBin(tmpDir);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Stop after session creation',
+        projectDir,
+    }, {
+        OPENCODE_BIN: fakeBin,
+        OPENCODE_ARGS_PATH: path.join(tmpDir, 'args.json'),
+        OPENCODE_TITLE_PATH: path.join(tmpDir, 'title.txt'),
+        OPENCODE_PROJECT_DIR: projectDir,
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        FAKE_OPENCODE_WAIT_MS: '1000',
+    }, { signalAfterMs: 100 });
+
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    const record = JSON.parse(await fs.readFile(
+        path.join(continuationStore, `${payload.continuation.handle}.json`),
+        'utf8',
+    ));
+    assert.equal(record.sessionId, 'ses_test_resume');
 });
 
 test('continue-task resumes the exact OpenCode session behind the opaque handle', async () => {

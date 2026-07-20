@@ -10,7 +10,7 @@ import { buildCodexArgs, eventLogText } from '../scripts/codex-runner.mjs';
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
 const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
 
-function runTaskScript(scriptPath, input, env) {
+function runTaskScript(scriptPath, input, env, { signalAfterMs = 0 } = {}) {
     return new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [scriptPath], {
             env: { ...process.env, ...env },
@@ -23,6 +23,9 @@ function runTaskScript(scriptPath, input, env) {
         child.on('error', reject);
         child.on('close', (code) => resolve({ code, stdout, stderr }));
         child.stdin.end(JSON.stringify({ input }));
+        if (signalAfterMs > 0) {
+            setTimeout(() => child.kill('SIGTERM'), signalAfterMs);
+        }
     });
 }
 
@@ -40,7 +43,10 @@ process.stdout.write(JSON.stringify({
     type: 'item.completed',
     item: { type: 'command_execution', aggregated_output: 'command output\\n' }
 }) + '\\n');
-await new Promise((resolve) => setTimeout(resolve, 10));
+await new Promise((resolve) => setTimeout(
+    resolve,
+    Number(process.env.FAKE_CODEX_WAIT_MS || 10),
+));
 const configuredModel = process.env.FAKE_CODEX_CURRENT_MODEL || 'configured-default';
 process.stdout.write(JSON.stringify({
     type: 'item.completed',
@@ -201,4 +207,31 @@ test('failed Codex execution still returns a continuation when the thread exists
     assert.equal(payload.continuation.toolName, 'continue-task');
     assert.match(payload.continuation.handle, /^[0-9a-f-]{36}$/i);
     assert.match(result.stderr, /Codex task failed with exit code 1/);
+});
+
+test('cancelled Codex execution saves the observed thread before exiting', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-agent-cancelled-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    await fs.mkdir(projectDir);
+    const fakeBin = await makeFakeCodexBin(temporaryDirectory);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Stop Codex after thread creation',
+        projectDir,
+    }, {
+        CODEX_BIN: fakeBin,
+        CODEX_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        FAKE_CODEX_WAIT_MS: '1000',
+    }, { signalAfterMs: 100 });
+
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    const record = JSON.parse(await fs.readFile(
+        path.join(continuationStore, `${payload.continuation.handle}.json`),
+        'utf8',
+    ));
+    assert.equal(record.threadId, '018f6f4a-4ec8-7d31-a852-0242ac120002');
 });

@@ -174,6 +174,7 @@ export function runOpenCode({
     logStream,
     env = process.env,
     opencodeBin = process.env.OPENCODE_BIN || DEFAULT_OPENCODE_BIN,
+    signal,
 }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
@@ -208,6 +209,11 @@ export function runOpenCode({
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+        const abort = () => {
+            try { child.kill('SIGTERM'); } catch (_) { }
+        };
+        if (signal?.aborted) abort();
+        else signal?.addEventListener?.('abort', abort, { once: true });
 
         let stdoutTail = '';
         let stderrTail = '';
@@ -235,11 +241,13 @@ export function runOpenCode({
 
         child.on('error', (error) => {
             clearTimeout(timeout);
+            signal?.removeEventListener?.('abort', abort);
             reject(error);
         });
 
-        child.on('close', async (code, signal) => {
+        child.on('close', async (code, closeSignal) => {
             clearTimeout(timeout);
+            signal?.removeEventListener?.('abort', abort);
             let resolvedSessionId = sessionId;
             if (sessionTitle) {
                 try {
@@ -269,7 +277,7 @@ export function runOpenCode({
             }
             resolve({
                 code,
-                signal,
+                signal: closeSignal,
                 timedOut,
                 durationMs: Date.now() - startedAt,
                 stdoutTail,
@@ -309,6 +317,7 @@ export async function executeOpenCodeTask({
     logStream = createContainerLogStream(),
     env = process.env,
     createProjectDir = true,
+    signal,
 }) {
     const resolvedProjectDir = path.resolve(projectDir);
     const effectiveProjectDir = resolvedProjectDir;
@@ -341,6 +350,7 @@ export async function executeOpenCodeTask({
             logStream,
             env,
             opencodeBin: env.OPENCODE_BIN || DEFAULT_OPENCODE_BIN,
+            signal,
         });
 
         const semanticFailure = detectSemanticFailure(result);

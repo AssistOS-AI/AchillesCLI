@@ -90,6 +90,7 @@ export function runCodex({
     threadId = '',
     logStream = createContainerLogStream(),
     env = process.env,
+    signal,
 }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
@@ -103,6 +104,11 @@ export function runCodex({
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+        const abort = () => {
+            try { child.kill('SIGTERM'); } catch (_) { }
+        };
+        if (signal?.aborted) abort();
+        else signal?.addEventListener?.('abort', abort, { once: true });
         let stdoutTail = '';
         let stderrTail = '';
         let jsonBuffer = '';
@@ -156,14 +162,16 @@ export function runCodex({
         });
         child.on('error', (error) => {
             clearTimeout(timeout);
+            signal?.removeEventListener?.('abort', abort);
             reject(error);
         });
-        child.on('close', (code, signal) => {
+        child.on('close', (code, closeSignal) => {
             clearTimeout(timeout);
+            signal?.removeEventListener?.('abort', abort);
             if (jsonBuffer) consumeLine(jsonBuffer, false);
             resolve({
                 code,
-                signal,
+                signal: closeSignal,
                 timedOut,
                 durationMs: Date.now() - startedAt,
                 stdoutTail,
@@ -189,6 +197,7 @@ export async function executeCodexTask({
     threadId = '',
     logStream = createContainerLogStream(),
     env = process.env,
+    signal,
 }) {
     const taskPrompt = String(prompt || '').trim();
     const resolvedProjectDir = path.resolve(String(projectDir || '').trim());
@@ -203,6 +212,7 @@ export async function executeCodexTask({
             threadId: resolvedThreadId,
             logStream,
             env,
+            signal,
         });
         const outputText = result.outputText
             || (result.stderrTail || '').trim()
