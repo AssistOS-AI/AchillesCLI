@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runBrokeredMainAgent } from './broker/AchillesBroker.mjs';
 import { normalizePermissionMode, PERMISSION_MODES } from './permissions/protocol.mjs';
+import { getPermissionMode } from './lib/achillesSettings.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,7 +28,7 @@ async function main() {
 
 export function parseBrokerBootstrapOptions(args) {
     let workingDir = process.cwd();
-    let permissionMode = PERMISSION_MODES.ASK;
+    let requestedPermissionMode = null;
     const skillRoots = [];
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
@@ -47,16 +48,17 @@ export function parseBrokerBootstrapOptions(args) {
         } else if (arg === '--permissions') {
             const requested = normalizePermissionMode(args[index + 1]);
             if (!requested) throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
-            permissionMode = requested;
+            requestedPermissionMode = requested;
             index += 1;
         } else if (arg.startsWith('--permissions=')) {
             const requested = normalizePermissionMode(arg.slice('--permissions='.length));
             if (!requested) throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
-            permissionMode = requested;
+            requestedPermissionMode = requested;
         } else if (arg === '--skip-permissions') {
-            permissionMode = PERMISSION_MODES.FULL;
+            requestedPermissionMode = PERMISSION_MODES.FULL;
         }
     }
+    const permissionMode = requestedPermissionMode || getPermissionMode(workingDir);
     return { workingDir, permissionMode, skillRoots };
 }
 
@@ -71,7 +73,9 @@ function isWebchatRuntime() {
         || process.argv.some((arg) => typeof arg === 'string' && arg.startsWith('--sso-'));
 }
 
-main().catch((error) => {
-    console.error('Fatal error:', error.message);
-    process.exitCode = 1;
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+    main().catch((error) => {
+        console.error('Fatal error:', error.message);
+        process.exitCode = 1;
+    });
+}

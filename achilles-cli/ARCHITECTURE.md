@@ -8,9 +8,9 @@ Când pornim `achilles-cli` într-un folder, vrem ca acel folder să devină lim
 
 Faptul că agentul este enabled global în Ploinky nu trebuie să îi dea acces global la filesystem. „Global” spune doar că agentul este disponibil în workspace. Accesul efectiv al unei sesiuni va fi stabilit de folderul din care este pornită comanda CLI.
 
-Ca să putem izola agentul și, în același timp, să permitem o comandă în afara folderului după aprobare, nu putem pune tot procesul `achilles-cli` într-un singur `bwrap`. Avem nevoie de un proces mic rămas în exterior, numit în documentul acesta **Achilles Broker**.
+Ca să izolăm agentul fără să mutăm deciziile de securitate în skilluri, nu punem tot procesul `achilles-cli` într-un singur `bwrap`. Păstrăm un proces mic de încredere în exterior, numit în documentul acesta **Achilles Broker**. În implementarea actuală, faptul că Brokerul este exterior nu îi permite unei comenzi `bash` să ruleze pe host: toate comenzile sunt pornite într-un sandbox nou, limitat la workspace.
 
-Brokerul pornește `MainAgent` în `bwrap`, primește cererile lui de execuție și pornește fiecare comandă în mediul potrivit. `MainAgent` gândește și ține conversația. Brokerul nu gândește și nu decide ce ar fi util; el aplică setarea `/permissions` și deciziile Supervisorului pentru comenzile toolului `bash`.
+Brokerul pornește `MainAgent` în `bwrap` și gestionează numai permisiunile. `MainAgent` gândește, ține conversația și pornește comenzile Bash în propriul sandbox. Brokerul nu gândește, nu execută comenzi și nu decide ce ar fi util; el aplică setarea `/permissions` prin Supervisor.
 
 ## Cum arată arhitectura
 
@@ -21,36 +21,35 @@ flowchart TB
     subgraph H[Procesul CLI de încredere - în afara bwrap]
         B[Achilles Broker]
         S[SupervisorHost pentru bash]
-        E[Command Executor]
         B --- S
-        B --- E
     end
 
     subgraph A[Sandboxul principal bwrap]
         M[MainAgent]
         P[SupervisorProxy pentru bash]
         K[Toolul bash]
+        E[Local Bash Executor]
         O[Toate celelalte tooluri]
         C[Memoria always-allow]
         M --- K
         M --- O
         M --- C
         K --- P
+        K --> E
     end
 
     subgraph X[Execuția unei comenzi bash]
-        R[Proces izolat la workspace sau retry aprobat]
+        R[Proces copil care moștenește sandboxul]
     end
 
     U <-->|prompt, selector de aprobare și decizie| B
     B <--> M
     P <-->|aprobare doar pentru bash| S
-    K -->|cerere de execuție| B
     E -->|pornește| R
     R -->|rezultat capturat| E
 ```
 
-`SupervisorHost` și `Command Executor` sunt responsabilități ale procesului exterior. Ele pot face parte din același proces cu Brokerul; în diagramă sunt separate doar ca să fie clar cine decide și cine execută.
+`SupervisorHost` este o responsabilitate a procesului exterior. `Local Bash Executor` este în procesul sandboxat și pornește comanda numai după ce fluxul agentic primește aprobarea necesară.
 
 ## Entitățile
 
@@ -71,21 +70,21 @@ El are câteva responsabilități simple:
 - pornește și oprește sandboxul în care rulează `MainAgent`;
 - transmite prompturile și răspunsurile între CLI sau WebChat și `MainAgent`;
 - păstrează setarea autoritativă selectată prin `/permissions`;
-- primește cereri structurate de aprobare și execuție pentru `bash`;
-- verifică dovada aprobării înainte de execuția unei comenzi `bash`;
-- pornește comenzile `bash` aprobate în procese separate;
-- capturează stdout și stderr fără să le scrie direct în WebChat sau terminal;
+- primește numai cereri structurate de autorizare pentru `bash`;
+- întoarce decizia `approve`, `deny` sau `alwaysApprove` către SupervisorProxy;
 - oprește procesele copil când sesiunea este anulată sau închisă.
 
 Brokerul nu trebuie să interpreteze promptul și nu trebuie să decidă singur dacă o comandă este bună pentru task. El aplică mecanic decizia Supervisorului.
 
-După `allow` sau `always allow`, aprobarea rămâne un detaliu intern al Supervisorului și Brokerului. Executorul capturează stdout și stderr și le întoarce numai către skill prin socketul Brokerului. Handlerul `bash` întoarce apoi rezultatul în sesiunea agentică, fără să adauge text sau metadate prin care agentul să afle că utilizatorul a aprobat comanda. Utilizatorul vede numai răspunsul final compus de agent, nu outputul brut intermediar al toolului.
+După `allow` sau `always allow`, aprobarea rămâne un detaliu intern al Supervisorului. Executorul local capturează stdout și stderr și le întoarce direct skillului, în interiorul sandboxului. Handlerul `bash` întoarce apoi rezultatul în sesiunea agentică, fără să adauge text sau metadate prin care agentul să afle că utilizatorul a aprobat comanda. Utilizatorul vede numai răspunsul final compus de agent, nu outputul brut intermediar al toolului.
 
-Pentru că Brokerul rulează în afara `bwrap`, el poate porni mai întâi o comandă într-un sandbox limitat la workspace și, după aprobare, poate relansa exact aceeași comandă în exterior. Asta nu modifică sandboxul principal și nu îi dă automat aceeași libertate lui `MainAgent`.
+Brokerul rulează în afara `bwrap` ca să păstreze autoritatea asupra modului de permisiuni și ca procesul sandboxat să nu își poată aproba singur comenzile. Brokerul nu expune o operație `bash.execute` și nu pornește procese Bash.
 
 ### Sandboxul principal `bwrap`
 
 `MainAgent` rulează în sandboxul principal pe toată durata sesiunii.
+
+Comenzile Bash sunt procese copil ale acestui proces și moștenesc același mount namespace. Nu se construiește un al doilea `bwrap` pentru fiecare comandă.
 
 În mod normal, vede:
 
@@ -102,7 +101,7 @@ Nu vede automat celelalte proiecte din workspace și nu primește întregul home
 
 `MainAgent` rămâne responsabil pentru conversație, planificare, alegerea skillurilor și compunerea răspunsului final.
 
-El nu mai este procesul de încredere care poate lansa orice comandă direct pe sistem. Un tool poate lucra direct în workspace, fiind oricum limitat de `bwrap`. Dacă are nevoie de o execuție controlată sau de acces în afara limitei, trimite o cerere Brokerului.
+El nu mai este procesul de încredere care poate lansa orice comandă direct pe sistem. Un tool poate lucra direct în workspace, fiind oricum limitat de `bwrap`. Pentru `bash`, Supervisorul cere autorizarea Brokerului, apoi executorul local pornește procesul copil în sandboxul deja existent.
 
 Un skill care încearcă să ocolească Brokerul poate porni doar procese care moștenesc sandboxul principal. Cu alte cuvinte, poate lucra în workspace, dar nu poate transforma singur un proces într-unul nesandboxat.
 
@@ -110,10 +109,12 @@ Un skill care încearcă să ocolească Brokerul poate porni doar procese care m
 
 AchillesCLI va avea comanda `/permissions`, cu două opțiuni:
 
-1. **`ask-for-approval`** — fiecare comandă cerută prin toolul `bash` trece prin Supervisor înainte de execuție. După `allow` sau `always allow`, Brokerul pornește comanda exactă în afara sandboxului de workspace.
-2. **`full-access`** — comenzile toolului `bash` rulează automat cât timp rămân în workspace-ul sesiunii. Brokerul le pornește mai întâi într-un `bwrap` limitat la acel workspace. Dacă o comandă pare blocată pentru că încearcă să iasă, Brokerul apelează Supervisorul și cere aprobarea pentru relansarea exactă în afara sandboxului.
+1. **`ask-for-approval`** — fiecare comandă nouă cerută prin toolul `bash` trece prin Supervisor înainte de execuție. După `allow` sau `always allow`, executorul local pornește comanda ca proces copil al `MainAgent`.
+2. **`full-access`** — comenzile toolului `bash` sar peste întrebarea Supervisorului și sunt pornite direct de executorul local. Ele moștenesc același sandbox al `MainAgent`; un eșec produs de accesul la o cale exterioară este întors ca rezultat obișnuit al toolului.
 
-`ask-for-approval` este modul implicit și sigur. Setarea este valabilă pentru sesiunea CLI curentă și este cunoscută atât de `MainAgent`, pentru comportamentul conversației, cât și de Broker, care este autoritatea reală la execuție. Procesul din sandbox nu poate trece singur sesiunea în `full-access`.
+`ask-for-approval` este modul implicit și sigur atunci când workspace-ul nu are încă o valoare validă. Modul ales prin `/permissions` este salvat per workspace în `.achilles-cli/settings.json`, în același fișier cu modelul selectat, și este restaurat la următoarea pornire din acel folder. Brokerul rămâne autoritatea reală la execuție: schimbarea este persistată numai după ce Brokerul o acceptă prin canalul trusted. Procesul din sandbox nu poate trece singur sesiunea în `full-access`.
+
+Flagul `--permissions` are prioritate față de valoarea salvată pentru pornirea respectivă, fără să o rescrie. Aprobările punctuale memorate prin `always allow` rămân doar în memoria sesiunii și nu sunt puse în `settings.json`.
 
 La bootstrap, CLI-ul primește temporar o capabilitate privată de control. O citește și șterge imediat fișierul prin care a fost transmisă. Numai clientul care deține capabilitatea poate schimba `/permissions` sau poate transforma răspunsul utilizatorului într-o decizie de aprobare. Un skill poate vedea socketul normal al Brokerului ca să ceară execuția, dar nu își poate trimite singur `allow`.
 
@@ -123,7 +124,7 @@ Celelalte tooluri nu trec prin acest mecanism de aprobare. Ele sunt executate no
 
 `MainAgent` are în continuare un Supervisor, dar obiectul din interior este doar un proxy folosit de toolul `bash`.
 
-În modul `ask-for-approval`, Proxy-ul pregătește înainte de execuție cererea exactă formată din numele toolului și parametrii lui. În modul `full-access`, aceeași cerere este trimisă numai când Brokerul sau agentul solicită escaladarea unei comenzi care nu poate termina în sandboxul workspace-ului.
+În modul `ask-for-approval`, Proxy-ul pregătește înainte de execuție cererea exactă formată din numele toolului și parametrii lui. În modul `full-access`, comenzile `bash` nu produc cereri de aprobare și sunt trimise direct Brokerului pentru execuție sandboxată.
 
 Apelurile celorlalte tooluri nu ajung la `SupervisorProxy` și nu produc întrebări de aprobare.
 
@@ -131,17 +132,15 @@ Proxy-ul nu poate fabrica singur o aprobare validă. Dacă procesul exterior nu 
 
 ### SupervisorHost
 
-`SupervisorHost` este autoritatea reală de aprobare pentru `bash` și rulează lângă Broker, în afara `bwrap`. În `ask-for-approval` este consultat înainte de fiecare comandă nouă. În `full-access` este consultat numai pentru escaladarea unei comenzi în afara workspace-ului.
+`SupervisorHost` este autoritatea reală de aprobare pentru `bash` și rulează lângă Broker, în afara `bwrap`. În `ask-for-approval` este consultat înainte de fiecare comandă nouă. În `full-access` nu este consultat pentru execuțiile Bash obișnuite.
 
-Când Supervisorul este apelat — înaintea unei comenzi în `ask-for-approval` sau pentru escaladare în `full-access` — utilizatorul primește trei opțiuni:
+Când Supervisorul este apelat înaintea unei comenzi în `ask-for-approval`, utilizatorul primește trei opțiuni:
 
-- **`allow`** — comanda se execută o singură dată în afara sandboxului de workspace și nu este adăugată în memoria `always-allow`;
+- **`allow`** — comanda se execută o singură dată în sandboxul workspace-ului și nu este adăugată în memoria `always-allow`;
 - **`deny`** — Supervisorul încheie etapa de aprobare fără să apeleze handlerul skillului `bash`; AgentLib memorează cu un `resultRef` numele exact al toolului, parametrii exacți și motivul refuzului, apoi plannerul continuă în același prompt;
-- **`always allow`** — comanda se execută în afara sandboxului de workspace, iar aprobarea exactă este memorată în `MainAgent` pentru restul sesiunii.
+- **`always allow`** — comanda se execută în sandboxul workspace-ului, iar aprobarea exactă este memorată în `MainAgent` pentru restul sesiunii.
 
 Supervisorul decide pentru combinația exactă `toolName + params`. O aprobare pentru o anumită comandă nu înseamnă că toate comenzile viitoare sunt aprobate.
-
-Decizia lui produce o dovadă de aprobare legată de aceeași combinație `toolName + params`. Brokerul poate verifica dovada înainte să execute ceva.
 
 ### Memoria `always-allow`
 
@@ -154,50 +153,40 @@ Workspace-ul nu trebuie repetat în cheie, deoarece este fix pentru întreaga se
 
 Dacă numele toolului sau parametrii se schimbă, este o comandă nouă și se cere altă aprobare.
 
-`MainAgent` nu memorează doar răspunsul „da”. El memorează dovada primită de la `SupervisorHost`. La reutilizare, trimite dovada Brokerului împreună cu cererea exactă. Brokerul verifică dacă ele corespund.
+`allow` produce o aprobare pentru o singură execuție sandboxată și nu intră în memorie. `always allow` poate fi refolosit numai pentru aceeași combinație `toolName + params`; apelurile viitoare identice sar peste întrebarea Supervisorului, dar rămân în sandbox. Aprobarea expiră când se termină procesul CLI.
 
-`allow` produce o aprobare pentru o singură execuție în afara sandboxului și nu intră în memorie. `always allow` poate fi refolosit numai pentru aceeași combinație `toolName + params`; apelurile viitoare identice pot fi pornite direct în exterior și aprobarea expiră când se termină procesul CLI.
+Memoria din `MainAgent` evită întrebările repetate. Brokerul nu primește și nu validează această memorie, deoarece nu execută comanda. Limita de securitate rămâne sandboxul moștenit de executorul local.
 
-Memoria din `MainAgent` evită întrebările repetate. Ea nu devine însă autoritatea de securitate: Brokerul continuă să verifice dovada la fiecare execuție.
+### Local Bash Executor
 
-### Command Executor
+Local Bash Executor rulează lângă skillul `bash`, în procesul `MainAgent` deja izolat. El pornește efectiv comenzile aprobate și le capturează rezultatul.
 
-Command Executor este partea Brokerului care pornește efectiv comenzile primite de la toolul `bash`.
+El are o singură limită de execuție și două moduri de autorizare:
 
-El are două moduri conceptuale de execuție:
+1. **`ask-for-approval`** — Supervisorul cere aprobarea înainte de fiecare combinație nouă `toolName + params`, apoi executorul pornește exact comanda aprobată.
+2. **`full-access`** — executorul pornește automat comanda, fără o etapă de aprobare.
 
-1. **`ask-for-approval`** — cere aprobarea înainte de fiecare combinație nouă `toolName + params`. După `allow` sau `always allow`, execută exact comanda aprobată în afara sandboxului de workspace.
-2. **`full-access`** — execută mai întâi comanda într-un `bwrap` nou, cu acces complet în workspace-ul sesiunii și fără acces la restul filesystemului. Dacă execuția este blocată probabil de sandbox, cere aprobarea și, după `allow` sau `always allow`, relansează exact comanda în afara lui `bwrap`.
+O intrare existentă în memoria `always-allow` permite aceleiași combinații `toolName + params` să sară peste întrebare, nu peste sandbox.
 
-O intrare existentă în memoria `always-allow` permite aceleiași combinații `toolName + params` să sară peste întrebarea și încercarea sandboxată și să fie executată direct în exterior.
+Fiecare comandă primește propriul proces copil, dar nu propriul sandbox. Procesul moștenește mounturile sandboxului `MainAgent`; nu încercăm să le modificăm și nu construim mounturi punctuale pentru căi deduse din comandă.
 
-Fiecare comandă primește propriul proces. Nu încercăm să modificăm mounturile sandboxului în care rulează deja `MainAgent` și nu construim mounturi punctuale pentru căi deduse din comandă.
-
-`bwrap` nu oferă un eveniment sigur de tip „comanda a încercat să iasă din workspace”. Procesul copil primește de obicei o eroare obișnuită precum `permission denied`, `operation not permitted`, `read-only file system` sau `no such file or directory`, iar `bwrap` propagă rezultatul lui.
-
-Brokerul poate identifica automat numai blocajele probabile, folosind codul de ieșire și mesajele din stdout/stderr. Nu întreabă utilizatorul după orice eșec, deoarece o comandă poate eșua normal din multe alte motive.
-
-Pentru cazurile ambigue, rezultatul sandboxat ajunge în contextul agentului. Agentul poate solicita explicit escaladarea aceleiași combinații `toolName + params`; Supervisorul cere atunci aprobarea, iar Brokerul relansează exact comanda în exterior. Cererea de escaladare este metadată de control și nu schimbă cheia memorată.
+`bwrap` nu oferă un eveniment sigur de tip „comanda a încercat să iasă din workspace”. Procesul copil poate primi o eroare obișnuită precum `permission denied`, `read-only file system` sau `no such file or directory`. Unele căi-părinte sintetice pot chiar exista în namespace, dar conțin numai mounturile pe care Brokerul le-a expus. De aceea, implementarea actuală nu încearcă să clasifice semantic comenzile și nu transformă niciun rezultat într-o escaladare.
 
 ## Ce se întâmplă când comanda are nevoie de alt folder
 
 Să presupunem că sesiunea a fost pornită în workspace-ul `proiect-a`, iar o comandă cere acces la `proiect-b`.
 
-`MainAgent` nu primește direct acces la `proiect-b`. Toolul `bash` trimite către Supervisor numele toolului și parametrii exacți ai comenzii.
+`MainAgent` și procesele Bash nu primesc acces la `proiect-b`. În `full-access`, comanda rulează automat în namespace-ul limitat la `proiect-a`; în `ask-for-approval`, aprobarea permite doar pornirea aceleiași comenzi în același namespace. Dacă acea comandă încearcă să citească sau să scrie în `proiect-b`, vede o cale absentă, read-only sau altă reprezentare izolată și primește rezultatul obișnuit al procesului. Nu există retry în exterior.
 
-În `full-access`, prima execuție vede doar `proiect-a`, deci accesul la `proiect-b` eșuează. Dacă Brokerul recunoaște un blocaj probabil de sandbox sau agentul cere explicit escaladarea după eșec, Supervisorul întreabă utilizatorul. După aprobare, Brokerul relansează numai comanda respectivă în exterior. Comanda poate atunci accesa `proiect-b`, dar sandboxul principal al lui `MainAgent` rămâne neschimbat.
-
-O altă comandă sau alți parametri reprezintă altă operație și nu folosesc automat aprobarea anterioară.
-
-Supervisorul poate vedea tentativele evidente de acces exterior din parametri, dar aceasta nu este o analiză completă a efectelor comenzii. Un script, un symlink sau un proces copil poate accesa alte căi fără ca ele să apară direct în textul comenzii. De aceea, utilizatorul aprobă comanda exactă și toate efectele ei, nu o listă de căi dedusă automat.
+Nu încercăm să detectăm complet intenția comenzii din parametri. Un script, un symlink, o variabilă sau un proces copil poate accesa căi care nu apar direct în text. Limita de securitate este namespace-ul `bwrap`, nu clasificarea comenzii.
 
 ## Ce se întâmplă cu toolurile care nu pornesc comenzi
 
-Toolurile care lucrează numai cu date în memorie nu au nevoie de Command Executor și nu trec prin Supervisor.
+Toolurile care lucrează numai cu date în memorie nu au nevoie de Local Bash Executor și nu trec prin Supervisor.
 
 Toolurile care citesc sau scriu fișiere direct pot lucra în workspace deoarece rulează în sandboxul principal. Ele sunt lăsate în pace de sistemul `/permissions`; izolarea este aplicată de `bwrap`, nu prin întrebări de aprobare pentru fiecare tool.
 
-Dacă un astfel de tool are nevoie de o cale din afara workspace-ului, nu primește lărgirea întregului sandbox principal. Accesul exterior trebuie exprimat printr-o comandă `bash` mediată de Broker sau printr-o capabilitate separată proiectată în viitor.
+Dacă un astfel de tool are nevoie de o cale din afara workspace-ului, nu primește lărgirea sandboxului principal. Accesul exterior nu este disponibil în implementarea actuală și va necesita în viitor o capabilitate separată, explicită.
 
 Apelurile către alți agenți prin MCP rămân sub politica MCP și prin routerul Ploinky. Sandboxul local nu înlocuiește autentificarea și politica agent-to-agent.
 
@@ -217,29 +206,28 @@ Apelurile către alți agenți prin MCP rămân sub politica MCP și prin router
 - `MainAgent` este mutat într-un proces copil izolat.
 - `/permissions` oferă modurile `ask-for-approval` și `full-access`, iar `full-access` rămâne limitat automat la workspace.
 - Supervisorul folosit de `bash` devine un proxy către autoritatea exterioară.
-- Execuția comenzilor este mutată din skillul `bash` în Command Executor.
+- Execuția comenzilor este delegată de skillul `bash` către Local Bash Executor din sandboxul `MainAgent`.
 - În `ask-for-approval`, utilizatorul poate răspunde cu `allow`, `deny` sau `always allow`.
 - Numai `always allow` intră în memoria internă a `MainAgent`.
 - Aprobările memorate sunt legate numai de `toolName + params`, nu doar de numele toolului.
-- În `full-access`, o comandă este încercată mai întâi într-un `bwrap` limitat la workspace.
-- Blocajele probabile de sandbox și cererile explicite de escaladare ajung la Supervisor.
-- O comandă aprobată pentru escaladare rulează separat și nu modifică sandboxul întregii sesiuni.
+- În ambele moduri, fiecare comandă moștenește singurul `bwrap` al `MainAgent`.
+- Rezultatele care seamănă cu un blocaj de sandbox rămân rezultate obișnuite și nu declanșează acces pe host.
 
 ## Reguli de securitate ale arhitecturii
 
 1. În `ask-for-approval`, dacă Brokerul sau Supervisorul nu sunt disponibili, comanda `bash` se refuză.
 2. Toolurile diferite de `bash` nu produc cereri de aprobare.
 3. Procesul din sandbox nu poate declara singur că o comandă este aprobată sau că sesiunea este în `full-access`; ambele operații cer capabilitatea privată de control păstrată numai de bucla CLI.
-4. Brokerul verifică modul `/permissions`, dovada și combinația exactă `toolName + params` înainte de fiecare execuție în afara sandboxului.
+4. Brokerul aplică modul `/permissions` numai când SupervisorProxy îi cere autorizarea. `always allow` este memorat de `MainAgent` pentru cheia exactă `toolName + params`, nu de Broker.
 5. Workspace-ul este implicit în sesiunea CLI și rămâne fix cât timp memoria `always-allow` este activă.
 6. Parametrii comenzii nu sunt tratați ca o descriere sigură și completă a fișierelor pe care procesul le va accesa.
 7. Un exit code nenul nu este automat considerat blocaj de sandbox.
-8. Dacă blocajul nu poate fi identificat sigur, agentul trebuie să ceară explicit escaladarea; Brokerul nu relansează automat comanda în exterior.
-9. `deny` oprește apelul înainte de handlerul `bash` și devine rezultat de tool în contextul agentului; plannerul poate explica refuzul sau poate alege o alternativă sigură, dar nu cere din nou aceeași comandă în același turn și nu o relansează în exterior.
+8. Niciun rezultat al procesului nu poate produce automat o execuție în afara sandboxului.
+9. `deny` oprește apelul înainte de handlerul `bash` și devine rezultat de tool în contextul agentului; plannerul poate explica refuzul sau poate alege o alternativă sigură, dar nu cere din nou aceeași comandă în același turn.
 10. Procesele rulează cu utilizatorul curent; sandboxingul nu oferă privilegii de root.
 11. Închiderea sesiunii invalidează memoria `always-allow` și oprește procesele copil.
 12. Outputul brut al comenzilor nu este scris pe stdout/stderr-ul AchillesCLI. Este capturat de executor, returnat skillului prin Broker și introdus numai în contextul sesiunii agentice.
-13. Brokerul rămâne cât mai mic și nu încarcă skilluri sau logică de planificare.
+13. Brokerul rămâne cât mai mic, nu încarcă skilluri sau logică de planificare și nu expune o rută de execuție Bash.
 
 ## Limita acestei propuneri
 
@@ -256,14 +244,14 @@ Ploinky păstrează cererea activă numai în memoria runtime-ului. La o reconec
 ## Condiții pentru implementare
 
 1. Runtime-ul Achilles trebuie să aibă executabilul `bwrap` disponibil.
-2. Brokerul trebuie să pornească `MainAgent` și comenzile sandboxate în namespace-uri separate.
-3. Protocolul intern trebuie să separe prompturile, cererile de aprobare și deciziile utilizatorului de stdout/stderr-ul capturat și returnat exclusiv skillului.
+2. Brokerul trebuie să pornească `MainAgent` în sandbox, iar executorul Bash trebuie să rămână în acel proces și să îi moștenească namespace-ul.
+3. Protocolul intern trebuie să transporte numai cererile de aprobare și deciziile utilizatorului; stdout/stderr sunt capturate local și returnate exclusiv skillului.
 4. Starea autoritativă a unei aprobări WebChat pending aparține sesiunii CLI, iar WebChat păstrează numai copia volatilă necesară selectorului și reconectării.
-5. Detectarea automată a unui blocaj de sandbox rămâne euristică; cererea explicită de escaladare este calea de rezervă obligatorie.
+5. O extensie viitoare poate adăuga în cererea sesiunii agentice un parametru explicit de escaladare. Supervisorul și Brokerul îl vor interpreta înainte de execuție și vor cere aprobarea utilizatorului. Parametrul nu este implementat acum și nu poate fi dedus dintr-un simplu eșec al comenzii.
 6. Fiecare decizie WebChat trebuie validată față de sesiune, tab, cerere și una dintre opțiunile declarate de agent; prima decizie validă închide cererea.
 
 ## Rezultatul dorit
 
 AchillesCLI poate rămâne enabled global, dar fiecare sesiune este izolată în folderul din care a fost pornită.
 
-`MainAgent` poate lucra liber în acel workspace. În `ask-for-approval`, toate comenzile toolului `bash` ajung la Supervisor înainte de execuție. În `full-access`, ele rulează automat numai în workspace; ieșirea din workspace cere `allow` sau `always allow` pentru aceeași combinație `toolName + params`.
+`MainAgent` poate lucra liber în acel workspace. În `ask-for-approval`, toate comenzile toolului `bash` ajung la Supervisor înainte de execuție. În `full-access`, ele rulează automat. În ambele moduri, comenzile Bash rămân în workspace și nu există execuție în afara sandboxului.

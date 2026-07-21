@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {
     APPROVAL_DECISIONS,
-    buildApprovalKey,
     createWebchatApprovalInteraction,
     createWebchatInteractionResolved,
     formatApprovalPrompt,
@@ -18,9 +17,7 @@ import {
 import {
     buildSandboxArgs,
     collectMainAgentRuntimeMounts,
-    executeProcess,
     findBubblewrap,
-    isLikelySandboxDenial,
 } from './sandbox.mjs';
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -31,21 +28,16 @@ export class AchillesBroker {
         webchat = false,
         permissionMode = PERMISSION_MODES.ASK,
         stdout = process.stdout,
-        stderr = process.stderr,
         stdin = process.stdin,
-        env = process.env,
         approvalTimeoutMs = DEFAULT_APPROVAL_TIMEOUT_MS,
     } = {}) {
         this.workspace = fs.realpathSync(workspace);
         this.webchat = webchat;
         this.permissionMode = normalizePermissionMode(permissionMode) || PERMISSION_MODES.ASK;
         this.stdout = stdout;
-        this.stderr = stderr;
         this.stdin = stdin;
-        this.env = env;
         this.approvalTimeoutMs = Math.max(1000, Number(approvalTimeoutMs) || DEFAULT_APPROVAL_TIMEOUT_MS);
         this.pendingApproval = null;
-        this.approvalTokens = new Map();
         this.controlToken = randomUUID();
         this.server = null;
         this.socketDir = null;
@@ -77,7 +69,6 @@ export class AchillesBroker {
             fs.rmSync(this.socketDir, { recursive: true, force: true });
             this.socketDir = null;
         }
-        this.approvalTokens.clear();
     }
 
     async handleRequest(request = {}) {
@@ -88,8 +79,6 @@ export class AchillesBroker {
                 return this._setPermissionMode(request.mode, request.controlToken);
             case 'bash.authorize':
                 return this._authorizeBash(request);
-            case 'bash.execute':
-                return this._executeBash(request);
             case 'approval.pending':
                 return {
                     ok: true,
@@ -128,60 +117,7 @@ export class AchillesBroker {
         if (this.permissionMode === PERMISSION_MODES.FULL) {
             return { ok: true, status: 'approved' };
         }
-        const existing = this._validateApproval(request.approval, 'bash', params);
-        if (existing) {
-            return { ok: true, status: 'approved', always: existing.always, approval: request.approval };
-        }
         return this._requestApproval({ toolName: 'bash', params, phase: 'authorize', escalation: false });
-    }
-
-    async _executeBash(request) {
-        const params = normalizeCommandParams(request.params);
-        if (!params.command) {
-            return { ok: true, status: 'denied', result: deniedResult('No executable Bash command was provided.') };
-        }
-
-        const approved = this._validateApproval(request.approval, 'bash', params);
-        if (approved) {
-            if (!approved.always) this.approvalTokens.delete(request.approval.token);
-            return this._executeOutside(params, request.approval);
-        }
-
-        if (this.permissionMode === PERMISSION_MODES.ASK) {
-            const approval = await this._requestApproval({
-                toolName: 'bash',
-                params,
-                phase: 'execute',
-                escalation: false,
-            });
-            if (approval.status !== 'approved') {
-                return {
-                    ...approval,
-                    result: deniedResult(approval.reason),
-                };
-            }
-            return this._executeOutside(params, approval.approval);
-        }
-
-        const sandboxResult = await this._executeInWorkspace(params);
-        if (!isLikelySandboxDenial(sandboxResult)) {
-            return { ok: true, status: 'completed', result: normalizeExecutionResult(sandboxResult) };
-        }
-
-        const approval = await this._requestApproval({
-            toolName: 'bash',
-            params,
-            phase: 'escalate',
-            escalation: true,
-            sandboxResult,
-        });
-        if (approval.status !== 'approved') {
-            return {
-                ...approval,
-                result: deniedResult(approval.reason, false, sandboxResult),
-            };
-        }
-        return this._executeOutside(params, approval.approval);
     }
 
     async _requestApproval({ toolName, params, phase, escalation, sandboxResult = null }) {
@@ -220,12 +156,11 @@ export class AchillesBroker {
                     : 'The user denied this Bash command. It was not executed.';
                 return { ok: true, status: 'denied', reason };
             }
-            const approval = this._issueApproval(
-                toolName,
-                params,
-                settled.decision === APPROVAL_DECISIONS.ALWAYS_ALLOW,
-            );
-            return { ok: true, status: 'approved', always: approval.always, approval };
+            return {
+                ok: true,
+                status: 'approved',
+                always: settled.decision === APPROVAL_DECISIONS.ALWAYS_ALLOW,
+            };
         }
 
         const decision = await readTerminalDecision(prompt);
@@ -236,8 +171,11 @@ export class AchillesBroker {
                 reason: 'The user denied this Bash command. It was not executed.',
             };
         }
-        const approval = this._issueApproval(toolName, params, decision === APPROVAL_DECISIONS.ALWAYS_ALLOW);
-        return { ok: true, status: 'approved', always: approval.always, approval };
+        return {
+            ok: true,
+            status: 'approved',
+            always: decision === APPROVAL_DECISIONS.ALWAYS_ALLOW,
+        };
     }
 
     async _resolvePending(value, interactionId, controlToken) {
@@ -274,56 +212,6 @@ export class AchillesBroker {
         }
         pending.resolve({ decision, status });
         return true;
-    }
-
-    _issueApproval(toolName, params, always) {
-        const key = buildApprovalKey(toolName, canonicalApprovalParams(params));
-        const approval = { token: randomUUID(), key, always: Boolean(always) };
-        this.approvalTokens.set(approval.token, approval);
-        return approval;
-    }
-
-    _validateApproval(approval, toolName, params) {
-        if (!approval?.token) return null;
-        const stored = this.approvalTokens.get(approval.token);
-        const expectedKey = buildApprovalKey(toolName, canonicalApprovalParams(params));
-        if (!stored || stored.key !== expectedKey || approval.key !== expectedKey) return null;
-        return stored;
-    }
-
-    async _executeInWorkspace(params) {
-        const bwrap = findBubblewrap();
-        if (!bwrap) {
-            return { success: false, error: 'bubblewrap is not installed.', stderr: '', stdout: '', status: null };
-        }
-        return executeProcess({
-            command: bwrap,
-            args: buildSandboxArgs({
-                workspace: this.workspace,
-                command: params.command,
-                args: params.args,
-            }),
-            cwd: this.workspace,
-            env: this.env,
-        });
-    }
-
-    async _executeOutside(params, approval) {
-        const execution = await executeProcess({
-            command: params.command,
-            args: params.args,
-            cwd: this.workspace,
-            env: this.env,
-        });
-        return {
-            ok: true,
-            status: 'completed',
-            approval: approval?.always ? approval : null,
-            command: params.raw,
-            result: {
-                ...normalizeExecutionResult(execution),
-            },
-        };
     }
 
     _handleSocket(socket) {
@@ -396,32 +284,6 @@ function normalizeCommandParams(value = {}) {
         command: String(value.command || '').trim(),
         args: Array.isArray(value.args) ? value.args.map(String) : [],
         raw: String(value.raw || value.command || '').trim(),
-    };
-}
-
-function canonicalApprovalParams(params) {
-    return normalizeCommandParams(params);
-}
-
-function normalizeExecutionResult(result) {
-    return {
-        success: Boolean(result.success),
-        output: String(result.stdout || '').trim(),
-        stderr: String(result.stderr || '').trim(),
-        error: result.error || null,
-        exitCode: result.status,
-        signal: result.signal || null,
-        timedOut: Boolean(result.timedOut),
-    };
-}
-
-function deniedResult(reason, pending = false, sandboxResult = null) {
-    return {
-        success: false,
-        denied: !pending,
-        pending,
-        error: reason || 'Bash execution was denied.',
-        ...(sandboxResult ? { sandboxResult: normalizeExecutionResult(sandboxResult) } : {}),
     };
 }
 

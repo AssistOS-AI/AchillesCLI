@@ -1,5 +1,5 @@
 import { SecuritySupervisor } from 'achillesAgentLib/MainAgent';
-import { buildApprovalKey, PERMISSION_MODES } from './protocol.mjs';
+import { PERMISSION_MODES } from './protocol.mjs';
 import { parseCommandLine } from '../skills/bash/src/parser.mjs';
 import { expandGlobsInArgs } from '../skills/bash/src/globExpander.mjs';
 
@@ -22,7 +22,6 @@ export class BashSecuritySupervisor extends SecuritySupervisor {
         if (response.status === 'approved') {
             return {
                 decision: response.always ? 'alwaysApprove' : 'approve',
-                approval: response.approval || null,
             };
         }
         return {
@@ -52,21 +51,4 @@ export function normalizeBashParams(value) {
         args: expandGlobsInArgs(parsed.args),
         raw: parsed.raw,
     };
-}
-
-export function createBashExecutor(brokerClient) {
-    return async (params, { supervisorApproval = null } = {}) => {
-        const normalized = normalizeBashParams(params);
-        const response = await brokerClient.execute('bash', normalized, supervisorApproval);
-        return response.result || {
-            success: false,
-            denied: true,
-            pending: response.status === 'pending',
-            error: response.reason || 'Bash execution was denied.',
-        };
-    };
-}
-
-export function getApprovalCacheKey(params) {
-    return buildApprovalKey('bash', normalizeBashParams(params));
 }

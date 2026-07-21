@@ -1057,8 +1057,11 @@ ${C.bold}${C.yellow}Usage:${C.reset}
 
 ${C.bold}${C.yellow}Description:${C.reset}
   Controls Bash only. Other tools continue to run normally. Full access is
-  still confined to the current workspace. If a Bash command needs a path
-  outside that workspace, Achilles asks for allow, deny, or always allow.
+  still confined to the current workspace. Paths outside that workspace are
+  unavailable in both modes; approval never widens the filesystem sandbox.
+
+  The selected mode is saved in .achilles-cli/settings.json for this
+  workspace and restored the next time AchillesCLI starts in the folder.
 
   Always allow is remembered only for the exact Bash tool parameters and
   only for the current agent session.

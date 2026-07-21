@@ -173,7 +173,7 @@ export const COMMAND_DEFINITIONS = {
     },
     'permissions': {
         usage: '/permissions [ask-for-approval|full-access]',
-        description: 'Show or change the Bash permission mode for this session',
+        description: 'Show or change the Bash permission mode for this workspace',
         args: 'optional',
         needsSkillArg: false,
     },

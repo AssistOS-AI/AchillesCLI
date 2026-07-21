@@ -43,7 +43,9 @@ import {
 import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
 import { BrokerClient } from './permissions/BrokerClient.mjs';
-import { BashSecuritySupervisor, createBashExecutor } from './permissions/BashSecuritySupervisor.mjs';
+import { BashSecuritySupervisor } from './permissions/BashSecuritySupervisor.mjs';
+import { createBashExecutor } from './permissions/LocalBashExecutor.mjs';
+import { setPersistedBrokerPermissionMode } from './permissions/PersistedPermissionMode.mjs';
 import {
     approvalDecisionFromInteractionOption,
     normalizePermissionMode,
@@ -243,12 +245,16 @@ async function main() {
         logger,
         outputWriter: webchatRuntime ? createWebchatProgressOutputWriter() : null,
     });
-    const bashExecutor = createBashExecutor(brokerClient);
+    const bashExecutor = createBashExecutor({ cwd: workingDir });
     if (requestedPermissionMode) {
         await permissionControlClient.setMode(requestedPermissionMode);
     }
     const getPermissions = async () => (await permissionControlClient.getMode()).mode;
-    const setPermissions = async (mode) => (await permissionControlClient.setMode(mode)).mode;
+    const setPermissions = async (mode) => setPersistedBrokerPermissionMode({
+        permissionControlClient,
+        workingDir,
+        mode,
+    });
 
     // Initialize MainAgent with all skill roots
     const agent = new MainAgent({

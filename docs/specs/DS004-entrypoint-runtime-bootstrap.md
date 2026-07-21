@@ -16,14 +16,15 @@ Startup responsibilities:
 1. `src/cli.mjs` resolves the real workspace, starts the trusted broker, and launches `src/index.mjs` in Bubblewrap.
 2. Resolve core dependencies, including AchillesAgentLib access strategy, as read-only runtime mounts.
 3. Parse command-line arguments and select execution mode.
-4. Construct the `MainAgent` with configured roots, the Bash-only Supervisor proxy, and the broker-backed Bash executor.
+4. Construct the `MainAgent` with configured roots, the Bash-only Supervisor proxy, and a local Bash executor that inherits the persistent sandbox.
 5. Start one of the supported interaction modes: single-shot, REPL, or webchat session loop.
 
 Argument and mode contract:
 1. Non-interactive prompt inputs execute directly and return output.
 2. Interactive mode starts `REPLSession` and command loop services.
 3. Webchat mode initializes `LoopAgentSession` with IO handlers.
-4. `/permissions` and `--permissions` accept only `ask-for-approval` and `full-access`; the former is the default.
+4. `/permissions` and `--permissions` accept only `ask-for-approval` and `full-access`.
+5. The trusted entrypoint restores the permission mode from `<workspace>/.achilles-cli/settings.json`; a valid explicit `--permissions` value overrides the persisted value for that process, while a missing or invalid setting falls back to `ask-for-approval`.
 
 Dependency bootstrap contract:
 1. Respect manual path overrides for AchillesAgentLib when provided.
@@ -36,11 +37,12 @@ Runtime wiring:
 3. Register built-in and discovered skill roots before accepting requests.
 4. In webchat mode, run the startup intro unless `PLOINKY_WEBCHAT_HAS_HISTORY=1`; no folder session identifier is required by the agent process.
 5. In webchat mode, publish the explicit model restored from `.achilles-cli/settings.json` as generic runtime-state metadata before accepting user input; publish `null` when that setting is absent.
-6. The broker remains outside Bubblewrap, while MainAgent, skill code, and all non-broker child processes inherit the persistent workspace sandbox.
+6. The broker remains outside Bubblewrap and handles authorization only. MainAgent, skill code, the local Bash executor, and every Bash child process inherit the persistent workspace sandbox.
 7. Bubblewrap keeps the network namespace shared and exposes only system runtime paths, read-only Achilles code/dependencies, isolated temporary storage, the broker socket, and the writable session workspace.
 8. Startup fails closed when Bubblewrap or the broker connection is unavailable.
 9. The Unix socket protocol must preserve its response half after the client finishes writing a request, because broker handlers may complete asynchronously.
 10. In webchat mode, structured interaction responses received on stdin must be demultiplexed before ordinary prompt processing and forwarded through the trusted broker control channel.
+11. A successful `/permissions` change must update the trusted Broker before the confirmed mode is written atomically to the workspace settings file.
 
 Configuration boundaries:
 1. Startup must not hardcode environment-specific absolute paths.

@@ -37,10 +37,17 @@
     network access remains shared. The Bash skill only parses commands and delegates execution; it contains
     no permission prompts or risk policy. <code>/permissions ask-for-approval</code> requires an explicit
     <code>allow</code>, <code>deny</code>, or <code>always allow</code>. <code>/permissions full-access</code>
-    runs Bash automatically only inside the current workspace and requests approval before an outside retry.
+    runs Bash automatically only inside the current workspace. Approvals never widen the filesystem sandbox,
+    and there is no outside retry in the current implementation.
+    The selected mode is stored per workspace under the <code>permissions</code> key in
+    <code>.achilles-cli/settings.json</code> and restored at startup. Missing or invalid values fall back to
+    <code>ask-for-approval</code>. The settings object is unversioned and contains no <code>version</code> key;
+    reusable exact-command approvals remain session-local.
     In WebChat, that decision appears in a dedicated three-choice selector while the original tool call remains suspended;
     it is control traffic and is not stored as a user or assistant message.
-    After approval, the executor captures stdout and stderr without writing them to the AchillesCLI process streams.
+    The Broker authorizes Bash but never executes it. The local executor runs inside MainAgent's existing Bubblewrap
+    namespace and starts each command directly as a child process, without creating another Bubblewrap sandbox.
+    It captures stdout and stderr without writing them to the AchillesCLI process streams.
     Bash returns the ordinary command output or execution error only to the agentic session, and the user sees the agent's final answer.
     A denial skips the Bash handler and becomes a normal planner result containing the exact tool name, exact parameters,
     and denial reason, allowing the same turn to finish without exposing approval protocol data.

@@ -1,4 +1,4 @@
-/** Execute a parsed command through the Achilles Broker. */
+/** Execute a parsed command as a child of the sandboxed MainAgent process. */
 import { parseCommandLine } from './parser.mjs';
 import { expandGlobsInArgs } from './globExpander.mjs';
 
@@ -31,17 +31,13 @@ export async function action(invocation = {}) {
     const expandedArgs = expandGlobsInArgs(args);
 
     if (typeof invocation.bashExecutor !== 'function') {
-        return 'Execution denied: Achilles Broker is unavailable.';
+        return 'Execution denied: the sandboxed Bash executor is unavailable.';
     }
 
     const result = await invocation.bashExecutor({
         command,
         args: expandedArgs,
         raw,
-    }, {
-        supervisorApproval: invocation.supervisorApproval
-            || invocation.context?.supervisorApproval
-            || null,
     });
 
     if (result.pending) {

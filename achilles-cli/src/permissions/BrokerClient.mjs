@@ -1,5 +1,4 @@
 import net from 'node:net';
-import { buildApprovalKey } from './protocol.mjs';
 
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_INTERACTIVE_TIMEOUT_MS = 15 * 60 * 1000;
@@ -14,7 +13,6 @@ export class BrokerClient {
     } = {}) {
         this.socketPath = socketPath;
         this.timeoutMs = timeoutMs;
-        this.approvals = new Map();
         this.#controlToken = controlToken;
     }
 
@@ -24,7 +22,7 @@ export class BrokerClient {
 
     async request(type, payload = {}, { timeoutMs = this.timeoutMs } = {}) {
         if (!this.socketPath) {
-            throw new Error('Achilles Broker is unavailable. Bash execution is denied.');
+            throw new Error('Achilles Broker is unavailable. Bash authorization is denied.');
         }
         return new Promise((resolve, reject) => {
             const socket = net.createConnection(this.socketPath);
@@ -73,12 +71,12 @@ export class BrokerClient {
         return this.request('permissions.set', { mode, controlToken: this.#controlToken });
     }
 
-    authorize(toolName, params, approval = null) {
-        return this._requestWithApproval('bash.authorize', toolName, params, approval);
-    }
-
-    execute(toolName, params, approval = null) {
-        return this._requestWithApproval('bash.execute', toolName, params, approval);
+    authorize(toolName, params) {
+        return this.request(
+            'bash.authorize',
+            { toolName, params },
+            { timeoutMs: Math.max(this.timeoutMs, DEFAULT_INTERACTIVE_TIMEOUT_MS) },
+        );
     }
 
     getPendingApproval() {
@@ -91,31 +89,6 @@ export class BrokerClient {
             interactionId,
             controlToken: this.#controlToken,
         });
-        this._rememberApproval(response.approval);
         return response;
     }
-
-    async _requestWithApproval(type, toolName, params, approval) {
-        const cached = approval || this.approvals.get(buildApprovalKey(toolName, canonicalApprovalParams(params))) || null;
-        const response = await this.request(
-            type,
-            { toolName, params, approval: cached },
-            { timeoutMs: Math.max(this.timeoutMs, DEFAULT_INTERACTIVE_TIMEOUT_MS) },
-        );
-        this._rememberApproval(response.approval);
-        return response;
-    }
-
-    _rememberApproval(approval) {
-        if (!approval?.always || !approval?.key) return;
-        this.approvals.set(approval.key, approval);
-    }
-}
-
-function canonicalApprovalParams(params) {
-    return {
-        command: String(params?.command || '').trim(),
-        args: Array.isArray(params?.args) ? params.args.map(String) : [],
-        raw: String(params?.raw || params?.command || '').trim(),
-    };
 }

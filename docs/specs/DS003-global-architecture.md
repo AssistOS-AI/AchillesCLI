@@ -40,7 +40,7 @@ Configuration invariants:
 3. Missing required runtime dependencies must fail with explicit guidance.
 
 State and lifecycle invariants:
-1. Session-local runtime state (history, tier/model, working paths) is managed by REPL runtime.
+1. Runtime state is split between session-local state (history, tier, working paths, and reusable exact-call approvals) and workspace settings (explicit model and Bash permission mode).
 2. Skill catalog refresh (`reloadSkills`) must preserve runtime consistency after write/delete operations.
 3. Cancellation paths (for interactive execution) must leave terminal state recoverable.
 4. The workspace resolved at broker startup is fixed for the session and is the only writable filesystem tree exposed automatically to MainAgent.
@@ -48,15 +48,17 @@ State and lifecycle invariants:
 
 Bash security boundary:
 1. Only the Bash skill is permission-gated; all other skills execute normally inside the persistent MainAgent sandbox.
-2. `ask-for-approval` requires `allow`, `deny`, or `always allow` before Bash execution outside the workspace sandbox.
+2. `ask-for-approval` requires `allow`, `deny`, or `always allow` before Bash execution inside the workspace sandbox.
 3. `full-access` means automatic Bash access inside the current workspace, not unrestricted host filesystem access.
-4. A likely sandbox denial may be retried outside Bubblewrap only after an exact-call approval.
-5. The trusted broker validates opaque approval proofs against the exact `toolName + params` combination.
+4. Bash commands are never retried outside Bubblewrap; sandbox denials remain ordinary tool results.
+5. AchillesAgentLib stores `always allow` only in MainAgent session memory under the exact `toolName + params` key; the broker stores no reusable command approvals.
 6. The sandboxed process cannot change permission mode or resolve a pending user approval without the one-time trusted CLI control capability consumed during bootstrap.
 7. A WebChat approval suspends the original broker request and is represented by a structured interaction envelope; it must not be rendered or persisted as conversation text.
 8. Only a decision carrying the matching interaction identifier may settle the pending broker request, and the first valid decision wins.
-9. After an approved command completes, the executor must return captured stdout and stderr only through the Broker response. The Bash skill must pass the ordinary command output or execution error into the agentic session, while process stdout/stderr remain reserved for user-facing agent output and structured WebChat control envelopes.
+9. The local Bash executor must run inside the persistent MainAgent sandbox, start the requested executable directly as a child process, and return captured stdout and stderr only to the Bash skill. Process stdout/stderr remain reserved for user-facing agent output and structured WebChat control envelopes.
 10. When the user denies a pre-execution Bash request, AchillesAgentLib must skip the Bash handler, store the exact tool name, exact parameters, and human-readable denial reason as an ordinary tool result, and continue planning without exposing protocol JSON or retrying the same command in that turn.
+11. The trusted broker must restore the workspace's persisted Bash permission mode before MainAgent starts. A missing or invalid value must resolve to `ask-for-approval`.
+12. Persisting `full-access` does not widen the filesystem boundary: automatic Bash execution remains confined to the current workspace and no outside retry exists.
 
 Communication prompt invariants:
 1. The AchillesCLI orchestrator system prompt must prefer user-facing responses that are short and to the point while preserving enough content to answer the request correctly.
@@ -73,7 +75,7 @@ A one-word preference can remove context required for a useful answer and can in
 ### Question #2: Why does the trusted broker remain outside the persistent MainAgent sandbox?
 
 Response:
-An approval must permit one exact command to run with broader filesystem visibility without widening MainAgent or every later tool call. Keeping the broker outside Bubblewrap lets it validate an opaque exact-call proof and launch that one process while the long-lived agent sandbox remains unchanged.
+The broker owns trusted permission state without exposing that authority to MainAgent, but it does not expose Bash execution or store reusable approvals. The local executor runs inside MainAgent and its child processes inherit the persistent Bubblewrap namespace. Keeping authorization outside also preserves a clean extension point for a future explicit escalation protocol.
 
 ### Question #3: Why does WebChat approval suspend the original broker request?
 

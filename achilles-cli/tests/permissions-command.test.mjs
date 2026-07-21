@@ -17,7 +17,7 @@ function createHandler() {
     });
 }
 
-test('/permissions shows and changes the session Bash permission mode', async () => {
+test('/permissions shows and changes the workspace Bash permission mode', async () => {
     const handler = createHandler();
     const current = await handler.executeSlashCommand('permissions', '');
     assert.equal(current.result, 'Bash permissions: ask-for-approval');

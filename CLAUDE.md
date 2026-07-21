@@ -20,7 +20,8 @@ Achilles CLI is the interactive and single-shot skill management CLI used by the
 
 ## Critical components
 
-- `AchillesBroker` stays outside bubblewrap and owns Bash execution, approval prompts, exact-parameter approval proofs, and raw log streaming.
+- `AchillesBroker` stays outside bubblewrap and owns Bash approval prompts and permission state; it does not execute Bash commands.
+- `LocalBashExecutor` runs inside the sandboxed MainAgent process, starts Bash children directly, and captures their output as tool results.
 - `AchillesCli` runs inside bubblewrap and wraps `RecursiveSkilledAgent` from `achillesAgentLib`, `LLMAgent`, `HistoryManager`, `SlashCommandHandler`, and `ActionReporter`.
 - `REPLSession` owns the input loop, history, and ESC cancel.
 - `SlashCommandHandler` owns `/ls`, `/read`, `/write`, and skill execution.
@@ -31,7 +32,7 @@ Achilles CLI is the interactive and single-shot skill management CLI used by the
 - Inherits AssistOSExplorer Node 20+, ES module, `.mjs`, and 4-space conventions.
 - Built-in skills live in `achilles-cli/src/skills/`.
 - LLM invocation goes through `LLMAgent` from `achillesAgentLib`, never direct vendor HTTP.
-- The Bash skill contains execution delegation only; the Broker and `/permissions` own policy.
+- The Bash skill contains execution delegation only; the local executor inherits MainAgent's sandbox, while the Broker and `/permissions` own approval policy.
 
 ## Testing
 

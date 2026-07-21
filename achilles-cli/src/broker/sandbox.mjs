@@ -164,17 +164,6 @@ export async function executeProcess({
     });
 }
 
-export function isLikelySandboxDenial(result = {}) {
-    if (result.success) return false;
-    const diagnostic = `${result.error || ''}\n${result.stderr || ''}`.toLowerCase();
-    return [
-        'permission denied',
-        'operation not permitted',
-        'read-only file system',
-        'no such file or directory',
-    ].some((fragment) => diagnostic.includes(fragment));
-}
-
 function addSystemMounts(args) {
     for (const candidate of ['/usr', '/etc']) {
         if (fs.existsSync(candidate)) {

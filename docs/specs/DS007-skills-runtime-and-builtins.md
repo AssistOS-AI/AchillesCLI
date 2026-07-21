@@ -49,9 +49,9 @@ Built-in skill responsibilities (`src/skills/`):
    - `write-tests`
    - `run-tests`
 6. Local execution:
-   - `bash` parses a command without a shell and delegates execution to the Achilles Broker.
+   - `bash` parses a command without a shell and delegates execution to the local executor inside MainAgent.
    - The Bash skill contains no risk classifier, approval prompt, permission memory, or direct process launcher.
-   - The broker-backed executor is mandatory and Bash fails closed when it is unavailable.
+   - The local executor is mandatory, inherits MainAgent's Bubblewrap namespace, starts the requested executable directly as a child process, and fails closed when unavailable.
    - After authorization, the executor captures stdout and stderr without forwarding them to the AchillesCLI process streams. Bash returns the ordinary execution output or error only to the agentic session and does not expose one-time or reusable approval state.
    - A pre-execution denial is resolved by the Supervisor before Bash is invoked. AchillesAgentLib records the exact tool name, exact parameters, and denial reason as the tool result and resumes the planner without calling this skill.
 
@@ -74,7 +74,7 @@ Catalog and refresh invariants:
 ### Question #1: Why does the Bash skill contain no risk classifier or interactive permission logic?
 
 Response:
-Permission policy must remain authoritative for natural-language calls, direct slash execution, and future callers. Centralizing it in the trusted broker prevents a skill-local prompt, environment flag, or command classification from bypassing workspace confinement, while the skill remains responsible only for deterministic parsing and result formatting.
+Permission policy must remain authoritative for natural-language calls, direct slash execution, and future callers. Centralizing authorization in the trusted broker prevents a skill-local prompt or environment flag from bypassing approval. Workspace confinement is independently enforced because the local executor is already inside MainAgent's Bubblewrap namespace, while the skill remains responsible only for deterministic parsing and result formatting.
 
 ### Question #2: Why does the Bash result omit approval state?
 

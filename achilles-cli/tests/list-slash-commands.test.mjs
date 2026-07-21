@@ -98,7 +98,7 @@ test('command catalog exposes the workspace task summary command', async () => {
     assert.deepEqual(tasks.argCompletions, []);
 });
 
-test('command catalog exposes the session Bash permission command', async () => {
+test('command catalog exposes the workspace Bash permission command', async () => {
     const createdDependencyLink = await ensureLocalAchillesAgentLib();
     let toAutocompleteCatalog;
     try {

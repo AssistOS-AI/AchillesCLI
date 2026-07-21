@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizePermissionMode, PERMISSION_MODES } from '../permissions/protocol.mjs';
 
-const SETTINGS_VERSION = 1;
 const SETTINGS_FILE_NAME = 'settings.json';
 
 export function getAchillesSettingsPath(workingDir = process.cwd()) {
@@ -13,15 +13,13 @@ export function readAchillesSettings(workingDir = process.cwd()) {
     try {
         const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            return { version: SETTINGS_VERSION };
+            return {};
         }
-        return {
-            ...parsed,
-            version: SETTINGS_VERSION,
-        };
+        const { version: _legacyVersion, ...settings } = parsed;
+        return settings;
     } catch (error) {
         if (error?.code === 'ENOENT' || error instanceof SyntaxError) {
-            return { version: SETTINGS_VERSION };
+            return {};
         }
         throw error;
     }
@@ -30,6 +28,11 @@ export function readAchillesSettings(workingDir = process.cwd()) {
 export function getSelectedModel(workingDir = process.cwd()) {
     const model = readAchillesSettings(workingDir).model;
     return typeof model === 'string' && model.trim() ? model.trim() : null;
+}
+
+export function getPermissionMode(workingDir = process.cwd()) {
+    return normalizePermissionMode(readAchillesSettings(workingDir).permissions)
+        || PERMISSION_MODES.ASK;
 }
 
 function writeAchillesSettings(workingDir, settings) {
@@ -59,7 +62,6 @@ export function setSelectedModel(workingDir, modelName) {
     const settings = readAchillesSettings(workingDir);
     writeAchillesSettings(workingDir, {
         ...settings,
-        version: SETTINGS_VERSION,
         model,
     });
     return model;
@@ -70,6 +72,18 @@ export function clearSelectedModel(workingDir) {
     delete settings.model;
     writeAchillesSettings(workingDir, {
         ...settings,
-        version: SETTINGS_VERSION,
     });
+}
+
+export function setPermissionMode(workingDir, mode) {
+    const permissions = normalizePermissionMode(mode);
+    if (!permissions) {
+        throw new Error(`Use ${PERMISSION_MODES.ASK} or ${PERMISSION_MODES.FULL}.`);
+    }
+    const settings = readAchillesSettings(workingDir);
+    writeAchillesSettings(workingDir, {
+        ...settings,
+        permissions,
+    });
+    return permissions;
 }

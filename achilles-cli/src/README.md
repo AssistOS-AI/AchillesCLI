@@ -52,7 +52,13 @@ Options:
 ```
 
 `full-access` means full Bash access inside the selected workspace. Access to
-paths outside it still requires an explicit approval through the outer broker.
+paths outside it is not available; approvals control whether a Bash command may
+start, but never widen its filesystem sandbox.
+The Bash executor runs inside MainAgent and starts commands as ordinary child
+processes that inherit the existing sandbox; it does not create another bwrap.
+The mode selected with `/permissions` is persisted beside the selected model
+in `<workspace>/.achilles-cli/settings.json`. An explicit `--permissions`
+option overrides that saved mode for the current process without rewriting it.
 
 ### REPL Mode
 
