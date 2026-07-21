@@ -24,9 +24,29 @@
 
   <h2>Architecture Scope</h2>
   <div class="card">
-    <strong>Runtime package:</strong> <code>achilles-cli/</code> (entrypoint, REPL, UI, schemas, skills)<br>
+    <strong>Runtime package:</strong> <code>achilles-cli/</code> (broker, sandboxed entrypoint, REPL, UI, schemas, skills)<br>
     <strong>Tests:</strong> <code>tests/</code> and <code>achilles-cli/tests/</code><br>
     <strong>Specifications:</strong> <code>docs/specs/DS000-DS013</code>
+  </div>
+
+  <h2>Workspace Sandbox and Bash Permissions</h2>
+  <div class="card">
+    <code>src/cli.mjs</code> stays outside Bubblewrap as the trusted broker and starts
+    <code>src/index.mjs</code>, MainAgent, and skill execution inside a filesystem sandbox scoped to the
+    selected workspace. Runtime code and dependencies are read-only, temporary storage is isolated, and
+    network access remains shared. The Bash skill only parses commands and delegates execution; it contains
+    no permission prompts or risk policy. <code>/permissions ask-for-approval</code> requires an explicit
+    <code>allow</code>, <code>deny</code>, or <code>always allow</code>. <code>/permissions full-access</code>
+    runs Bash automatically only inside the current workspace and requests approval before an outside retry.
+    In WebChat, that decision appears in a dedicated three-choice selector while the original tool call remains suspended;
+    it is control traffic and is not stored as a user or assistant message.
+    After approval, the executor captures stdout and stderr without writing them to the AchillesCLI process streams.
+    Bash returns the ordinary command output or execution error only to the agentic session, and the user sees the agent's final answer.
+    A denial skips the Bash handler and becomes a normal planner result containing the exact tool name, exact parameters,
+    and denial reason, allowing the same turn to finish without exposing approval protocol data.
+    Reusable approvals are session-local and bound to the exact tool name and params. Bubblewrap uses a private
+    <code>/proc</code> when the runtime permits it; nested unprivileged WebChat containers use an empty
+    <code>/proc</code> fallback rather than exposing the outer container's process filesystem.
   </div>
 
   <h2>Ecosystem Integration</h2>
@@ -97,6 +117,8 @@
     available skill names as argument completions for slash commands that operate on skills.
     If a skill descriptor contains <code>## Help</code>, that text is returned as the completion description
     so remote UIs can show invocation guidance beside the skill name.
+    The same catalog advertises <code>ask-for-approval</code> and <code>full-access</code> as the two
+    argument choices for <code>/permissions</code>, allowing WebChat to render the supported modes directly.
     If no tools are available, clients silently fall back to an empty command list.
   </div>
 

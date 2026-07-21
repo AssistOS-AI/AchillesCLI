@@ -1,6 +1,6 @@
 {
   "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
-  "install": "",
+  "install": "sh /code/scripts/installPrerequisites.sh",
   "lite-sandbox": true,
   "env": [
     {
@@ -18,6 +18,6 @@
   "webchat": {
     "auth": "static"
   },
-  "cli": "node /code/src/index.mjs",
+  "cli": "node /code/src/cli.mjs",
   "about": "Achilles CLI for managing, generating, and testing skill definition files in skills directories."
 }

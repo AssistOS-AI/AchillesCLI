@@ -95,9 +95,6 @@ export class REPLSession {
             workingDir: this.workingDir,
         });
 
-        // Skip bash permissions flag
-        this.skipBashPermissions = options.skipBashPermissions || false;
-
         // Context for skill execution
         this.context = {
             workingDir: this.workingDir,
@@ -105,7 +102,7 @@ export class REPLSession {
             skilledAgent: agent,
             llmAgent: agent.llmAgent,
             logger: agent.logger,
-            skipBashPermissions: this.skipBashPermissions,
+            bashExecutor: options.bashExecutor,
         };
 
         // Attach context directly to agent for skills that access agent.context
@@ -119,6 +116,8 @@ export class REPLSession {
             buildSkills: () => this.reloadSkills(),
             historyManager: this.historyManager,
             getTaskSummary: (args) => formatWorkspaceTaskSummary(this.workingDir, args),
+            getPermissions: options.getPermissions,
+            setPermissions: options.setPermissions,
         });
 
         // Build command list for interactive selector

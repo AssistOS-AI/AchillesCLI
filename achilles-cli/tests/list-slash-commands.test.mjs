@@ -98,6 +98,35 @@ test('command catalog exposes the workspace task summary command', async () => {
     assert.deepEqual(tasks.argCompletions, []);
 });
 
+test('command catalog exposes the session Bash permission command', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?permissions=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) {
+            await unlink(localDependencyPath);
+        }
+    }
+
+    const catalog = toAutocompleteCatalog({ dir: repoRoot });
+    const permissions = catalog.commands.find((command) => command.name === '/permissions');
+    assert.equal(permissions.usage, '/permissions [ask-for-approval|full-access]');
+    assert.match(permissions.description, /Bash permission mode/i);
+    assert.deepEqual(permissions.argCompletions, [
+        {
+            value: 'ask-for-approval',
+            label: 'ask-for-approval',
+            description: 'Ask before each new Bash command',
+        },
+        {
+            value: 'full-access',
+            label: 'full-access',
+            description: 'Run Bash automatically inside the current workspace',
+        },
+    ]);
+});
+
 test('command catalog exposes Soul Gateway models only as /model arguments', async () => {
     const createdDependencyLink = await ensureLocalAchillesAgentLib();
     let toAutocompleteCatalog;

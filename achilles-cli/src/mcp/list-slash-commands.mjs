@@ -8,10 +8,23 @@ import { parseSkillDocument } from 'achillesAgentLib/utils/skillDocumentParser.m
 import { buildSlashCommandCatalog } from '../repl/SlashCommandHandler.mjs';
 import { getSelectedModel } from '../lib/achillesSettings.mjs';
 import { loadSoulGatewayModels, toModelCompletions } from '../lib/soulGatewayModels.mjs';
+import { PERMISSION_MODES } from '../permissions/protocol.mjs';
 
 const OPTIONAL_SKILL_ARG_COMMANDS = new Set(['/test', '/run-tests']);
 const NOOP_LOGGER = { debug() {}, warn() {}, info() {}, log() {}, error() {} };
 const BUILT_IN_SKILLS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'skills');
+const PERMISSION_MODE_COMPLETIONS = Object.freeze([
+    {
+        value: PERMISSION_MODES.ASK,
+        label: PERMISSION_MODES.ASK,
+        description: 'Ask before each new Bash command',
+    },
+    {
+        value: PERMISSION_MODES.FULL,
+        label: PERMISSION_MODES.FULL,
+        description: 'Run Bash automatically inside the current workspace',
+    },
+]);
 
 function normalizeHelpText(value) {
     return String(value || '')
@@ -122,6 +135,9 @@ function commandUsesSkillArgument(command) {
 function buildArgCompletions(command, skillCompletions, modelCompletions) {
     if (command?.name === '/model') {
         return modelCompletions;
+    }
+    if (command?.name === '/permissions') {
+        return PERMISSION_MODE_COMPLETIONS;
     }
     if (!commandUsesSkillArgument(command)) {
         return [];

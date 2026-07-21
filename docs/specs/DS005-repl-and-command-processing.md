@@ -62,6 +62,11 @@ Session control behavior:
 6. Webchat runtime mode (non-TTY stdin) accepts ESC as a standalone line (`\x1b`) to abort the current prompt execution. The agent must respond with `[cancelled]` and resume accepting input.
 7. `/model` without arguments opens the terminal search selector. `/model <model-name>` validates the exact name against Soul Gateway and persists it for the workspace; `/tier` removes that explicit selection.
 8. In WebChat mode, a successful `/model` or `/tier` change must publish the settings value through generic runtime-state metadata after the settings write completes. The published model must be the value read back from settings, or `null` after `/tier` removes it.
+9. `/permissions` without arguments reports the current session Bash mode; `/permissions ask-for-approval` and `/permissions full-access` change it through the broker's trusted control channel.
+10. The WebChat slash-command catalog must advertise `ask-for-approval` and `full-access` as argument completions for `/permissions`, in that order, so the browser can present both supported modes without treating them as conversation text.
+11. In WebChat, a Bash approval request keeps the current execution suspended while AchillesCLI emits a structured interaction with a unique request id and the ordered choices `always-allow`, `allow`, and `deny`; `always-allow` is the default choice.
+12. A structured WebChat interaction response must be consumed as control input before slash-command and prompt dispatch, must match the pending request id, and must never enter agent conversation history.
+13. Resolving the interaction resumes the same tool call with the command result or denial; a second or stale response must not execute the command again.
 
 Operational invariants:
 1. Deterministic slash flows must avoid unnecessary LLM routing.
@@ -70,6 +75,8 @@ Operational invariants:
 4. All commands use slash syntax; there are no quick commands without `/`.
 5. Interrupted turns must not be appended to command history.
 6. Task inspection must remain read-only. It must not create task storage, change task status, start polling, or detach terminal CLI work.
+7. Permission mode is session-local and must not be persisted into workspace settings.
+8. `full-access` remains confined to the selected workspace; it does not bypass the broker for outside paths.
 
 ## Decisions & Questions
 
@@ -82,6 +89,11 @@ Both runtimes already dispatch deterministic slash commands through `SlashComman
 
 Response:
 The browser badge represents the explicit workspace configuration, so the emitted value must not get ahead of the durable setting. Reading the saved value back before publication keeps runtime execution state and the WebChat header aligned even if settings normalization changes later.
+
+### Question #3: Why does WebChat use a dedicated interaction instead of the next chat message?
+
+Response:
+Approval is runtime control, not conversation content. A dedicated interaction lets the browser present bounded choices while the original broker request remains pending, keeps the decision out of history and planner context, and correlates the response to exactly one command without ending the active turn.
 
 ## Conclusion
 The REPL subsystem is the primary interactive contract for AchillesCLI and must keep deterministic commands, orchestrated prompting, and session-state controls coherent. The hierarchical command model provides uniform discovery and execution through the `/` menu.

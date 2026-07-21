@@ -125,6 +125,7 @@ ${C.bold}${C.yellow}Slash Commands${C.reset} ${C.dim}(direct skill execution)${C
   ${C.cyan}/raw${C.reset}                     Toggle markdown rendering
   ${C.cyan}/tier${C.reset} [name]             Show/switch LLM tier
   ${C.cyan}/model${C.reset} [name|clear]      Pin a model or clear pin
+  ${C.cyan}/permissions${C.reset} [mode]      Show/set Bash approval mode
   ${C.cyan}/tasks${C.reset} [count|all]       Show background task summaries
   ${C.cyan}/help${C.reset} [topic]            Show help
   ${C.cyan}/add-repo${C.reset} <URL> [name]   Clone a repository
@@ -1044,6 +1045,26 @@ ${C.dim}The model catalog is loaded from Soul Gateway.${C.reset}
 `,
     },
 
+    permissions: {
+        title: '/permissions - Configure Bash Approvals',
+        content: `
+${C.bold}${C.cyan}/permissions - Configure Bash Approvals${C.reset}
+
+${C.bold}${C.yellow}Usage:${C.reset}
+  ${C.green}/permissions${C.reset}                     Show the current mode
+  ${C.green}/permissions ask-for-approval${C.reset}    Ask before each new Bash command
+  ${C.green}/permissions full-access${C.reset}         Run Bash automatically inside the workspace
+
+${C.bold}${C.yellow}Description:${C.reset}
+  Controls Bash only. Other tools continue to run normally. Full access is
+  still confined to the current workspace. If a Bash command needs a path
+  outside that workspace, Achilles asks for allow, deny, or always allow.
+
+  Always allow is remembered only for the exact Bash tool parameters and
+  only for the current agent session.
+`,
+    },
+
     'add-repo': {
         title: '/add-repo - Clone a Repository',
         content: `
@@ -1195,6 +1216,7 @@ ${C.bold}${C.yellow}Common Slash Commands${C.reset}
   ${C.cyan}/test${C.reset} <skill>     Test generated code
   ${C.cyan}/refine${C.reset} <skill>   Improve until tests pass
   ${C.cyan}/update repos${C.reset}      Pull cloned repositories
+  ${C.cyan}/permissions${C.reset} [mode] Show/set Bash approval mode
   ${C.cyan}/tasks${C.reset} [count|all] Show background task summaries
   ${C.cyan}/add-repo${C.reset} <URL>   Clone a repository
   ${C.cyan}/list-repos${C.reset}       List cloned repositories

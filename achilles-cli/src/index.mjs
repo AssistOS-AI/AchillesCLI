@@ -5,7 +5,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { MainAgent, SecuritySupervisor, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
+import { MainAgent, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
 import { LLMAgent } from 'achillesAgentLib/LLMAgents';
 import { IOServices } from 'achillesAgentLib';
 import { HistoryManager } from './repl/HistoryManager.mjs';
@@ -42,6 +42,14 @@ import {
 } from './lib/webchatRuntimeState.mjs';
 import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
+import { BrokerClient } from './permissions/BrokerClient.mjs';
+import { BashSecuritySupervisor, createBashExecutor } from './permissions/BashSecuritySupervisor.mjs';
+import {
+    approvalDecisionFromInteractionOption,
+    normalizePermissionMode,
+    parseWebchatInteractionResponse,
+    PERMISSION_MODES,
+} from './permissions/protocol.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,7 +100,7 @@ async function main() {
     let selectedModel = null;
     let renderMarkdown = true;
     let uiStyle = process.env.ACHILLES_CLI_UI || 'claude-code'; // Default UI style
-    let skipBashPermissions = false; // Skip bash command permission prompts
+    let requestedPermissionMode = null;
     const cliSkillRoots = []; // Skill roots from --skill-root flags
 
     for (let i = 0; i < args.length; i++) {
@@ -142,7 +150,18 @@ async function main() {
             console.log('achilles-cli v3.0.0');
             process.exit(0);
         } else if (arg === '--skip-permissions') {
-            skipBashPermissions = true;
+            requestedPermissionMode = PERMISSION_MODES.FULL;
+        } else if (arg === '--permissions') {
+            requestedPermissionMode = normalizePermissionMode(args[i + 1]);
+            if (!requestedPermissionMode) {
+                throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
+            }
+            i += 1;
+        } else if (arg.startsWith('--permissions=')) {
+            requestedPermissionMode = normalizePermissionMode(arg.slice('--permissions='.length));
+            if (!requestedPermissionMode) {
+                throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
+            }
         } else if (!arg.startsWith('-')) {
             // Collect remaining args as the prompt
             prompt = args.slice(i).join(' ');
@@ -206,12 +225,35 @@ async function main() {
         logger.log(`Additional skill roots: ${[...cliSkillRoots, ...nodeModulesSkillRoots, ...ploinkyRepoSkillRoots].join(', ')}`);
     }
 
-    const supervisor = webchatRuntime ? new WebchatProgressSupervisor() : null;
+    const controlTokenPath = path.join(path.dirname(process.env.ACHILLES_BROKER_SOCKET || ''), 'control-token');
+    let controlToken = null;
+    try {
+        controlToken = fs.readFileSync(controlTokenPath, 'utf8').trim();
+        fs.unlinkSync(controlTokenPath);
+    } catch {
+        // The control client remains fail-closed when the bootstrap capability is unavailable.
+    }
+    const brokerClient = new BrokerClient();
+    const permissionControlClient = new BrokerClient({ controlToken });
+    if (!brokerClient.available) {
+        throw new Error('Achilles Broker connection is unavailable. Refusing to start an unsandboxed MainAgent.');
+    }
+    const supervisor = new BashSecuritySupervisor({
+        brokerClient,
+        logger,
+        outputWriter: webchatRuntime ? createWebchatProgressOutputWriter() : null,
+    });
+    const bashExecutor = createBashExecutor(brokerClient);
+    if (requestedPermissionMode) {
+        await permissionControlClient.setMode(requestedPermissionMode);
+    }
+    const getPermissions = async () => (await permissionControlClient.getMode()).mode;
+    const setPermissions = async (mode) => (await permissionControlClient.setMode(mode)).mode;
 
     // Initialize MainAgent with all skill roots
     const agent = new MainAgent({
         startDir: workingDir,
-        ...(supervisor ? { supervisor } : {}),
+        supervisor,
         llmAgentOptions: {
             name: 'achilles-cli-agent',
         },
@@ -262,7 +304,7 @@ async function main() {
                 skilledAgent: agent,
                 llmAgent: agent.llmAgent,
                 logger,
-                skipBashPermissions,
+                bashExecutor,
             };
             const akuSessionState = createAKUSessionState();
             context.akuSessionState = akuSessionState;
@@ -323,7 +365,11 @@ async function main() {
         await runWebchatInteractive(agent, {
             workingDir,
             skillsDir,
-            skipBashPermissions,
+            brokerClient,
+            approvalControlClient: permissionControlClient,
+            bashExecutor,
+            getPermissions,
+            setPermissions,
             debug,
             renderMarkdown,
         });
@@ -335,7 +381,9 @@ async function main() {
             builtInSkillsDir,
             debug,
             renderMarkdown,
-            skipBashPermissions,
+            bashExecutor,
+            getPermissions,
+            setPermissions,
         });
         await session.start();
     }
@@ -507,7 +555,17 @@ function hasSsoEnvironment() {
 }
 
 async function runWebchatInteractive(agent, options) {
-    const { workingDir, skillsDir, skipBashPermissions, debug, renderMarkdown } = options;
+    const {
+        workingDir,
+        skillsDir,
+        brokerClient,
+        approvalControlClient,
+        bashExecutor,
+        getPermissions,
+        setPermissions,
+        debug,
+        renderMarkdown,
+    } = options;
     const historyManager = new HistoryManager({ workingDir });
     const akuSessionState = createAKUSessionState();
     const slashState = {
@@ -521,7 +579,7 @@ async function runWebchatInteractive(agent, options) {
         skillsDir,
         skilledAgent: agent,
         llmAgent: agent.llmAgent,
-        skipBashPermissions,
+        bashExecutor,
     };
     context.akuSessionState = akuSessionState;
     agent.context = context;
@@ -554,6 +612,8 @@ async function runWebchatInteractive(agent, options) {
         },
         historyManager,
         getTaskSummary: (args) => formatWorkspaceTaskSummary(workingDir, args),
+        getPermissions,
+        setPermissions,
     });
 
     let isClosing = false;
@@ -565,10 +625,26 @@ async function runWebchatInteractive(agent, options) {
     let processingChain = Promise.resolve();
     const stdinIsTTY = Boolean(process.stdin?.isTTY);
     const handleControlData = (chunk) => {
-        handleWebchatControlChunk(chunk, {
+        const interrupted = handleWebchatControlChunk(chunk, {
             agent,
             isProcessing,
             abortController: activeAbortController
+        });
+        if (interrupted) {
+            brokerClient.getPendingApproval().then((pending) => {
+                if (pending?.pending && pending.interactionId) {
+                    return approvalControlClient.resolvePendingApproval('deny', pending.interactionId);
+                }
+                return null;
+            }).catch(() => {});
+        }
+    };
+
+    const handleInteractionResponse = (response) => {
+        const decision = approvalDecisionFromInteractionOption(response.optionId);
+        if (!decision) return;
+        approvalControlClient.resolvePendingApproval(decision, response.id).catch((error) => {
+            agent.logger?.error?.(`Failed to resolve WebChat interaction: ${error.message}`);
         });
     };
 
@@ -716,6 +792,11 @@ async function runWebchatInteractive(agent, options) {
 
                 for (const segment of segments) {
                     if (segment.includes('\x1b') || segment.includes('\u001b')) {
+                        continue;
+                    }
+                    const interactionResponse = parseWebchatInteractionResponse(segment);
+                    if (interactionResponse) {
+                        handleInteractionResponse(interactionResponse);
                         continue;
                     }
                     pendingLines.push(segment);
@@ -1006,32 +1087,17 @@ function createSilentOutputWriter() {
     };
 }
 
-class WebchatProgressSupervisor extends SecuritySupervisor {
-    async approve() {
-        return 'alwaysApprove';
-    }
-
-    getOutputWriter() {
-        return {
-            write: async (message) => {
-                if (!message || typeof message !== 'object' || message.type !== 'tool_reason') {
-                    return;
-                }
-                const reason = String(message.reason || '').trim();
-                if (!reason) {
-                    return;
-                }
-                const payload = {
-                    __webchatProgress: 1,
-                    type: 'tool_reason',
-                    tool: typeof message.tool === 'string' ? message.tool : '',
-                    reason,
-                    stepIndex: Number.isFinite(message.stepIndex) ? message.stepIndex : null,
-                };
-                process.stdout.write(`${JSON.stringify(payload)}\n`);
-            },
-        };
-    }
+function createWebchatProgressOutputWriter() {
+    return {
+        write: async (message) => {
+            if (!message || typeof message !== 'object' || message.type !== 'tool_reason') {
+                return;
+            }
+            const reason = String(message.reason || '').trim();
+            if (!reason) return;
+            emitWebchatProgress(message.tool, reason);
+        },
+    };
 }
 
 function printHelp() {
@@ -1052,7 +1118,8 @@ OPTIONS:
   --fast                 Use fast LLM mode (cheaper, quicker)
   --deep                 Use deep LLM mode (default, more capable)
   --no-markdown          Disable markdown rendering in output (use /raw to toggle)
-  --skip-permissions     Skip bash command permission prompts (use with caution)
+  --permissions <mode>   Initial Bash mode: ask-for-approval or full-access
+  --skip-permissions     Deprecated alias for --permissions full-access
   --ui <style>           UI style: claude-code (default), minimal
   --ui-minimal           Use minimal UI (no colors, simple prompts)
   --ui-claude-code       Use Claude Code style UI (boxed input, animations)
@@ -1330,8 +1397,13 @@ function sanitiseSkillName(value) {
 
 // Run if executed directly
 if (isRunDirectly()) {
-    main().catch((error) => {
-        console.error('Fatal error:', error.message);
-        process.exit(1);
-    });
+    if (process.env.ACHILLES_BROKER_CHILD !== '1') {
+        console.error('Fatal error: Start AchillesCLI through src/cli.mjs or the achilles-cli binary so the MainAgent is sandboxed.');
+        process.exitCode = 1;
+    } else {
+        main().catch((error) => {
+            console.error('Fatal error:', error.message);
+            process.exitCode = 1;
+        });
+    }
 }

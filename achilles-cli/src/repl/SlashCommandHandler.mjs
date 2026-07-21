@@ -171,6 +171,12 @@ export const COMMAND_DEFINITIONS = {
         needsSkillArg: false,
         argMatchMode: 'fragment',
     },
+    'permissions': {
+        usage: '/permissions [ask-for-approval|full-access]',
+        description: 'Show or change the Bash permission mode for this session',
+        args: 'optional',
+        needsSkillArg: false,
+    },
     'raw': {
         usage: '/raw',
         description: 'Toggle markdown rendering',
@@ -347,8 +353,20 @@ export class SlashCommandHandler {
      * @param {HistoryManager} [options.historyManager] - Command history manager
      * @param {Function} [options.getTaskSummary] - Read and format workspace task status
      * @param {Function} [options.loadModels] - Load selectable Soul Gateway models
+     * @param {Function} [options.getPermissions] - Read the current Bash permission mode
+     * @param {Function} [options.setPermissions] - Change the current Bash permission mode
      */
-    constructor({ executeSkill, buildSkills, getUserSkills, getSkills, historyManager, getTaskSummary, loadModels }) {
+    constructor({
+        executeSkill,
+        buildSkills,
+        getUserSkills,
+        getSkills,
+        historyManager,
+        getTaskSummary,
+        loadModels,
+        getPermissions,
+        setPermissions,
+    }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
         this.getUserSkills = getUserSkills;
@@ -356,6 +374,8 @@ export class SlashCommandHandler {
         this.historyManager = historyManager;
         this.getTaskSummary = getTaskSummary;
         this.loadModels = loadModels || loadSoulGatewayModels;
+        this.getPermissions = getPermissions;
+        this.setPermissions = setPermissions;
         this.availableModels = [];
     }
 
@@ -476,6 +496,25 @@ export class SlashCommandHandler {
 
         if (command === 'model') {
             return this._handleModelCommand(args);
+        }
+
+        if (command === 'permissions') {
+            if (typeof this.getPermissions !== 'function' || typeof this.setPermissions !== 'function') {
+                return { handled: true, error: 'Permission controls are unavailable in this session.' };
+            }
+            if (!args) {
+                return { handled: true, result: `Bash permissions: ${await this.getPermissions()}` };
+            }
+            const requested = args.trim().toLowerCase();
+            if (!['ask-for-approval', 'full-access'].includes(requested)) {
+                return { handled: true, error: 'Usage: /permissions [ask-for-approval|full-access]' };
+            }
+            try {
+                const mode = await this.setPermissions(requested);
+                return { handled: true, result: `Bash permissions set to ${mode}.` };
+            } catch (error) {
+                return { handled: true, error: error.message };
+            }
         }
 
         if (command === 'quit' || command === 'exit' || command === 'q') {

@@ -6,7 +6,7 @@ Achilles CLI is the interactive and single-shot skill management CLI used by the
 
 1. Parent `~/work/file-parser/AssistOSExplorer/CLAUDE.md` for workspace conventions.
 2. `docs/specs/matrix.md` and the relevant DS file for the contract you are touching.
-3. `achilles-cli/src/index.mjs` for the CLI entry point.
+3. `achilles-cli/src/cli.mjs` for the trusted Broker entry point and `achilles-cli/src/index.mjs` for the sandboxed agent entry point.
 4. `achilles-cli/manifest.json` for the Ploinky agent declaration.
 5. `achilles-cli/src/skills/bash/` for the bundled bash skill.
 
@@ -20,7 +20,8 @@ Achilles CLI is the interactive and single-shot skill management CLI used by the
 
 ## Critical components
 
-- `AchillesCli` wraps `RecursiveSkilledAgent` from `achillesAgentLib`, `LLMAgent`, `HistoryManager`, `SlashCommandHandler`, and `ActionReporter`.
+- `AchillesBroker` stays outside bubblewrap and owns Bash execution, approval prompts, exact-parameter approval proofs, and raw log streaming.
+- `AchillesCli` runs inside bubblewrap and wraps `RecursiveSkilledAgent` from `achillesAgentLib`, `LLMAgent`, `HistoryManager`, `SlashCommandHandler`, and `ActionReporter`.
 - `REPLSession` owns the input loop, history, and ESC cancel.
 - `SlashCommandHandler` owns `/ls`, `/read`, `/write`, and skill execution.
 - `CommandSelector` owns arrow navigation, filtering, and skill picking.
@@ -30,6 +31,7 @@ Achilles CLI is the interactive and single-shot skill management CLI used by the
 - Inherits AssistOSExplorer Node 20+, ES module, `.mjs`, and 4-space conventions.
 - Built-in skills live in `achilles-cli/src/skills/`.
 - LLM invocation goes through `LLMAgent` from `achillesAgentLib`, never direct vendor HTTP.
+- The Bash skill contains execution delegation only; the Broker and `/permissions` own policy.
 
 ## Testing
 
