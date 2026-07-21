@@ -13,7 +13,7 @@
     "ACHILLES_DEBUG"
   ],
   "enable": [
-    "proxies/soul-gateway"
+    "proxies/soul-gateway no-wait"
   ],
   "webchat": {
     "auth": "static"
