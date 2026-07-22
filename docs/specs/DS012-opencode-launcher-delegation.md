@@ -122,6 +122,26 @@ installed agent's Marketplace status, submit `enable_agent` for
 the runtime reports ready. A transient router response that the new route is
 still starting may be retried only inside the bounded startup window.
 
+The `opencodeAgent` default profile must run its repository-owned installation
+script before AgentServer starts. The script must install the current OpenCode
+release through the official installer, validate the repository-owned
+`opencode.json`, and atomically replace
+`$HOME/.config/opencode/opencode.json` with restrictive permissions. It must
+not replace OpenCode authentication, session, or recent-model state. The
+runtime, readiness probe, task runner, models handler, and interactive CLI must
+resolve the OpenCode binary from the same effective `HOME` unless an explicit
+`OPENCODE_BIN` test or operator override is supplied.
+
+The installed OpenCode config must add an OpenAI-compatible provider named
+`soul-gateway`. Its base URL must be derived from `PLOINKY_ROUTER_URL`, and its
+API key must reference Ploinky's generated `PLOINKY_AGENT_API_KEY` through
+OpenCode environment substitution; neither resolved value may be written into
+the repository template. The provider must expose `fast`, `deep`, and `plan`
+as `soul-gateway/fast`, `soul-gateway/deep`, and `soul-gateway/plan`. The config
+must not set `model` or `small_model`, must not allowlist providers, and must
+therefore preserve OpenCode's existing recent-model selection and other
+configured providers.
+
 The `opencodeAgent` manifest must expose AgentServer `endpoints.chatCompletions`
 and `endpoints.models` handlers. The chat-completions handler must reuse the
 same OpenCode execution runner as `execute-task`, must require an OpenCode
@@ -219,6 +239,14 @@ Passing that selection explicitly overrides the older model stored on the
 resumed session. Because this state file is an OpenCode implementation detail,
 invalid or unavailable state preserves native resume behavior as a safe
 compatibility fallback.
+
+### Question #11: Why is Soul Gateway configured during the install hook?
+Response: The profile install hook already runs before AgentServer in both the
+container and host-sandbox startup paths. Installing the versioned template
+immediately after the current OpenCode release avoids a dedicated image while
+ensuring the MCP runner and interactive CLI read the same provider config from
+their effective home. Ploinky injects the signed agent API key at runtime, so
+the template contains only an environment reference and no credential.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users

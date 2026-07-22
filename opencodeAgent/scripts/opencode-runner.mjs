@@ -3,17 +3,23 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-export const DEFAULT_OPENCODE_BIN = '/root/.opencode/bin/opencode';
 export const OPENCODE_TIMEOUT_MS = 300000;
 
-const LOG_TAIL_LIMIT = 16 * 1024;
 const DEFAULT_OPENCODE_HOME = '/root';
+const LOG_TAIL_LIMIT = 16 * 1024;
 const SEMANTIC_FAILURE_PATTERNS = [
     /permission requested:\s*external_directory/i,
     /auto-rejecting/i,
     /the user rejected permission/i,
     /read \. failed/i,
 ];
+
+export function resolveOpenCodeBin(env = process.env) {
+    const home = String(env.HOME || DEFAULT_OPENCODE_HOME);
+    return path.join(home, '.opencode', 'bin', 'opencode');
+}
+
+export const DEFAULT_OPENCODE_BIN = resolveOpenCodeBin();
 
 export function createContainerLogStream() {
     return {
@@ -173,7 +179,7 @@ export function runOpenCode({
     captureSession = false,
     logStream,
     env = process.env,
-    opencodeBin = process.env.OPENCODE_BIN || DEFAULT_OPENCODE_BIN,
+    opencodeBin = env.OPENCODE_BIN || resolveOpenCodeBin(env),
     signal,
 }) {
     return new Promise((resolve, reject) => {
@@ -349,7 +355,7 @@ export async function executeOpenCodeTask({
             captureSession,
             logStream,
             env,
-            opencodeBin: env.OPENCODE_BIN || DEFAULT_OPENCODE_BIN,
+            opencodeBin: env.OPENCODE_BIN || resolveOpenCodeBin(env),
             signal,
         });
 

@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_OPENCODE_BIN } from '../scripts/opencode-runner.mjs';
+import { resolveOpenCodeBin } from '../scripts/opencode-runner.mjs';
 
 const MODEL_LIST_TIMEOUT_MS = 30000;
 const DEFAULT_TAGS = ['coding', 'agentic'];
@@ -155,7 +155,7 @@ function runOpenCodeModels(args, {
     env = process.env,
     timeoutMs = MODEL_LIST_TIMEOUT_MS,
 } = {}) {
-    const opencodeBin = env.OPENCODE_BIN || DEFAULT_OPENCODE_BIN;
+    const opencodeBin = env.OPENCODE_BIN || resolveOpenCodeBin(env);
 
     return new Promise((resolve, reject) => {
         const child = spawn(opencodeBin, ['models', ...args], {

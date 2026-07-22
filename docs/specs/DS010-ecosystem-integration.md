@@ -28,6 +28,7 @@ AchillesAgentLib contract:
 2. AchillesCLI delegates skill discovery/orchestration semantics to AchillesAgentLib.
 3. AchillesCLI must preserve compatibility with AchillesAgentLib skill subsystem expectations.
 4. When AchillesCLI uses Agentic Knowledge Units, AchillesAgentLib DS008 remains the AKU library authority. AchillesCLI-specific Copilot memory behavior is governed by DS011 and must not be pushed into the AKU library contract.
+5. AchillesCLI supplies a decorated `invokerStrategy` through `MainAgent.llmAgentOptions`. The decorator must force the `soul_gateway` provider key, preserve opaque model identifiers, delegate the standard invoker implementation, and retain its auxiliary introspection methods. AchillesAgentLib remains responsible for provider-adapter execution, while Soul Gateway remains responsible for model validation and routing.
 
 Ploinky integration boundary:
 1. AchillesCLI should remain compatible with workspace-managed runtime contexts.
@@ -85,8 +86,12 @@ Ploinky integration boundary:
     `PLOINKY_WEBCHAT_HAS_HISTORY=1`. AchillesCLI must use that flag by itself to
     suppress the new-conversation intro. Folder session identity and persisted
     history remain host-owned; AchillesCLI does not require a session-id
-    environment variable because Ploinky restores prior turns through the next
-    normal prompt.
+    environment variable. AchillesCLI opts into the generic WebChat envelope,
+    accepts server-provided prior turns only as ordered `{ role, message }`
+    history, and supplies that history as `initialHistory` when the next normal
+    prompt creates MainAgent's LoopAgentSession. It must not concatenate the
+    restored transcript or synthetic continuation delimiters into the current
+    user message.
 16. In WebChat runtime mode, AchillesCLI registers a generic asynchronous-task
     observer with Ploinky `AgentMcpClient.mjs`. Launcher skills that delegate
     long-running work use `callToolWithoutWait`, so an AgentServer response
@@ -191,7 +196,13 @@ Provider launcher discovery:
    formatted-output mode and must pass the captured provider session id through
    `--session` on continuation. OpenCode must relay provider stdout and stderr
    byte-for-byte to the AgentServer live-log channel without synthetic status
-   messages or stream prefixes. For initial
+   messages or stream prefixes. Its profile install hook must install the
+   current OpenCode release and then atomically replace the OpenCode config
+   under the effective runtime `HOME` with the repository-owned Soul Gateway
+   provider template before AgentServer starts. The template must reference the
+   Ploinky-injected router URL and signed agent API key through OpenCode
+   environment substitution, must add the `fast`, `deep`, and `plan` models,
+   and must not select a default model or restrict other providers. For initial
    PI tasks, the provider owns model selection. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,
    read the effective `defaultProvider`, `defaultModel`, and valid

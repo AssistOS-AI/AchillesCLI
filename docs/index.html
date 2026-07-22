@@ -85,6 +85,9 @@
     not for transcript or final-answer text.
     The startup intro is skipped when <code>PLOINKY_WEBCHAT_HAS_HISTORY=1</code> and otherwise runs normally;
     no WebChat session-id environment variable is required by AchillesCLI.
+    When a recreated WebChat runtime forwards prior turns, AchillesCLI keeps the current prompt separate and hydrates
+    MainAgent with the envelope's ordered <code>{ role, message }</code> history. Synthetic transcript delimiters are
+    not forwarded to the planner, and prompt-only cached results are skipped for that restoring turn.
     Asynchronous AgentServer tools are detached from the active WebChat reply: AchillesCLI acknowledges the start with
     the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,
     follows the remote task through the router, and emits dedicated lifecycle and log envelopes. Ongoing tasks are
@@ -138,6 +141,10 @@
     search selector. The WebChat runtime publishes that explicit settings value through generic runtime-state
     metadata, allowing the browser to show it beside the agent name without storing model data in chat history.
     This badge is the configured model, not the effective Soul Gateway leaf used for an individual response.
+    AchillesCLI decorates AchillesAgentLib's standard invoker with the explicit
+    <code>soul_gateway</code> provider key and forwards the selected model identifier unchanged. The local model
+    catalog supports selection and metadata but is not an execution allowlist; Soul Gateway validates and routes
+    the current identifier, including agent-backed models introduced after the AchillesCLI process started.
     Running <code>/tier</code> removes the explicit saved model selection and clears the badge.
   </div>
 
@@ -179,7 +186,12 @@
     OpenCode tasks use the provider's
     default formatted output and resolve the created session through a separate random-title lookup before
     using <code>--session</code> when resumed. OpenCode relays provider stdout and stderr unchanged into
-    live task logs without synthetic tool-status messages. OpenCode's
+    live task logs without synthetic tool-status messages. Before AgentServer starts, the agent's profile
+    installer installs the current OpenCode release and atomically writes the repository-owned
+    <code>$HOME/.config/opencode/opencode.json</code>. That config adds the OpenAI-compatible
+    <code>soul-gateway</code> provider and its <code>fast</code>, <code>deep</code>, and <code>plan</code>
+    models using Ploinky-injected router and agent-identity environment values; it stores no credential,
+    selects no default model, and leaves other providers available. OpenCode's
     exported session data is inspected only off-stream to identify the last assistant
     answer for final-result metadata, allowing WebChat to show intermediate output in
     grey while keeping the raw visible stream unchanged.

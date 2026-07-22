@@ -63,16 +63,17 @@ export function normalizeWebchatOrigin(rawOrigin) {
 export function normalizeWebchatMessage(raw) {
     const text = String(raw || '').trim();
     if (!text) {
-        return { text: '', rawText: '', attachments: [], references: [], invocationToken: '', origin: {} };
+        return { text: '', rawText: '', attachments: [], references: [], history: [], invocationToken: '', origin: {} };
     }
     try {
         const parsed = JSON.parse(text);
         if (!parsed || typeof parsed !== 'object' || !parsed.__webchatMessage) {
-            return { text, rawText: text, attachments: [], references: [], invocationToken: '', origin: {} };
+            return { text, rawText: text, attachments: [], references: [], history: [], invocationToken: '', origin: {} };
         }
         const messageText = typeof parsed.text === 'string' ? parsed.text : '';
         const attachments = Array.isArray(parsed.attachments) ? parsed.attachments : [];
         const references = normalizeWebchatReferences(parsed.references);
+        const history = normalizeWebchatHistory(parsed.history);
         const origin = normalizeWebchatOrigin(parsed.origin);
         const invocationToken = typeof parsed.invocation?.token === 'string'
             ? parsed.invocation.token
@@ -103,10 +104,26 @@ export function normalizeWebchatMessage(raw) {
             rawText: messageText,
             attachments,
             references,
+            history,
             invocationToken,
             origin,
         };
     } catch {
-        return { text, rawText: text, attachments: [], references: [], invocationToken: '', origin: {} };
+        return { text, rawText: text, attachments: [], references: [], history: [], invocationToken: '', origin: {} };
     }
+}
+
+export function normalizeWebchatHistory(rawHistory) {
+    if (!Array.isArray(rawHistory)) return [];
+    const history = [];
+    for (const entry of rawHistory) {
+        if (!entry || typeof entry !== 'object') continue;
+        const role = entry.role === 'user'
+            ? 'user'
+            : (entry.role === 'assistant' ? 'assistant' : '');
+        const message = typeof entry.message === 'string' ? entry.message : '';
+        if (!role || !message.trim()) continue;
+        history.push({ role, message });
+    }
+    return history;
 }

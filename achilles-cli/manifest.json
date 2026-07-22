@@ -16,7 +16,8 @@
     "proxies/soul-gateway"
   ],
   "webchat": {
-    "auth": "static"
+    "auth": "static",
+    "forwardEnvelope": true
   },
   "cli": "node /code/src/cli.mjs",
   "about": "Achilles CLI for managing, generating, and testing skill definition files in skills directories."

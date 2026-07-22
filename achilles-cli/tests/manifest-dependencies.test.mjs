@@ -14,6 +14,12 @@ test('AchillesCLI starts Soul Gateway before model discovery', async () => {
     assert.ok(manifest.enable.includes('proxies/soul-gateway'));
 });
 
+test('AchillesCLI opts into structured WebChat envelopes', async () => {
+    const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
+
+    assert.equal(manifest.webchat?.forwardEnvelope, true);
+});
+
 test('AchillesCLI installs Bubblewrap and enters through the trusted broker launcher', async () => {
     const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
 

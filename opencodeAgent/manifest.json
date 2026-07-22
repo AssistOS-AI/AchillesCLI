@@ -5,7 +5,7 @@
     "about": "OpenCode CLI agent. Executes one-shot build tasks via opencode CLI to construct AKU from WAC data.",
     "profiles": {
         "default": {
-            "install": "curl -fsSL https://opencode.ai/install | bash"
+            "install": "sh /code/scripts/install-opencode.sh"
         }
     },
     "health": {
@@ -30,7 +30,7 @@
             "cwd": "/code"
         }
     },
-    "cli": "/root/.opencode/bin/opencode",
+    "cli": "\"$HOME/.opencode/bin/opencode\"",
     "env": [
         "PLOINKY_WORKSPACE_ROOT",
         "OPENCODE_API_KEY",

@@ -190,6 +190,12 @@ Dacă un astfel de tool are nevoie de o cale din afara workspace-ului, nu prime�
 
 Apelurile către alți agenți prin MCP rămân sub politica MCP și prin routerul Ploinky. Sandboxul local nu înlocuiește autentificarea și politica agent-to-agent.
 
+## Restaurarea unei conversații WebChat
+
+Când Ploinky recreează procesul AchillesCLI pentru o conversație existentă, istoricul nu este concatenat cu noul prompt. Envelope-ul WebChat conține separat `text`, care este cererea curentă, și `history`, care este lista ordonată de mesaje anterioare cu `role` și `message`.
+
+AchillesCLI validează numai rolurile `user` și `assistant`, apoi transmite lista ca `initialHistory` la crearea sesiunii `MainAgent`. AgentLib transformă aceste mesaje în istoricul intern al `LoopAgentSession`, iar providerul le primește din nou ca roluri distincte. Delimitatoarele textuale folosite de Ploinky pentru agenții vechi nu intră în contextul AchillesCLI. Istoricul este aplicat o singură dată; prompturile următoare folosesc sesiunea deja hidratată.
+
 ## Ce rămâne neschimbat
 
 - `MainAgent` continuă să planifice și să execute skilluri.

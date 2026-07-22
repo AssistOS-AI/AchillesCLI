@@ -36,6 +36,7 @@ Runtime wiring:
 2. Attach command execution utilities and UI providers.
 3. Register built-in and discovered skill roots before accepting requests.
 4. In webchat mode, run the startup intro unless `PLOINKY_WEBCHAT_HAS_HISTORY=1`; no folder session identifier is required by the agent process.
+   When the first forwarded envelope carries role-separated history, normalize it as ordered `{ role, message }` records and use it only to hydrate the newly created MainAgent session. The current envelope text remains the current prompt.
 5. In webchat mode, publish the explicit model restored from `.achilles-cli/settings.json` as generic runtime-state metadata before accepting user input; publish `null` when that setting is absent.
 6. The broker remains outside Bubblewrap and handles authorization only. MainAgent, skill code, the local Bash executor, and every Bash child process inherit the persistent workspace sandbox.
 7. Bubblewrap keeps the network namespace shared and exposes only system runtime paths, read-only Achilles code/dependencies, isolated temporary storage, the broker socket, and the writable session workspace.
@@ -43,6 +44,7 @@ Runtime wiring:
 9. The Unix socket protocol must preserve its response half after the client finishes writing a request, because broker handlers may complete asynchronously.
 10. In webchat mode, structured interaction responses received on stdin must be demultiplexed before ordinary prompt processing and forwarded through the trusted broker control channel.
 11. A successful `/permissions` change must update the trusted Broker before the confirmed mode is written atomically to the workspace settings file.
+12. A WebChat continuation carrying initial history must bypass prompt-only cached provider results so the restored context reaches the planner that produces the current answer.
 
 Configuration boundaries:
 1. Startup must not hardcode environment-specific absolute paths.

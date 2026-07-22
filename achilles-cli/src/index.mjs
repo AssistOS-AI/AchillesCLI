@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { MainAgent, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
 import { LLMAgent } from 'achillesAgentLib/LLMAgents';
+import { defaultLLMInvokerStrategy } from 'achillesAgentLib/utils/LLMClient.mjs';
 import { IOServices } from 'achillesAgentLib';
 import { HistoryManager } from './repl/HistoryManager.mjs';
 import { CommandSelector, showCommandSelector, showSkillSelector, buildCommandList } from './ui/CommandSelector.mjs';
@@ -42,6 +43,7 @@ import {
 } from './lib/webchatRuntimeState.mjs';
 import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
+import { createSoulGatewayInvoker } from './lib/soulGatewayInvoker.mjs';
 import { BrokerClient } from './permissions/BrokerClient.mjs';
 import { BashSecuritySupervisor } from './permissions/BashSecuritySupervisor.mjs';
 import { createBashExecutor } from './permissions/LocalBashExecutor.mjs';
@@ -262,6 +264,7 @@ async function main() {
         supervisor,
         llmAgentOptions: {
             name: 'achilles-cli-agent',
+            invokerStrategy: createSoulGatewayInvoker(defaultLLMInvokerStrategy),
         },
         logger,
     });
@@ -706,11 +709,14 @@ async function runWebchatInteractive(agent, options) {
                         logger: agent.logger,
                     });
 
-                    const cachedProviderResult = await lookupCachedProviderResultForPrompt(context, {
-                        prompt: message,
-                        workingDir,
-                        logger: agent.logger,
-                    });
+                    const initialHistory = normalizedMessage.history;
+                    const cachedProviderResult = initialHistory.length === 0
+                        ? await lookupCachedProviderResultForPrompt(context, {
+                            prompt: message,
+                            workingDir,
+                            logger: agent.logger,
+                        })
+                        : null;
                     if (cachedProviderResult?.hit) {
                         process.stdout.write(`${cachedProviderResult.resultText}\n`);
                         historyManager.add(message);
@@ -727,6 +733,7 @@ async function runWebchatInteractive(agent, options) {
                         supervisor: agent.supervisor || null,
                         model: slashState.pinnedModel || slashState.activeTier,
                         systemPrompt: buildOrchestratorSystemPrompt(),
+                        ...(initialHistory.length > 0 ? { initialHistory } : {}),
                     });
                     await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });
                     result = formatExecutionResult(result, debug);

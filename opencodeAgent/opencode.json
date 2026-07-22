@@ -1,0 +1,24 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "provider": {
+        "soul-gateway": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Soul Gateway",
+            "options": {
+                "baseURL": "{env:PLOINKY_ROUTER_URL}/services/soul-gateway/v1",
+                "apiKey": "{env:PLOINKY_AGENT_API_KEY}"
+            },
+            "models": {
+                "fast": {
+                    "name": "fast"
+                },
+                "deep": {
+                    "name": "deep"
+                },
+                "plan": {
+                    "name": "plan"
+                }
+            }
+        }
+    }
+}
