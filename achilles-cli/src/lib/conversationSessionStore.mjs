@@ -75,6 +75,7 @@ function normalizeConversationMessage(raw) {
             .map((entry) => entry.trim())
             .filter(Boolean);
     }
+    if (raw.context === false) message.context = false;
     return message;
 }
 
@@ -128,7 +129,7 @@ export function summarizeConversationSession(session) {
 export function buildConversationInitialHistory(session) {
     const history = [];
     for (const message of session?.messages || []) {
-        if (message?.type === 'task') continue;
+        if (message?.type === 'task' || message?.context === false) continue;
         const role = message?.role === 'user'
             ? 'user'
             : (message?.role === 'assistant' ? 'assistant' : '');
@@ -241,7 +242,7 @@ export class ConversationSessionStore {
         return session;
     }
 
-    beginTurn({ text = '', attachments = [], references = [] } = {}) {
+    beginTurn({ text = '', attachments = [], references = [], context = true } = {}) {
         const current = this.ensureCurrentSession();
         let userMessageIndex = -1;
         let assistantMessageIndex = -1;
@@ -254,6 +255,7 @@ export class ConversationSessionStore {
                 timestamp,
                 attachments: Array.isArray(attachments) ? attachments : [],
                 references: Array.isArray(references) ? references : [],
+                ...(context === false ? { context: false } : {}),
             });
             assistantMessageIndex = record.messages.length;
             record.messages.push({
@@ -263,9 +265,17 @@ export class ConversationSessionStore {
                 attachments: [],
                 references: [],
                 progress: [],
+                ...(context === false ? { context: false } : {}),
             });
         });
         return { session, userMessageIndex, assistantMessageIndex };
+    }
+
+    beginCommand({ text = '', attachments = [], references = [] } = {}) {
+        return {
+            ...this.beginTurn({ text, attachments, references, context: false }),
+            kind: 'command',
+        };
     }
 
     appendProgress(sessionId, messageIndex, reason) {
@@ -284,6 +294,22 @@ export class ConversationSessionStore {
             const message = record.messages[messageIndex];
             if (!message || message.role !== 'assistant') throw new Error('assistant_message_not_found');
             message.text = typeof text === 'string' ? text : String(text ?? '');
+        });
+    }
+
+    completeCommand(sessionId, messageIndex, text) {
+        const output = typeof text === 'string' ? text : String(text ?? '');
+        return this.updateSession(sessionId, (record) => {
+            const message = record.messages[messageIndex];
+            if (!message || message.role !== 'assistant' || message.context !== false) {
+                throw new Error('command_message_not_found');
+            }
+            if (output) {
+                message.text = output;
+                return;
+            }
+            if (Array.isArray(message.progress) && message.progress.length > 0) return;
+            record.messages.splice(messageIndex, 1);
         });
     }
 

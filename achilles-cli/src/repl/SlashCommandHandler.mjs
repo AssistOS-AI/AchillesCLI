@@ -207,6 +207,13 @@ export const COMMAND_DEFINITIONS = {
         args: 'optional',
         needsSkillArg: false,
     },
+    'task': {
+        usage: '/task <view|continue|stop> <task-id> [prompt]',
+        description: 'View, continue, or stop a background task',
+        args: 'required',
+        needsSkillArg: false,
+        subOptions: ['view', 'continue', 'stop'],
+    },
     'session': {
         usage: '/session [new|resume <session-id>]',
         description: 'Select or create an AchillesCLI conversation session',
@@ -233,6 +240,29 @@ export const COMMAND_DEFINITIONS = {
  * Each sub-option maps to a handler or skill execution.
  */
 export const SUB_OPTIONS = {
+    'task': {
+        'view': {
+            skill: null,
+            usage: '/task view <task-id>',
+            description: 'Show task metadata and its stored log',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'continue': {
+            skill: null,
+            usage: '/task continue <task-id> <prompt>',
+            description: 'Continue a terminal task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'stop': {
+            skill: null,
+            usage: '/task stop <task-id>',
+            description: 'Stop a queued or running task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+    },
     'list': {
         'skills': {
             skill: BUILT_IN_SKILLS.LIST,
@@ -395,6 +425,10 @@ export class SlashCommandHandler {
         getSessions,
         createSession,
         resumeSession,
+        viewTask,
+        continueTask,
+        stopTask,
+        getTaskCompletions,
     }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
@@ -408,6 +442,10 @@ export class SlashCommandHandler {
         this.getSessions = getSessions;
         this.createSession = createSession;
         this.resumeSession = resumeSession;
+        this.viewTask = viewTask;
+        this.continueTask = continueTask;
+        this.stopTask = stopTask;
+        this.getTaskCompletions = getTaskCompletions;
         this.availableModels = [];
     }
 
@@ -619,7 +657,7 @@ export class SlashCommandHandler {
             const skillName = match?.[1];
             const skillInput = match?.[2]?.trim() || skillName;
             try {
-                const result = await this.executeSkill(skillName, skillInput, options);
+                const result = await this._executeSkillUntilResultOrTaskStart(skillName, skillInput, options);
                 return { handled: true, result: formatSlashResult(result) };
             } catch (error) {
                 return { handled: true, error: error.message };
@@ -669,6 +707,33 @@ export class SlashCommandHandler {
         return { handled: false, error: `Unknown command: /${command}` };
     }
 
+    async _executeSkillUntilResultOrTaskStart(skillName, input, options) {
+        const taskManager = options?.context?.backgroundTaskManager;
+        const waiter = taskManager?.createTaskStartWaiter?.();
+        if (!waiter?.promise || typeof waiter.cancel !== 'function') {
+            return this.executeSkill(skillName, input, options);
+        }
+
+        const execution = Promise.resolve().then(() => this.executeSkill(skillName, input, options));
+        const outcome = await Promise.race([
+            execution.then(
+                (value) => ({ type: 'result', value }),
+                (error) => ({ type: 'error', error }),
+            ),
+            waiter.promise.then((task) => ({ type: 'task', task })),
+        ]);
+        waiter.cancel();
+
+        if (outcome.type === 'task') {
+            // The observer owns the remote task lifecycle from this point. Keep
+            // the launcher promise observed, but do not serialize later input on it.
+            void execution.catch(() => {});
+            return 'Task started.';
+        }
+        if (outcome.type === 'error') throw outcome.error;
+        return outcome.value;
+    }
+
     /**
      * Execute a sub-option command (e.g., /list repos, /add repo).
      * @private
@@ -703,6 +768,30 @@ export class SlashCommandHandler {
             } catch (error) {
                 return { handled: true, error: error.message };
             }
+        }
+
+        if (command === 'task' && subOption === 'view') {
+            if (typeof this.viewTask !== 'function') return { handled: true, error: 'Task management is unavailable.' };
+            try { return { handled: true, result: await this.viewTask(args.trim()) }; }
+            catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'stop') {
+            if (typeof this.stopTask !== 'function') return { handled: true, error: 'Task management is unavailable.' };
+            try {
+                const task = await this.stopTask(args.trim());
+                return { handled: true, result: `Stop requested for ${task.id}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'continue') {
+            if (typeof this.continueTask !== 'function') return { handled: true, error: 'Task management is unavailable.' };
+            const match = args.match(/^(task_[0-9a-f]{24})(?:\s+([\s\S]+))?$/);
+            if (!match?.[2]?.trim()) return { handled: true, error: 'Usage: /task continue <task-id> <prompt>' };
+            try {
+                const task = await this.continueTask(match[1], match[2].trim());
+                return { handled: true, result: `Continued ${task.id}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
         }
 
         // /update repos
@@ -943,6 +1032,14 @@ export class SlashCommandHandler {
 
         // Command-specific completions
         if (subOption) {
+            if (command === 'task' && typeof this.getTaskCompletions === 'function') {
+                const prefix = args.toLowerCase();
+                const matching = this.getTaskCompletions(subOption)
+                    .filter((task) => [task.value, task.label, task.description]
+                        .some((value) => String(value || '').toLowerCase().includes(prefix)))
+                    .map((task) => `/${command} ${subOption} ${task.value}`);
+                return [matching, line];
+            }
             // /list skills - suggest skill names
             if (command === 'list' && subOption === 'skills') {
                 const skills = this.getUserSkills();

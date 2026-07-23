@@ -8,7 +8,12 @@ import { SlashCommandHandler } from '../src/repl/SlashCommandHandler.mjs';
 import { getQuickReference, showHelp } from '../src/ui/HelpSystem.mjs';
 import {
     __testables,
+    beginTaskContinuation,
+    buildTaskCompletions,
     formatWorkspaceTaskSummary,
+    getTask,
+    ingestTaskEvent,
+    readTaskLog,
     readOngoingTasks,
     readWorkspaceTasks,
 } from '../src/lib/workspaceTasks.mjs';
@@ -19,7 +24,7 @@ const ERROR_ID = 'task_333333333333333333333333';
 
 function makeWorkspace(label) {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), `achilles-tasks-${label}-`));
-    const history = path.join(workspace, '.copilot_history');
+    const history = path.join(workspace, '.achilles-cli', 'tasks');
     const logs = path.join(history, 'task_logs');
     fs.mkdirSync(logs, { recursive: true });
     return { workspace, history, logs };
@@ -150,13 +155,14 @@ test('task summary is read-only for missing history and rejects symlinked task s
             formatWorkspaceTaskSummary(workspace),
             'No background tasks found for this workspace.',
         );
-        assert.equal(fs.existsSync(path.join(workspace, '.copilot_history')), false);
+        assert.equal(fs.existsSync(path.join(workspace, '.achilles-cli', 'tasks')), false);
         const missingWorkspace = path.join(workspace, 'missing');
         assert.throws(
             () => formatWorkspaceTaskSummary(missingWorkspace),
             (error) => error.message === 'Unable to read task history (ENOENT).',
         );
-        fs.symlinkSync(outside, path.join(workspace, '.copilot_history'), 'dir');
+        fs.mkdirSync(path.join(workspace, '.achilles-cli'));
+        fs.symlinkSync(outside, path.join(workspace, '.achilles-cli', 'tasks'), 'dir');
         assert.throws(() => formatWorkspaceTaskSummary(workspace), /storage is unsafe/);
     } finally {
         fs.rmSync(workspace, { recursive: true, force: true });
@@ -197,6 +203,71 @@ test('task log tails remain bounded even when the final line is large', () => {
     }
 });
 
+test('AchillesCLI persists task metadata and logs under .achilles-cli', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-owned-tasks-'));
+    try {
+        const update = ingestTaskEvent(workspace, {
+            task: {
+                id: ONGOING_ID,
+                targetAgent: 'codexAgent',
+                remoteTaskId: 'remote-queued',
+                toolName: 'execute-task',
+                description: 'Implement task ownership',
+                status: 'ongoing',
+                remoteStatus: 'queued',
+                createdAt: '2026-07-23T10:00:00.000Z',
+                updatedAt: '2026-07-23T10:00:00.000Z',
+            },
+            log: { tail: '[runner stdout] queued\n', seq: 1 },
+        });
+        assert.equal(update.task.remoteStatus, 'queued');
+        assert.equal(getTask(workspace, ONGOING_ID).status, 'ongoing');
+        assert.equal(readTaskLog(workspace, ONGOING_ID).text, '[runner stdout] queued\n');
+        assert.equal(fs.existsSync(path.join(workspace, '.copilot_history')), false);
+        assert.equal(fs.existsSync(path.join(workspace, '.achilles-cli', 'tasks', 'agent_tasks')), true);
+    } finally {
+        fs.rmSync(workspace, { recursive: true, force: true });
+    }
+});
+
+test('continuation keeps the local id, advances the turn, and filters action completions', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-continue-'));
+    try {
+        ingestTaskEvent(workspace, {
+            task: {
+                id: FINISHED_ID,
+                targetAgent: 'codexAgent',
+                remoteTaskId: 'remote-1',
+                toolName: 'execute-task',
+                description: 'Continue me',
+                status: 'finished',
+                remoteStatus: 'completed',
+                createdAt: '2026-07-23T10:00:00.000Z',
+                updatedAt: '2026-07-23T10:01:00.000Z',
+                continuation: {
+                    version: 1,
+                    targetAgent: 'codexAgent',
+                    toolName: 'continue-task',
+                    handle: 'abcdefghijklmnop',
+                },
+            },
+        });
+        assert.deepEqual(buildTaskCompletions(workspace, 'continue').map((item) => item.value), [FINISHED_ID]);
+        assert.deepEqual(buildTaskCompletions(workspace, 'stop'), []);
+        const next = beginTaskContinuation(workspace, FINISHED_ID, {
+            remoteTaskId: 'remote-2',
+            message: 'finish the tests',
+        });
+        assert.equal(next.id, FINISHED_ID);
+        assert.equal(next.turn, 2);
+        assert.equal(next.status, 'ongoing');
+        assert.equal(next.remoteStatus, 'pending');
+        assert.deepEqual(buildTaskCompletions(workspace, 'stop').map((item) => item.value), [FINISHED_ID]);
+    } finally {
+        fs.rmSync(workspace, { recursive: true, force: true });
+    }
+});
+
 test('slash handler delegates /tasks to the injected workspace reader', async () => {
     const calls = [];
     const handler = new SlashCommandHandler({
@@ -214,11 +285,92 @@ test('slash handler delegates /tasks to the injected workspace reader', async ()
     assert.equal(calls[0].options.context.workingDir, '/work');
 });
 
-test('terminal and WebChat bootstraps inject the same workspace task formatter', () => {
+test('/exec releases the command queue when its asynchronous task starts', async () => {
+    let resolveTaskStart;
+    let cancelCount = 0;
+    const neverFinishes = new Promise(() => {});
+    const taskManager = {
+        createTaskStartWaiter() {
+            return {
+                promise: new Promise((resolve) => { resolveTaskStart = resolve; }),
+                cancel: () => { cancelCount += 1; },
+            };
+        },
+    };
+    const handler = new SlashCommandHandler({
+        executeSkill: () => neverFinishes,
+        getUserSkills: () => [],
+        getSkills: () => [],
+    });
+
+    const command = handler.executeSlashCommand('exec', 'launch-opencode hi', {
+        context: { backgroundTaskManager: taskManager },
+    });
+    await Promise.resolve();
+    resolveTaskStart({ id: 'task_1234567890abcdef12345678' });
+
+    assert.deepEqual(await command, { handled: true, result: 'Task started.' });
+    assert.equal(cancelCount, 1);
+});
+
+test('/exec still waits for ordinary synchronous skill results', async () => {
+    let cancelCount = 0;
+    const handler = new SlashCommandHandler({
+        executeSkill: async () => 'normal result',
+        getUserSkills: () => [],
+        getSkills: () => [],
+    });
+    const result = await handler.executeSlashCommand('exec', 'list-skills', {
+        context: {
+            backgroundTaskManager: {
+                createTaskStartWaiter: () => ({
+                    promise: new Promise(() => {}),
+                    cancel: () => { cancelCount += 1; },
+                }),
+            },
+        },
+    });
+
+    assert.deepEqual(result, { handled: true, result: 'normal result' });
+    assert.equal(cancelCount, 1);
+});
+
+test('slash handler delegates task view, stop, and continuation actions', async () => {
+    const calls = [];
+    const taskId = 'task_1234567890abcdef12345678';
+    const handler = new SlashCommandHandler({
+        executeSkill: async () => '',
+        getUserSkills: () => [],
+        getSkills: () => [],
+        viewTask: async (id) => { calls.push(['view', id]); return 'task detail'; },
+        stopTask: async (id) => { calls.push(['stop', id]); return { id }; },
+        continueTask: async (id, prompt) => { calls.push(['continue', id, prompt]); return { id }; },
+    });
+
+    assert.deepEqual(
+        await handler.executeSlashCommand('task', `view ${taskId}`),
+        { handled: true, result: 'task detail' },
+    );
+    assert.deepEqual(
+        await handler.executeSlashCommand('task', `stop ${taskId}`),
+        { handled: true, result: `Stop requested for ${taskId}.` },
+    );
+    assert.deepEqual(
+        await handler.executeSlashCommand('task', `continue ${taskId} finish the tests`),
+        { handled: true, result: `Continued ${taskId}.` },
+    );
+    assert.deepEqual(calls, [
+        ['view', taskId],
+        ['stop', taskId],
+        ['continue', taskId, 'finish the tests'],
+    ]);
+});
+
+test('terminal and WebChat bootstraps use the AchillesCLI task manager', () => {
     const replSource = fs.readFileSync(new URL('../src/repl/REPLSession.mjs', import.meta.url), 'utf8');
     const webchatSource = fs.readFileSync(new URL('../src/index.mjs', import.meta.url), 'utf8');
     assert.match(replSource, /getTaskSummary:\s*\(args\) => formatWorkspaceTaskSummary\(this\.workingDir, args\)/);
-    assert.match(webchatSource, /getTaskSummary:\s*\(args\) => formatWorkspaceTaskSummary\(workingDir, args\)/);
+    assert.match(webchatSource, /backgroundTaskManager\.listTasks\(\)/);
 });
 
 test('help surfaces document /tasks arguments and bounded terminal logs', () => {
@@ -227,4 +379,6 @@ test('help surfaces document /tasks arguments and bounded terminal logs', () => 
     assert.match(help, /Show the 10 most recently updated tasks/);
     assert.match(help, /final five log lines/);
     assert.match(help, /2 KiB per task/);
+    assert.match(getQuickReference(), /\/task.*<action> <id>/);
+    assert.match(showHelp('task'), /\/task continue <task-id> <prompt>/);
 });

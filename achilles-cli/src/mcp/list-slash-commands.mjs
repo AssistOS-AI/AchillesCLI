@@ -8,6 +8,7 @@ import { parseSkillDocument } from 'achillesAgentLib/utils/skillDocumentParser.m
 import { buildSlashCommandCatalog } from '../repl/SlashCommandHandler.mjs';
 import { getSelectedModel } from '../lib/achillesSettings.mjs';
 import { ConversationSessionStore } from '../lib/conversationSessionStore.mjs';
+import { buildTaskCompletions } from '../lib/workspaceTasks.mjs';
 import { loadSoulGatewayModels, toModelCompletions } from '../lib/soulGatewayModels.mjs';
 import { PERMISSION_MODES } from '../permissions/protocol.mjs';
 
@@ -151,6 +152,11 @@ export function buildSessionCompletions(dir) {
     }
 }
 
+export function buildTaskActionCompletions(dir, action) {
+    if (!dir) return [];
+    try { return buildTaskCompletions(dir, action); } catch { return []; }
+}
+
 function buildArgCompletions(command, skillCompletions, modelCompletions) {
     if (command?.name === '/model') {
         return modelCompletions;
@@ -178,6 +184,9 @@ export function toAutocompleteCatalog(options = {}) {
     const sessionCompletions = Array.isArray(options.sessionCompletions)
         ? options.sessionCompletions
         : [];
+    const taskCompletions = options.taskCompletions && typeof options.taskCompletions === 'object'
+        ? options.taskCompletions
+        : {};
     const commands = buildSlashCommandCatalog().map((command) => ({
         name: command.name,
         usage: command.usage,
@@ -187,13 +196,16 @@ export function toAutocompleteCatalog(options = {}) {
         subCommands: Array.isArray(command.subCommands)
             ? command.subCommands.map((subCommand) => {
                 const isSessionResume = command.name === '/session' && subCommand.name === 'resume';
+                const isTaskAction = command.name === '/task';
                 return {
                     name: subCommand.name,
                     usage: subCommand.usage,
                     description: subCommand.description,
                     argCompletions: isSessionResume
                         ? sessionCompletions
-                        : (subCommand.needsSkillArg ? skillCompletions : []),
+                        : (isTaskAction
+                            ? (taskCompletions[subCommand.name] || [])
+                            : (subCommand.needsSkillArg ? skillCompletions : [])),
                 };
             })
             : [],
@@ -219,6 +231,11 @@ export async function loadAutocompleteCatalog(options = {}) {
         ...options,
         modelCompletions: toModelCompletions(models),
         sessionCompletions: buildSessionCompletions(options.dir),
+        taskCompletions: {
+            view: buildTaskActionCompletions(options.dir, 'view'),
+            continue: buildTaskActionCompletions(options.dir, 'continue'),
+            stop: buildTaskActionCompletions(options.dir, 'stop'),
+        },
     });
 }
 

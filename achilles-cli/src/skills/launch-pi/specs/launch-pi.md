@@ -52,3 +52,6 @@ preallocated provider session behind the same opaque continuation handle before
 exiting unsuccessfully. The cancelled remote task can therefore be resumed as
 a later turn of the same WebChat task. Cancellation while still queued never
 starts the wrapper and exposes no continuation capability.
+Both provider task tools are internal MCP capabilities invoked by AchillesCLI
+as the verified source agent. WebChat sends the CLI command and never invokes
+`continue-task` directly.

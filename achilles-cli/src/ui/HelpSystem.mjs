@@ -127,6 +127,9 @@ ${C.bold}${C.yellow}Slash Commands${C.reset} ${C.dim}(direct skill execution)${C
   ${C.cyan}/model${C.reset} [name|clear]      Pin a model or clear pin
   ${C.cyan}/permissions${C.reset} [mode]      Show/set Bash approval mode
   ${C.cyan}/tasks${C.reset} [count|all]       Show background task summaries
+  ${C.cyan}/task view${C.reset} <task-id>     Show a task and its stored log
+  ${C.cyan}/task stop${C.reset} <task-id>     Stop an ongoing task
+  ${C.cyan}/task continue${C.reset} <id> <prompt> Continue a terminal task
   ${C.cyan}/help${C.reset} [topic]            Show help
   ${C.cyan}/add-repo${C.reset} <URL> [name]   Clone a repository
   ${C.cyan}/list-repos${C.reset}              List cloned repositories
@@ -906,6 +909,24 @@ ${C.bold}${C.yellow}Description:${C.reset}
 `,
     },
 
+    task: {
+        title: '/task - Manage Background Tasks',
+        aliases: ['task-view', 'task-stop', 'task-continue'],
+        content: `
+${C.bold}${C.cyan}/task - Manage Background Tasks${C.reset}
+
+${C.bold}${C.yellow}Usage:${C.reset}
+  ${C.green}/task view <task-id>${C.reset}
+  ${C.green}/task stop <task-id>${C.reset}
+  ${C.green}/task continue <task-id> <prompt>${C.reset}
+
+${C.bold}${C.yellow}Description:${C.reset}
+  Views the complete stored log, stops queued or running remote work, or
+  continues a terminal task using its saved continuation handle. Press Tab
+  after an action to select a compatible task by name and insert its task id.
+`,
+    },
+
     delete: {
         title: '/delete - Delete Skill',
         content: `
@@ -1221,6 +1242,7 @@ ${C.bold}${C.yellow}Common Slash Commands${C.reset}
   ${C.cyan}/update repos${C.reset}      Pull cloned repositories
   ${C.cyan}/permissions${C.reset} [mode] Show/set Bash approval mode
   ${C.cyan}/tasks${C.reset} [count|all] Show background task summaries
+  ${C.cyan}/task${C.reset} <action> <id> View, stop, or continue a task
   ${C.cyan}/add-repo${C.reset} <URL>   Clone a repository
   ${C.cyan}/list-repos${C.reset}       List cloned repositories
   ${C.cyan}/remove-repo${C.reset}      Remove a repository

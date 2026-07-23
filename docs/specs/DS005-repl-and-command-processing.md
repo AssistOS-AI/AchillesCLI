@@ -42,6 +42,10 @@ Primary REPL components and responsibilities:
    - Owns durable natural-language conversations under `.achilles-cli/sessions/`.
    - Keeps `currentSessionId` in `.achilles-cli/settings.json` beside model and permissions.
    - Uses validated UUID file names, safe directory checks, and atomic JSON replacement.
+7. `workspaceTasks.mjs` and `webchatBackgroundTasks.mjs`
+   - Own workspace task metadata and logs under `.achilles-cli/tasks/` in every runtime mode.
+   - Observe newly detached AgentServer tasks, reattach ongoing tasks after process startup, and poll them through the router-mediated task-status contract.
+   - Implement listing, full-log viewing, remote cancellation, and continuation without delegating task state to WebChat.
 
 Command routing model:
 1. Inputs beginning with `/` are parsed as command invocations.
@@ -52,6 +56,8 @@ Command routing model:
 6. `/tasks [count|all]` reads the current workspace task journal without invoking an LLM. With no argument it returns the ten most recently updated tasks; a numeric argument must be between 1 and 100, while `all` explicitly requests the complete journal.
 7. Task summaries must use the persisted description preview with `toolName` and task id as fallbacks, and must include status, target agent, and update time. Only terminal tasks may include log output, limited to the final five lines and 2 KiB per task.
 8. `/session` is the single conversation-session command. It opens or refreshes a selector containing `New` and saved sessions; `/session new` creates and selects a session, while `/session resume <session-id>` loads and selects an existing one.
+9. `/task view <task-id>` reads the complete stored log, `/task stop <task-id>` cancels the current remote task, and `/task continue <task-id> <prompt>` starts another remote execution through the stored generic continuation capability. Continuation must append the submitted prompt to the durable task log before provider output and publish that log delta with its resulting offset.
+10. `/task` autocomplete must first expose `view`, `continue`, and `stop`, then show action-compatible task names while inserting the opaque local task id. `stop` lists only ongoing tasks; `continue` lists only terminal tasks carrying a continuation handle.
 
 Hierarchical command structure:
 1. Commands with `subOptions` in `COMMAND_DEFINITIONS` show a sub-menu when selected.
@@ -73,7 +79,7 @@ Session control behavior:
 11. In WebChat, a Bash approval request keeps the current execution suspended while AchillesCLI emits a structured interaction with a unique request id and the ordered choices `always-allow`, `allow`, and `deny`; `always-allow` is the default choice.
 12. A structured WebChat interaction response must be consumed as control input before slash-command and prompt dispatch, must match the pending request id, and must never enter agent conversation history.
 13. Resolving the interaction resumes the same tool call with the command result or denial; a second or stale response must not execute the command again.
-14. Natural-language turns must be persisted as user plus assistant records. Slash commands and interaction control messages must not enter conversation history.
+14. Natural-language turns must be persisted as user plus assistant records. A WebChat slash command submitted visibly through the composer must also be persisted with its visible response as presentation-only records marked `context: false`; those records render after refresh but never enter MainAgent `initialHistory`. A task started by that command must be inserted as a separate task item in the same ordered session. Slash commands sent invisibly by WebChat UI controls and structured interaction responses must not create conversation records or emit textual acknowledgements and errors into the main chat stream; their structured control envelopes remain available to the originating UI.
 15. Switching sessions must create a fresh MainAgent, load the selected transcript for one-time `initialHistory`, and reset session-local tier state while preserving workspace model and permission settings.
 16. WebChat mode must publish `current`, `list`, and `selected` session records through version-1 `__webchatSession` envelopes. `/session`, `/session new`, and `/session resume <id>` remain ordinary SlashCommandHandler operations; the browser does not receive a separate session API.
 17. The WebChat slash-command catalog must expose no `/sessions` alias. Its `/session resume` subcommand must provide saved sessions as argument completions whose inserted value is the opaque `sessionId` and whose visible label is the session preview, allowing selection without exposing ids as the only human-readable identifier.
@@ -85,12 +91,13 @@ Operational invariants:
 3. REPL errors must be user-readable and must not silently terminate the loop.
 4. All commands use slash syntax; there are no quick commands without `/`.
 5. Interrupted turns must not be appended to command history.
-6. Task inspection must remain read-only. It must not create task storage, change task status, start polling, or detach terminal CLI work.
+6. `/tasks` and `/task view` must remain read-only. `/task stop` and `/task continue` are the only task-mutating slash actions and must resolve target agent, remote task id, tool name, and opaque continuation handle exclusively from AchillesCLI-owned storage.
 7. Permission mode must be persisted under the `permissions` key in the same workspace settings file as the explicit model selection. The settings file is an unversioned JSON object and must not emit a `version` property. Writes must preserve unrelated settings and remove a legacy `version` property when present.
 8. `full-access` remains confined to the selected workspace; neither that mode nor an approval permits Bash execution outside Bubblewrap.
 9. Reusable exact-call approvals created by `always allow` remain session-local and must not be written to workspace settings.
 10. `currentSessionId` must be preserved in the same unversioned settings object as `model` and `permissions`.
 11. Emitting or persisting an assistant response must not leave the WebChat prompt queue permanently pending or rejected. The runtime must clear its processing and abort-controller state even when post-turn maintenance fails or times out.
+12. Local task status vocabulary must remain `ongoing`, `finished`, `stopped`, and `error`. Provider queue vocabulary, including `queued`, remains in `remoteStatus`; protocol event names such as `started`, `reattached`, and `update` must not be treated as statuses.
 
 ## Decisions & Questions
 
@@ -117,12 +124,26 @@ The mode is an explicit workspace preference and `full-access` still remains ins
 ### Question #5: Why are conversation history and command history separate?
 
 Response:
-Command history supports terminal navigation and may include deterministic slash commands. Conversation history is the semantic user/assistant context supplied to MainAgent, so persisting slash commands there would pollute later model context. Keeping the stores separate preserves both behaviors.
+Command history supports terminal navigation and includes deterministic slash commands. Durable conversation sessions distinguish semantic model context from presentation records: visible WebChat commands and their responses may be mirrored into the session with `context: false`, while `initialHistory` filters those records and task items out. This restores the browser transcript without polluting later MainAgent context or replacing terminal command-history navigation.
 
 ### Question #6: Why is post-turn skill refresh bounded independently from prompt execution?
 
 Response:
 The assistant result and conversation record are already complete before final maintenance runs. A rejected or indefinitely pending refresh must not poison the serialized prompt chain and prevent later messages from reaching MainAgent. Keeping the queue recoverable and limiting only this post-turn maintenance wait preserves ordered prompts while allowing refresh failures to remain observable through logs.
+
+### Question #7: Why does AchillesCLI own task commands and persistence?
+
+Response:
+AchillesCLI can be launched in terminal REPL, single-shot, or WebChat mode. Keeping the journal, log ingestion, reattachment, stop, and continuation logic inside AchillesCLI gives each mode the same task lifecycle, while WebChat remains a generic command and presentation surface.
+
+### Question #8: Why is a continuation prompt a task-log entry rather than chat output?
+
+Response:
+The prompt belongs to the continued task's execution timeline and must stay next
+to the provider output it caused. Persisting and publishing it from AchillesCLI
+keeps terminal and WebChat task inspection consistent, while suppressing the
+invisible `/task continue` acknowledgement prevents task controls from becoming
+unrelated messages in the main conversation.
 
 ## Conclusion
 The REPL subsystem is the primary interactive contract for AchillesCLI and must keep deterministic commands, orchestrated prompting, and session-state controls coherent. The hierarchical command model provides uniform discovery and execution through the `/` menu.

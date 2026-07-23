@@ -124,6 +124,29 @@ test('command catalog exposes named session ids only under /session resume', asy
     assert.deepEqual(resume.argCompletions, sessionCompletions);
 });
 
+test('task action completions display task names and insert opaque task ids', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?task-actions=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) await unlink(localDependencyPath);
+    }
+    const completion = {
+        value: 'task_1234567890abcdef12345678',
+        label: 'Build the project',
+        description: 'ongoing · queued · task_1234567890abcdef12345678',
+    };
+    const catalog = toAutocompleteCatalog({
+        dir: repoRoot,
+        taskCompletions: { view: [completion], continue: [], stop: [completion] },
+    });
+    const task = catalog.commands.find((command) => command.name === '/task');
+    assert.deepEqual(task.subCommands.map((sub) => sub.name), ['view', 'continue', 'stop']);
+    assert.deepEqual(task.subCommands.find((sub) => sub.name === 'view').argCompletions, [completion]);
+    assert.deepEqual(task.subCommands.find((sub) => sub.name === 'stop').argCompletions, [completion]);
+});
+
 test('persisted sessions become named resume completions', async () => {
     const createdDependencyLink = await ensureLocalAchillesAgentLib();
     let buildSessionCompletions;

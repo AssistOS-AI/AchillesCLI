@@ -88,43 +88,60 @@ Ploinky integration boundary:
     and supplies prior natural-language turns once as `initialHistory` on the
     first normal prompt after startup or session selection. Incoming WebChat
     envelopes cannot supply history. Slash commands do not consume pending
-    hydration and do not enter the durable conversation.
+    hydration. A sanitized `presentation.visible` flag distinguishes composer
+    commands from silent WebChat control actions. Visible slash commands, their
+    visible responses, and any task-reference items they create are stored in
+    the durable session for transcript restoration, with command records marked
+    `context: false` so neither they nor task items enter MainAgent history.
+    Invisible UI control commands create no session records.
     AchillesCLI publishes version-1 `__webchatSession` envelopes for the current
     snapshot, session lists, and selected sessions. WebChat requests those changes
     through `/session`, `/session new`, and `/session resume <session-id>`.
     `__webchatRuntimeState` continues to publish model state but carries no
     process-instance identifier.
-16. In WebChat runtime mode, AchillesCLI registers a generic asynchronous-task
-    observer with Ploinky `AgentMcpClient.mjs`. Launcher skills that delegate
+16. In single-shot, terminal REPL, and WebChat runtime modes, AchillesCLI
+    registers a generic asynchronous-task observer with Ploinky
+    `AgentMcpClient.mjs`. Launcher skills that delegate
     long-running work use `callToolWithoutWait`, so an AgentServer response
     carrying `taskId` metadata is offered to that observer instead of entering
     client-owned blocking polling. AchillesCLI must identify such work by target
-    agent plus remote task id, emit `__webchatTask` lifecycle envelopes, and
-    continue polling through the router-mediated task-status path. A recreated
-    WebChat runtime must reattach tasks recorded as ongoing in
-    `<cwd>/.copilot_history/agent_tasks`. The observer must not persist agent
-    credentials, invocation grants, or raw tool arguments.
+    agent plus remote task id, persist lifecycle metadata and logs under
+    `<cwd>/.achilles-cli/tasks/`, and continue polling through the
+    router-mediated task-status path. A recreated AchillesCLI process must
+    reattach tasks recorded as ongoing. WebChat mode additionally emits
+    `__webchatTask` list, view, lifecycle, log, and action envelopes for the
+    generic browser interface. The observer must not persist agent credentials,
+    invocation grants, or raw tool arguments.
 17. AchillesCLI exposes `/tasks [count|all]` through its shared slash-command
-    catalog and handler. Both WebChat and terminal REPL modes read the same
-    Ploinky-owned workspace task journal directly from disk. Terminal mode does
-    not install the WebChat observer or detach new launcher work; it only
-    inspects task records already persisted for that workspace. This read-only
-    command does not add a router route, MCP execution tool, or policy surface.
+    catalog and handler, plus `/task view <task-id>`, `/task stop <task-id>`,
+    and `/task continue <task-id> <prompt>`. Both WebChat and terminal REPL
+    modes use the same AchillesCLI-owned manager and journal. The command
+    catalog attaches action-compatible task completions to the `/task`
+    subcommands, displaying task names while inserting local task ids. WebChat
+    buttons send those commands instead of invoking task data or action REST
+    routes. Those button-originated commands are invisible control traffic, so
+    AchillesCLI must emit their structured task envelopes but suppress their
+    textual acknowledgements and errors from the main WebChat transcript.
 18. The AchillesCLI manifest enables `proxies/soul-gateway` as a blocking dependency before model discovery. Model listing uses the router-mediated `/services/soul-gateway/v1/models` route and the existing generated Ploinky agent credential; it does not add a public HTTP service, delegation, or MCP execution tool.
 19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
-20. The WebChat background-task observer must forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also forward the textual MCP result as separate presentation metadata, never as appended log content. Ploinky uses that text only to locate the already emitted final-answer range in its persisted raw log, stores the range offsets instead of duplicating the text, and renders intermediate and final output distinctly.
+20. The AchillesCLI background-task observer must persist and forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also use the textual MCP result as separate presentation metadata, never as appended log content. AchillesCLI uses that text only to locate the already emitted final-answer range in its persisted raw log, stores the range offsets instead of duplicating the text, and lets WebChat render intermediate and final output distinctly.
 21. Async `opencodeAgent`, `piAgent`, and `codexAgent` executions must publish a generic
     continuation capability and an opaque versioned handle once their provider
     session exists, including when a later provider error makes the task fail.
     AchillesCLI forwards this capability and handle in its generic task
     envelopes without interpreting provider session ids or storage paths.
-    Ploinky WebChat owns the stable local task id and turn progression; a
+    AchillesCLI owns the stable local task id and turn progression; a
     continuation creates a new remote AgentServer task but remains the same
-    workspace task. The provider agents expose a separate authenticated
+    workspace task. Before forwarding provider output, AchillesCLI appends the
+    submitted continuation prompt to the same durable task log and emits the
+    exact appended text plus the resulting offset for an already open task view.
+    The provider agents expose a separate internal
     `continue-task` MCP tool that accepts only the opaque handle and new prompt,
     restores the original project directory and provider session from
-    agent-private persistent storage, and returns the same handle. Initial and
-    continued executions opt into full task-log retention.
+    agent-private persistent storage, and returns the same handle. AchillesCLI
+    invokes that tool as the verified source agent in both terminal and WebChat
+    modes; the browser never invokes it directly. Initial and continued
+    executions opt into full task-log retention.
 22. Async `opencodeAgent`, `piAgent`, and `codexAgent` wrappers must treat
     `SIGTERM` as a controlled cancellation request. Each wrapper aborts its
     provider subprocess, waits for the runner to resolve the provider session
@@ -135,6 +152,12 @@ Ploinky integration boundary:
     cleanup grace period. Cancellation before provider execution creates no
     handle; cancellation after session creation remains continuable through the
     normal stable-local-task-id flow.
+23. `/task stop` must call the stored target through
+    `AgentMcpClient.cancelTask()` using an Agent Assertion bound to
+    `POST /task/cancel`, pseudo-tool `__task_cancel__`, and the exact stored
+    remote task id. The router verifies that assertion and replaces it with a
+    target-scoped Router Request. AchillesCLI must not receive or forward a
+    browser session token for this action.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
@@ -281,15 +304,15 @@ whereas the router-mediated status contract is explicitly keyed by target
 agent and AgentServer task id. A PID may be carried as optional diagnostics but
 cannot be the reattachment authority.
 
-### Question #4: Why does terminal `/tasks` read the WebChat task journal instead of querying the router?
+### Question #4: Why does terminal `/tasks` read the AchillesCLI task journal instead of querying the router?
 
 Response:
 The journal and bounded task logs are already the durable workspace record,
 and the AchillesCLI process has access to that workspace in both modes. Direct
 read-only inspection avoids adding an authenticated router API for a local CLI
-    operation. Blocking callers use `AgentMcpClient.callTool`; launcher skills
-    intentionally use the separate non-blocking method that is observed in
-    WebChat mode.
+operation. Blocking callers use `AgentMcpClient.callTool`; launcher skills
+intentionally use the separate non-blocking method observed by AchillesCLI in
+single-shot, terminal, and WebChat modes.
 
 ### Question #5: Why is Soul Gateway model discovery performed by the command-catalog tool?
 

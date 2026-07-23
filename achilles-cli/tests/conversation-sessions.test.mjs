@@ -71,6 +71,67 @@ test('new and resumed sessions update the selected session and list', (t) => {
     assert.throws(() => store.resumeSession('../settings'), /invalid_session_id/);
 });
 
+test('visible command turns persist for rendering but stay outside model history', (t) => {
+    const workingDir = workspace(t);
+    const store = new ConversationSessionStore({ workingDir });
+    const command = store.beginCommand({ text: '/exec launch-opencode hi' });
+    store.insertTask(command.session.sessionId, command.assistantMessageIndex, 'task_abcdefabcdefabcdefabcdef');
+    const completed = store.completeCommand(
+        command.session.sessionId,
+        command.assistantMessageIndex,
+        'Task started.',
+    );
+
+    assert.equal(command.kind, 'command');
+    assert.deepEqual(completed.messages.map((message) => ({
+        role: message.role,
+        type: message.type,
+        text: message.text,
+        taskId: message.taskId,
+        context: message.context,
+    })), [
+        {
+            role: 'user',
+            type: undefined,
+            text: '/exec launch-opencode hi',
+            taskId: undefined,
+            context: false,
+        },
+        {
+            role: 'assistant',
+            type: undefined,
+            text: 'Task started.',
+            taskId: undefined,
+            context: false,
+        },
+        {
+            role: undefined,
+            type: 'task',
+            text: undefined,
+            taskId: 'task_abcdefabcdefabcdefabcdef',
+            context: undefined,
+        },
+    ]);
+    assert.deepEqual(buildConversationInitialHistory(completed), []);
+
+    const reloaded = new ConversationSessionStore({ workingDir }).ensureCurrentSession();
+    assert.deepEqual(reloaded.messages, completed.messages);
+    assert.equal(reloaded.messages[2].taskId, 'task_abcdefabcdefabcdefabcdef');
+    assert.deepEqual(buildConversationInitialHistory(reloaded), []);
+});
+
+test('commands without visible output do not persist an empty assistant message', (t) => {
+    const workingDir = workspace(t);
+    const store = new ConversationSessionStore({ workingDir });
+    const command = store.beginCommand({ text: '/tasks' });
+    const completed = store.completeCommand(command.session.sessionId, command.assistantMessageIndex, '');
+
+    assert.deepEqual(completed.messages.map(({ role, text, context }) => ({ role, text, context })), [
+        { role: 'user', text: '/tasks', context: false },
+    ]);
+    assert.deepEqual(buildConversationInitialHistory(completed), []);
+});
+
 test('slash session commands call the AchillesCLI session owner', async () => {
     const calls = [];
     const session = {

@@ -493,6 +493,27 @@ export class InteractivePrompt {
 
                 // Handle Tab - show skill selector if command needs skill arg, or prompt for text args
                 if (keyStr === '\t') {
+                    const taskMatch = editor.getBuffer().match(/^\/task\s+(view|continue|stop)(?:\s+(\S*))?$/);
+                    if (taskMatch && typeof self.slashHandler.getTaskCompletions === 'function') {
+                        const action = taskMatch[1];
+                        const taskItems = self.slashHandler.getTaskCompletions(action).map((task) => ({
+                            name: task.label,
+                            description: task.description,
+                            usage: task.value,
+                            taskId: task.value,
+                        }));
+                        if (taskItems.length > 0) {
+                            process.stdin.removeListener('data', handleKey);
+                            process.stdin.setRawMode(false);
+                            const selectedTask = await showCommandSelector(taskItems, {
+                                initialFilter: taskMatch[2] || '',
+                            });
+                            process.stdin.setRawMode(true);
+                            process.stdin.on('data', handleKey);
+                            if (selectedTask) rewriteLine(`/task ${action} ${selectedTask.taskId} `);
+                        }
+                        return;
+                    }
                     const cmdInfo = getCommandNeedingSkillArg();
                     if (cmdInfo) {
                         await showSkillSelectorForCommand(cmdInfo.command);

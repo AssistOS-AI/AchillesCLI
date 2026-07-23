@@ -22,7 +22,10 @@ import { BUILT_IN_SKILLS, TIERS } from './lib/constants.mjs';
 import { buildOrchestratorSystemPrompt } from './prompts/orchestrator-prompt.mjs';
 import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
-import { normalizeWebchatMessage } from './lib/webchatEnvelope.mjs';
+import {
+    normalizeWebchatMessage,
+    shouldEmitWebchatOutput,
+} from './lib/webchatEnvelope.mjs';
 import { formatWebchatError } from './lib/webchatError.mjs';
 import { materializeWebchatContext } from './lib/webchatResources.mjs';
 import { startIntroSkill, startWebchatIntroSkill } from './lib/introSkillBoot.mjs';
@@ -42,7 +45,10 @@ import {
     emitWebchatRuntimeState,
     selectWebchatRuntimeModel,
 } from './lib/webchatRuntimeState.mjs';
-import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
+import {
+    buildTaskCompletions,
+    formatWorkspaceTaskSummary,
+} from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
 import {
     buildConversationInitialHistory,
@@ -317,6 +323,18 @@ async function main() {
         let currentConversation = sessionStore.ensureCurrentSession();
         const initialHistory = buildConversationInitialHistory(currentConversation);
         let currentTurn = null;
+        const backgroundTaskManager = await createWebchatBackgroundTaskManager({
+            workingDir,
+            emitProtocol: false,
+            onTaskStarted: (task) => {
+                if (!currentTurn || !task?.id) return null;
+                return sessionStore.insertTask(
+                    currentTurn.session.sessionId,
+                    currentTurn.assistantMessageIndex,
+                    task.id,
+                );
+            },
+        });
         try {
             if (verbose) {
                 console.log(`Processing: "${prompt}"\n`);
@@ -329,6 +347,7 @@ async function main() {
                 llmAgent: agent.llmAgent,
                 logger,
                 bashExecutor,
+                backgroundTaskManager,
             };
             const akuSessionState = createAKUSessionState();
             context.akuSessionState = akuSessionState;
@@ -406,6 +425,8 @@ async function main() {
                 console.error(error.stack);
             }
             process.exit(1);
+        } finally {
+            backgroundTaskManager.close();
         }
     } else if (webchatRuntime) {
         // Webchat mode: simple stdin → process → stdout loop (no REPL, no banner, no prompt)
@@ -718,7 +739,29 @@ async function runWebchatInteractive(agent, options) {
             await refreshWorkspaceSkillsNow(activeAgent, { logger: activeAgent.logger });
         },
         historyManager,
-        getTaskSummary: (args) => formatWorkspaceTaskSummary(workingDir, args),
+        getTaskSummary: (args) => {
+            backgroundTaskManager.listTasks();
+            return args ? formatWorkspaceTaskSummary(workingDir, args) : '';
+        },
+        viewTask: (taskId) => {
+            backgroundTaskManager.viewTask(taskId);
+            return '';
+        },
+        continueTask: async (taskId, prompt) => {
+            try { return await backgroundTaskManager.continueTask(taskId, prompt); }
+            catch (error) {
+                backgroundTaskManager.reportActionError('continue', taskId, error);
+                throw error;
+            }
+        },
+        stopTask: async (taskId) => {
+            try { return await backgroundTaskManager.stopTask(taskId); }
+            catch (error) {
+                backgroundTaskManager.reportActionError('stop', taskId, error);
+                throw error;
+            }
+        },
+        getTaskCompletions: (action) => buildTaskCompletions(workingDir, action),
         getPermissions,
         setPermissions,
         getSessions: () => sessionStore.listSessions(),
@@ -784,8 +827,21 @@ async function runWebchatInteractive(agent, options) {
             isProcessing = true;
             activeAbortController = new AbortController();
             const isSlash = slashHandler.isSlashCommand(message);
+            const emitOutput = shouldEmitWebchatOutput(normalizedMessage, {
+                isSlashCommand: isSlash,
+            });
+            let commandTurn = null;
             try {
                 if (isSlash) {
+                    if (normalizedMessage.visible !== false) {
+                        commandTurn = sessionStore.beginCommand({
+                            text: normalizedMessage.rawText,
+                            attachments: normalizedMessage.attachments,
+                            references: normalizedMessage.references,
+                        });
+                        currentTurn = commandTurn;
+                        currentConversation = commandTurn.session;
+                    }
                     const slashOutput = await executeWebchatSlashCommand({
                         input: message,
                         slashHandler,
@@ -794,10 +850,26 @@ async function runWebchatInteractive(agent, options) {
                         context,
                         signal: activeAbortController.signal,
                     });
-                    if (slashOutput?.exit) {
-                        process.stdout.write(`${slashOutput.output || 'Exit is not supported in webchat.'}\n`);
-                    } else if (slashOutput?.output) {
-                        process.stdout.write(`${slashOutput.output}\n`);
+                    const output = slashOutput?.exit
+                        ? (slashOutput.output || 'Exit is not supported in webchat.')
+                        : (slashOutput?.output || '');
+                    if (slashOutput?.exit && emitOutput) {
+                        process.stdout.write(`${output}\n`);
+                    } else if (output && emitOutput) {
+                        process.stdout.write(`${output}\n`);
+                    }
+                    if (commandTurn) {
+                        const completed = sessionStore.completeCommand(
+                            commandTurn.session.sessionId,
+                            commandTurn.assistantMessageIndex,
+                            output,
+                        );
+                        if (currentConversation.sessionId === completed.sessionId) {
+                            currentConversation = completed;
+                            emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                        }
+                        if (currentTurn === commandTurn) currentTurn = null;
+                        commandTurn = null;
                     }
                 } else {
                     currentTurn = sessionStore.beginTurn({
@@ -878,23 +950,36 @@ async function runWebchatInteractive(agent, options) {
                     : formatWebchatError(error, {
                         publicBaseUrl: context?.webchatOrigin?.publicBaseUrl,
                     });
-                if (currentTurn) {
+                const failedTurn = commandTurn || currentTurn;
+                if (failedTurn) {
                     try {
-                        currentConversation = sessionStore.completeTurn(
-                            currentTurn.session.sessionId,
-                            currentTurn.assistantMessageIndex,
-                            output,
-                        );
-                        emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                        const completed = failedTurn.kind === 'command'
+                            ? sessionStore.completeCommand(
+                                failedTurn.session.sessionId,
+                                failedTurn.assistantMessageIndex,
+                                output,
+                            )
+                            : sessionStore.completeTurn(
+                                failedTurn.session.sessionId,
+                                failedTurn.assistantMessageIndex,
+                                output,
+                            );
+                        if (currentConversation.sessionId === completed.sessionId) {
+                            currentConversation = completed;
+                            emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                        }
                     } catch (_) {
                         // Persistence failure is reported through the live error path below.
                     }
-                    currentTurn = null;
+                    if (currentTurn === failedTurn) currentTurn = null;
+                    commandTurn = null;
                 }
-                if (activeAbortController?.signal?.aborted || error?.name === 'AbortError') {
-                    process.stdout.write('[cancelled]\n');
-                } else {
-                    process.stdout.write(`${output}\n`);
+                if (emitOutput) {
+                    if (activeAbortController?.signal?.aborted || error?.name === 'AbortError') {
+                        process.stdout.write('[cancelled]\n');
+                    } else {
+                        process.stdout.write(`${output}\n`);
+                    }
                 }
             } finally {
                 try {

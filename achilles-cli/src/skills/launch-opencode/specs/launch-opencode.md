@@ -35,6 +35,9 @@ the existing `enable_agent` action in explicit `global` mode only when it is not
 waits for runtime readiness. It then calls `opencodeAgent` through the router at `/opencodeAgent/mcp`;
 observer-owned status reads use `/opencodeAgent/task`. The skill must not use
 AchillesCLI's legacy MCP helper or any local path fallback.
+The provider's `execute-task` and `continue-task` tools are both internal MCP
+capabilities invoked by AchillesCLI as the verified source agent. WebChat only
+sends CLI commands and cannot invoke either provider tool directly.
 
 ## Decisions & Questions
 

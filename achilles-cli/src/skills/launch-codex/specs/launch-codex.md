@@ -25,6 +25,8 @@ handle to the original Codex thread and project directory, then invokes
 continuation use the model configured at continuation time instead of storing
 or replaying the model used to start the thread. WebChat keeps the same local
 task while each continuation is a new asynchronous remote execution.
+Both the initial and continuation tools are internal MCP capabilities invoked
+by AchillesCLI as the verified source agent; WebChat never calls them directly.
 
 The provider wrappers treat `SIGTERM` as controlled cancellation. They abort
 the active Codex subprocess and, if a thread id was already reported, persist

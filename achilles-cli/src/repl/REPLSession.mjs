@@ -33,7 +33,12 @@ import {
     installWorkspaceSkillRefreshHook,
     refreshWorkspaceSkillsNow,
 } from '../lib/workspaceSkillRefresh.mjs';
-import { formatWorkspaceTaskSummary } from '../lib/workspaceTasks.mjs';
+import {
+    buildTaskCompletions,
+    formatWorkspaceTaskDetail,
+    formatWorkspaceTaskSummary,
+} from '../lib/workspaceTasks.mjs';
+import { createWebchatBackgroundTaskManager } from '../lib/webchatBackgroundTasks.mjs';
 import {
     formatSoulGatewayModelDescription,
     loadSoulGatewayModels,
@@ -103,6 +108,8 @@ export class REPLSession {
         });
         this.currentConversation = this.sessionStore.ensureCurrentSession();
         this.pendingConversationHistory = buildConversationInitialHistory(this.currentConversation);
+        this.activeTurn = null;
+        this.taskManager = null;
 
         // Context for skill execution
         this.context = {
@@ -130,6 +137,13 @@ export class REPLSession {
             getSessions: () => this.sessionStore.listSessions(),
             createSession: () => this._activateConversation(this.sessionStore.createSession()),
             resumeSession: (sessionId) => this._activateConversation(this.sessionStore.resumeSession(sessionId)),
+            viewTask: (taskId) => {
+                this.taskManager?.viewTask(taskId);
+                return formatWorkspaceTaskDetail(this.workingDir, taskId);
+            },
+            continueTask: (taskId, prompt) => this.taskManager?.continueTask(taskId, prompt),
+            stopTask: (taskId) => this.taskManager?.stopTask(taskId),
+            getTaskCompletions: (action) => buildTaskCompletions(this.workingDir, action),
         });
 
         // Build command list for interactive selector
@@ -308,6 +322,7 @@ export class REPLSession {
         // natural-language execution, even when that execution is cancelled.
         this.pendingConversationHistory = [];
         const turn = this.sessionStore.beginTurn({ text: userPrompt });
+        this.activeTurn = turn;
         this.currentConversation = turn.session;
         let result;
         try {
@@ -320,6 +335,7 @@ export class REPLSession {
             );
             throw error;
         } finally {
+            this.activeTurn = null;
             await drainWorkspaceSkillsRefresh(this.agent, { logger: this.agent.logger });
         }
 
@@ -601,6 +617,19 @@ export class REPLSession {
      * @returns {Promise<void>}
      */
     async start() {
+        this.taskManager = await createWebchatBackgroundTaskManager({
+            workingDir: this.workingDir,
+            emitProtocol: false,
+            onTaskStarted: (task) => {
+                if (!this.activeTurn || !task?.id) return null;
+                return this.sessionStore.insertTask(
+                    this.activeTurn.session.sessionId,
+                    this.activeTurn.assistantMessageIndex,
+                    task.id,
+                );
+            },
+        });
+        this.context.backgroundTaskManager = this.taskManager;
         this._showBanner();
         if (this.currentConversation.messages.length === 0) {
             await startIntroSkill(this.agent, {
@@ -615,20 +644,24 @@ export class REPLSession {
         }
 
         // Main REPL loop
-        while (true) {
-            const input = (await this.inputPrompt.prompt()).trim();
+        try {
+            while (true) {
+                const input = (await this.inputPrompt.prompt()).trim();
 
-            if (!input) continue;
+                if (!input) continue;
 
-            // Slash commands (direct execution)
-            if (this.slashHandler.isSlashCommand(input)) {
-                const shouldExit = await this._handleSlashCommand(input);
-                if (shouldExit) break;
-                continue;
+                // Slash commands (direct execution)
+                if (this.slashHandler.isSlashCommand(input)) {
+                    const shouldExit = await this._handleSlashCommand(input);
+                    if (shouldExit) break;
+                    continue;
+                }
+
+                // Natural language prompt - process via LLM
+                await this.nlProcessor.process(input);
             }
-
-            // Natural language prompt - process via LLM
-            await this.nlProcessor.process(input);
+        } finally {
+            this.taskManager?.close();
         }
     }
 

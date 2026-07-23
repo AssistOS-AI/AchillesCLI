@@ -63,12 +63,28 @@ export function normalizeWebchatOrigin(rawOrigin) {
 export function normalizeWebchatMessage(raw) {
     const text = String(raw || '').trim();
     if (!text) {
-        return { text: '', rawText: '', attachments: [], references: [], invocationToken: '', origin: {} };
+        return {
+            text: '',
+            rawText: '',
+            attachments: [],
+            references: [],
+            invocationToken: '',
+            origin: {},
+            visible: true,
+        };
     }
     try {
         const parsed = JSON.parse(text);
         if (!parsed || typeof parsed !== 'object' || !parsed.__webchatMessage) {
-            return { text, rawText: text, attachments: [], references: [], invocationToken: '', origin: {} };
+            return {
+                text,
+                rawText: text,
+                attachments: [],
+                references: [],
+                invocationToken: '',
+                origin: {},
+                visible: true,
+            };
         }
         const messageText = typeof parsed.text === 'string' ? parsed.text : '';
         const attachments = Array.isArray(parsed.attachments) ? parsed.attachments : [];
@@ -105,8 +121,21 @@ export function normalizeWebchatMessage(raw) {
             references,
             invocationToken,
             origin,
+            visible: parsed.presentation?.visible !== false,
         };
     } catch {
-        return { text, rawText: text, attachments: [], references: [], invocationToken: '', origin: {} };
+        return {
+            text,
+            rawText: text,
+            attachments: [],
+            references: [],
+            invocationToken: '',
+            origin: {},
+            visible: true,
+        };
     }
+}
+
+export function shouldEmitWebchatOutput(message, { isSlashCommand = false } = {}) {
+    return !(isSlashCommand && message?.visible === false);
 }

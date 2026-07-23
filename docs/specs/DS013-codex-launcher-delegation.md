@@ -11,7 +11,7 @@ summary: Defines resumable asynchronous delegation from AchillesCLI to the Codex
 ## Introduction
 
 This DS defines the fixed Codex launcher and provider contract. It lets
-AchillesCLI WebChat delegate a plain task to `codexAgent`, observe native Codex
+AchillesCLI delegate a plain task to `codexAgent`, observe native Codex
 output while the work runs, and continue the resulting provider thread without
 exposing provider session data or adding Codex-specific fields to WebChat.
 
@@ -35,9 +35,10 @@ existing background-task observer.
 `codexAgent.execute-task` and `codexAgent.continue-task` are asynchronous
 five-minute MCP tools with full task-log retention. `execute-task` is tagged
 `internal` for AchillesCLI agent-to-agent delegation and declares
-`continue-task` as its continuation tool. `continue-task` keeps the default
-authenticated access class because WebChat invokes later turns in the
-authenticated user context.
+`continue-task` as its continuation tool. `continue-task` is also tagged
+`internal`: AchillesCLI invokes later turns as the verified source agent in
+both terminal and WebChat modes, and the browser does not call the provider
+tool directly.
 
 Initial execution runs:
 
@@ -77,7 +78,7 @@ The resumed command must not receive `--model`. This omission is deliberate:
 the model configured when the continuation starts is authoritative, rather
 than the model used by the initial turn. The same opaque handle is returned
 after success. Ploinky creates a new remote AgentServer task for the turn while
-keeping the stable local WebChat task id and incrementing its turn counter.
+AchillesCLI keeps the stable local task id and increments its turn counter.
 
 Both wrappers treat `SIGTERM` as controlled cancellation: they abort the Codex
 subprocess and, when Codex already reported a thread id, persist it through the
