@@ -82,23 +82,18 @@ Ploinky integration boundary:
     context. Launcher skills may use this same-origin router base for
     user-facing browser links, while ignoring malformed or non-HTTP origin
     hints.
-15. Ploinky marks an existing WebChat conversation with
-    `PLOINKY_WEBCHAT_HAS_HISTORY=1`. AchillesCLI must use that flag by itself to
-    suppress the new-conversation intro. Folder session identity and persisted
-    history remain host-owned; AchillesCLI does not require a session-id
-    environment variable. AchillesCLI opts into the generic WebChat envelope,
-    accepts server-provided prior turns only as ordered `{ role, message }`
-    history, and supplies that history as `initialHistory` when the next normal
-    prompt creates MainAgent's LoopAgentSession. It must not concatenate the
-    restored transcript or synthetic continuation delimiters into the current
-    user message.
-    AchillesCLI must also publish one process-lifetime version-4 UUID as
-    `runtimeInstanceId` in every version-1 `__webchatRuntimeState` envelope.
-    The identifier remains stable across `/model` and `/tier` updates and changes
-    only when the AchillesCLI process is recreated. Ploinky may use a changed
-    identifier to reload the selected folder session and rearm one-time
-    `initialHistory` delivery; the identifier is runtime metadata, not
-    authentication material or persisted conversation state.
+15. AchillesCLI owns conversation sessions for both terminal and WebChat launches.
+    It stores them under `<cwd>/.achilles-cli/sessions/`, stores the selected
+    `currentSessionId` beside model and permissions in `.achilles-cli/settings.json`,
+    and supplies prior natural-language turns once as `initialHistory` on the
+    first normal prompt after startup or session selection. Incoming WebChat
+    envelopes cannot supply history. Slash commands do not consume pending
+    hydration and do not enter the durable conversation.
+    AchillesCLI publishes version-1 `__webchatSession` envelopes for the current
+    snapshot, session lists, and selected sessions. WebChat requests those changes
+    through `/session`, `/session new`, and `/session resume <session-id>`.
+    `__webchatRuntimeState` continues to publish model state but carries no
+    process-instance identifier.
 16. In WebChat runtime mode, AchillesCLI registers a generic asynchronous-task
     observer with Ploinky `AgentMcpClient.mjs`. Launcher skills that delegate
     long-running work use `callToolWithoutWait`, so an AgentServer response

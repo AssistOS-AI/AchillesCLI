@@ -35,16 +35,16 @@ Runtime wiring:
 1. Construct or rehydrate `LLMAgent`/`MainAgent` with runtime configuration.
 2. Attach command execution utilities and UI providers.
 3. Register built-in and discovered skill roots before accepting requests.
-4. In webchat mode, run the startup intro unless `PLOINKY_WEBCHAT_HAS_HISTORY=1`; no folder session identifier is required by the agent process.
-   When the first forwarded envelope carries role-separated history, normalize it as ordered `{ role, message }` records and use it only to hydrate the newly created MainAgent session. The current envelope text remains the current prompt.
-5. In webchat mode, generate one version-4 `runtimeInstanceId` for the lifetime of the AchillesCLI process and include it in every generic runtime-state envelope. Publish the explicit model restored from `.achilles-cli/settings.json` before accepting user input and publish `null` when that setting is absent. Model-selection updates must retain the same instance identifier. A recreated process must generate a different identifier so a compatible WebChat host can rehydrate the new MainAgent session from durable folder history without confusing an EventSource reconnect with a process replacement.
-6. The broker remains outside Bubblewrap and handles authorization only. MainAgent, skill code, the local Bash executor, and every Bash child process inherit the persistent workspace sandbox.
-7. Bubblewrap keeps the network namespace shared and exposes only system runtime paths, read-only Achilles code/dependencies, isolated temporary storage, the broker socket, and the writable session workspace.
-8. Startup fails closed when Bubblewrap or the broker connection is unavailable.
-9. The Unix socket protocol must preserve its response half after the client finishes writing a request, because broker handlers may complete asynchronously.
-10. In webchat mode, structured interaction responses received on stdin must be demultiplexed before ordinary prompt processing and forwarded through the trusted broker control channel.
-11. A successful `/permissions` change must update the trusted Broker before the confirmed mode is written atomically to the workspace settings file.
-12. A WebChat continuation carrying initial history must bypass prompt-only cached provider results so the restored context reaches the planner that produces the current answer.
+4. Before single-shot execution or either interactive loop starts, load or create the current AchillesCLI conversation from `<workspace>/.achilles-cli/sessions/`. The selected id is the `currentSessionId` key in `.achilles-cli/settings.json`, beside model and permissions.
+5. Run the startup intro only when the current AchillesCLI conversation has no messages. In single-shot, REPL, and WebChat modes, pass stored user/assistant turns once as `initialHistory` on the first natural-language prompt after process startup or session selection; slash commands must not consume this pending hydration.
+6. In webchat mode, publish the explicit model restored from `.achilles-cli/settings.json` before accepting user input and publish `null` when that setting is absent. Runtime-state envelopes do not carry a process-instance identifier. Publish the current conversation through a `__webchatSession` envelope after startup, session selection, and completed turns.
+7. The broker remains outside Bubblewrap and handles authorization only. MainAgent, skill code, the local Bash executor, and every Bash child process inherit the persistent workspace sandbox.
+8. Bubblewrap keeps the network namespace shared and exposes only system runtime paths, read-only Achilles code/dependencies, isolated temporary storage, the broker socket, and the writable session workspace.
+9. Startup fails closed when Bubblewrap or the broker connection is unavailable.
+10. The Unix socket protocol must preserve its response half after the client finishes writing a request, because broker handlers may complete asynchronously.
+11. In webchat mode, structured interaction responses received on stdin must be demultiplexed before ordinary prompt processing and forwarded through the trusted broker control channel.
+12. A successful `/permissions` change must update the trusted Broker before the confirmed mode is written atomically to the workspace settings file.
+13. A restoring turn with non-empty `initialHistory` must bypass prompt-only cached provider results so the restored context reaches the planner that produces the current answer.
 
 Configuration boundaries:
 1. Startup must not hardcode environment-specific absolute paths.
@@ -68,10 +68,10 @@ MainAgent must reach configured LLM services and router-mediated agents during n
 Response:
 Bubblewrap must probe whether the current runtime permits mounting a private proc filesystem. Native host execution uses a private `/proc` when supported. A nested unprivileged container that rejects the proc mount must receive an empty `/proc` directory instead; it must never bind the outer container's `/proc`, because that would expose process-root paths across the filesystem boundary.
 
-### Question #4: Why does AchillesCLI publish a random runtime instance id instead of relying on a PID?
+### Question #4: Why does AchillesCLI restore sessions instead of relying on WebChat process identity?
 
 Response:
-The process observed by Ploinky may be a launcher or sandbox wrapper, and operating-system PIDs may be reused. AchillesCLI owns the MainAgent session whose in-memory history is lost at process exit, so an identifier generated inside that process is the narrow signal that identifies the lifetime of the relevant state. Keeping the identifier stable across model changes prevents duplicate hydration, while generating a new value at startup lets WebChat restore durable conversation history after any replacement cause.
+AchillesCLI can run with no browser at all, so a WebChat runtime or PID cannot be the durable conversation owner. Loading `currentSessionId` and its session file during every process startup gives single-shot, terminal, and browser launches the same behavior and lets AchillesCLI hydrate a freshly created MainAgent exactly once.
 
 ## Conclusion
 Entrypoint bootstrap is the operational root of AchillesCLI and must remain deterministic, debuggable, and override-friendly across local and integrated environments.

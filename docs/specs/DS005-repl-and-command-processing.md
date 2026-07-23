@@ -29,6 +29,7 @@ Primary REPL components and responsibilities:
    - Enforces argument validation for slash-command entry points.
    - Supports hierarchical commands with sub-options (e.g., `/list skills`, `/add repo`).
    - Supports `/update repos` as a repository maintenance command that runs `git pull` in each cloned repository under `.achilles-cli/repos/`.
+   - Supports `/session`, `/session new`, and `/session resume <session-id>` through the same handler in terminal and WebChat modes.
 4. `NaturalLanguageProcessor.mjs`
     - Routes free-text prompts into orchestrated LLM execution.
     - Applies runtime execution options and context shaping.
@@ -37,6 +38,10 @@ Primary REPL components and responsibilities:
    - Persists and rehydrates command history.
    - Stores history in `.achilles-cli/history` within the working directory.
    - Supports history navigation and replay behavior.
+6. `ConversationSessionStore.mjs`
+   - Owns durable natural-language conversations under `.achilles-cli/sessions/`.
+   - Keeps `currentSessionId` in `.achilles-cli/settings.json` beside model and permissions.
+   - Uses validated UUID file names, safe directory checks, and atomic JSON replacement.
 
 Command routing model:
 1. Inputs beginning with `/` are parsed as command invocations.
@@ -46,6 +51,7 @@ Command routing model:
 5. Repository update failures must be reported as an aggregated error beginning with `failed to update repos:` followed by one line per failed repository.
 6. `/tasks [count|all]` reads the current workspace task journal without invoking an LLM. With no argument it returns the ten most recently updated tasks; a numeric argument must be between 1 and 100, while `all` explicitly requests the complete journal.
 7. Task summaries must use the persisted description preview with `toolName` and task id as fallbacks, and must include status, target agent, and update time. Only terminal tasks may include log output, limited to the final five lines and 2 KiB per task.
+8. `/session` is the single conversation-session command. It opens or refreshes a selector containing `New` and saved sessions; `/session new` creates and selects a session, while `/session resume <session-id>` loads and selects an existing one.
 
 Hierarchical command structure:
 1. Commands with `subOptions` in `COMMAND_DEFINITIONS` show a sub-menu when selected.
@@ -67,6 +73,11 @@ Session control behavior:
 11. In WebChat, a Bash approval request keeps the current execution suspended while AchillesCLI emits a structured interaction with a unique request id and the ordered choices `always-allow`, `allow`, and `deny`; `always-allow` is the default choice.
 12. A structured WebChat interaction response must be consumed as control input before slash-command and prompt dispatch, must match the pending request id, and must never enter agent conversation history.
 13. Resolving the interaction resumes the same tool call with the command result or denial; a second or stale response must not execute the command again.
+14. Natural-language turns must be persisted as user plus assistant records. Slash commands and interaction control messages must not enter conversation history.
+15. Switching sessions must create a fresh MainAgent, load the selected transcript for one-time `initialHistory`, and reset session-local tier state while preserving workspace model and permission settings.
+16. WebChat mode must publish `current`, `list`, and `selected` session records through version-1 `__webchatSession` envelopes. `/session`, `/session new`, and `/session resume <id>` remain ordinary SlashCommandHandler operations; the browser does not receive a separate session API.
+17. The WebChat slash-command catalog must expose no `/sessions` alias. Its `/session resume` subcommand must provide saved sessions as argument completions whose inserted value is the opaque `sessionId` and whose visible label is the session preview, allowing selection without exposing ids as the only human-readable identifier.
+18. WebChat prompt dispatch must use a serial queue that recovers from a rejected previous turn before starting the next input. Post-turn workspace-skill refresh is best-effort maintenance: errors must be logged without rejecting the queue, and a refresh that does not settle within five seconds must stop gating subsequent prompts.
 
 Operational invariants:
 1. Deterministic slash flows must avoid unnecessary LLM routing.
@@ -78,6 +89,8 @@ Operational invariants:
 7. Permission mode must be persisted under the `permissions` key in the same workspace settings file as the explicit model selection. The settings file is an unversioned JSON object and must not emit a `version` property. Writes must preserve unrelated settings and remove a legacy `version` property when present.
 8. `full-access` remains confined to the selected workspace; neither that mode nor an approval permits Bash execution outside Bubblewrap.
 9. Reusable exact-call approvals created by `always allow` remain session-local and must not be written to workspace settings.
+10. `currentSessionId` must be preserved in the same unversioned settings object as `model` and `permissions`.
+11. Emitting or persisting an assistant response must not leave the WebChat prompt queue permanently pending or rejected. The runtime must clear its processing and abort-controller state even when post-turn maintenance fails or times out.
 
 ## Decisions & Questions
 
@@ -100,6 +113,16 @@ Approval is runtime control, not conversation content. A dedicated interaction l
 
 Response:
 The mode is an explicit workspace preference and `full-access` still remains inside the workspace sandbox. Exact-call approvals suppress repeated prompts for one command but do not widen filesystem access, so they remain ephemeral session state rather than workspace configuration.
+
+### Question #5: Why are conversation history and command history separate?
+
+Response:
+Command history supports terminal navigation and may include deterministic slash commands. Conversation history is the semantic user/assistant context supplied to MainAgent, so persisting slash commands there would pollute later model context. Keeping the stores separate preserves both behaviors.
+
+### Question #6: Why is post-turn skill refresh bounded independently from prompt execution?
+
+Response:
+The assistant result and conversation record are already complete before final maintenance runs. A rejected or indefinitely pending refresh must not poison the serialized prompt chain and prevent later messages from reaching MainAgent. Keeping the queue recoverable and limiting only this post-turn maintenance wait preserves ordered prompts while allowing refresh failures to remain observable through logs.
 
 ## Conclusion
 The REPL subsystem is the primary interactive contract for AchillesCLI and must keep deterministic commands, orchestrated prompting, and session-state controls coherent. The hierarchical command model provides uniform discovery and execution through the `/` menu.

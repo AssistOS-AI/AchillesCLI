@@ -6,9 +6,11 @@ import { join } from 'node:path';
 
 import {
     clearSelectedModel,
+    getCurrentSessionId,
     getPermissionMode,
     getSelectedModel,
     setPermissionMode,
+    setCurrentSessionId,
     setSelectedModel,
 } from '../src/lib/achillesSettings.mjs';
 
@@ -54,6 +56,21 @@ test('permission mode is stored per workspace beside the selected model', async 
 
     clearSelectedModel(firstWorkspace);
     assert.equal(getPermissionMode(firstWorkspace), 'full-access');
+});
+
+test('current conversation session is stored beside model and permissions', async () => {
+    const workingDir = await mkdtemp(join(tmpdir(), 'achilles-current-session-'));
+    const sessionId = '123e4567-e89b-42d3-a456-426614174000';
+    setSelectedModel(workingDir, 'anthropic/claude-sonnet');
+    setPermissionMode(workingDir, 'full-access');
+    setCurrentSessionId(workingDir, sessionId);
+
+    assert.equal(getCurrentSessionId(workingDir), sessionId);
+    assert.deepEqual(JSON.parse(await readFile(join(workingDir, '.achilles-cli', 'settings.json'), 'utf8')), {
+        model: 'anthropic/claude-sonnet',
+        permissions: 'full-access',
+        currentSessionId: sessionId,
+    });
 });
 
 test('invalid persisted permission modes fall back safely and invalid writes are rejected', async () => {

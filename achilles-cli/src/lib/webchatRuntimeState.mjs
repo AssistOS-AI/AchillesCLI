@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import {
     clearSelectedModel,
     getSelectedModel,
@@ -7,11 +5,8 @@ import {
 } from './achillesSettings.mjs';
 
 const WEBCHAT_RUNTIME_STATE_VERSION = 1;
-const WEBCHAT_RUNTIME_INSTANCE_ID = randomUUID();
 
-export function createWebchatRuntimeStateEnvelope(model, {
-    runtimeInstanceId = WEBCHAT_RUNTIME_INSTANCE_ID,
-} = {}) {
+export function createWebchatRuntimeStateEnvelope(model) {
     const selectedModel = typeof model === 'string' && model.trim()
         ? model.trim()
         : null;
@@ -19,18 +14,16 @@ export function createWebchatRuntimeStateEnvelope(model, {
         __webchatRuntimeState: 1,
         version: WEBCHAT_RUNTIME_STATE_VERSION,
         model: selectedModel,
-        runtimeInstanceId,
     };
 }
 
 export function emitWebchatRuntimeState(model, {
     write,
-    runtimeInstanceId = WEBCHAT_RUNTIME_INSTANCE_ID,
 } = {}) {
     const output = typeof write === 'function'
         ? write
         : (value) => process.stdout.write(value);
-    const envelope = createWebchatRuntimeStateEnvelope(model, { runtimeInstanceId });
+    const envelope = createWebchatRuntimeStateEnvelope(model);
     output(`${JSON.stringify(envelope)}\n`);
     return envelope;
 }

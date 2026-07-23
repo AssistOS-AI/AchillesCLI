@@ -7,6 +7,7 @@ import { discoverSkills, discoverSkillsFromRoot } from 'achillesAgentLib/MainAge
 import { parseSkillDocument } from 'achillesAgentLib/utils/skillDocumentParser.mjs';
 import { buildSlashCommandCatalog } from '../repl/SlashCommandHandler.mjs';
 import { getSelectedModel } from '../lib/achillesSettings.mjs';
+import { ConversationSessionStore } from '../lib/conversationSessionStore.mjs';
 import { loadSoulGatewayModels, toModelCompletions } from '../lib/soulGatewayModels.mjs';
 import { PERMISSION_MODES } from '../permissions/protocol.mjs';
 
@@ -132,6 +133,24 @@ function commandUsesSkillArgument(command) {
     return Boolean(command?.needsSkillArg) || OPTIONAL_SKILL_ARG_COMMANDS.has(command?.name);
 }
 
+export function buildSessionCompletions(dir) {
+    if (!dir) return [];
+    try {
+        const payload = new ConversationSessionStore({ workingDir: dir }).listSessions();
+        return payload.sessions.map((session) => ({
+            value: session.sessionId,
+            label: session.preview || 'New session',
+            description: [
+                session.sessionId === payload.currentSessionId ? 'Current session' : '',
+                session.sessionId,
+                session.updatedAt,
+            ].filter(Boolean).join(' · '),
+        }));
+    } catch {
+        return [];
+    }
+}
+
 function buildArgCompletions(command, skillCompletions, modelCompletions) {
     if (command?.name === '/model') {
         return modelCompletions;
@@ -156,6 +175,9 @@ export function toAutocompleteCatalog(options = {}) {
     const modelCompletions = Array.isArray(options.modelCompletions)
         ? options.modelCompletions
         : [];
+    const sessionCompletions = Array.isArray(options.sessionCompletions)
+        ? options.sessionCompletions
+        : [];
     const commands = buildSlashCommandCatalog().map((command) => ({
         name: command.name,
         usage: command.usage,
@@ -163,12 +185,17 @@ export function toAutocompleteCatalog(options = {}) {
         argMatchMode: command.argMatchMode,
         argSuggestionLimit: command.argSuggestionLimit,
         subCommands: Array.isArray(command.subCommands)
-            ? command.subCommands.map((subCommand) => ({
-                name: subCommand.name,
-                usage: subCommand.usage,
-                description: subCommand.description,
-                argCompletions: subCommand.needsSkillArg ? skillCompletions : [],
-            }))
+            ? command.subCommands.map((subCommand) => {
+                const isSessionResume = command.name === '/session' && subCommand.name === 'resume';
+                return {
+                    name: subCommand.name,
+                    usage: subCommand.usage,
+                    description: subCommand.description,
+                    argCompletions: isSessionResume
+                        ? sessionCompletions
+                        : (subCommand.needsSkillArg ? skillCompletions : []),
+                };
+            })
             : [],
         argCompletions: buildArgCompletions(command, skillCompletions, modelCompletions),
     }));
@@ -191,6 +218,7 @@ export async function loadAutocompleteCatalog(options = {}) {
     return toAutocompleteCatalog({
         ...options,
         modelCompletions: toModelCompletions(models),
+        sessionCompletions: buildSessionCompletions(options.dir),
     });
 }
 

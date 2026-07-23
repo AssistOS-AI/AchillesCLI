@@ -11,7 +11,7 @@ import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { LineEditor } from '../ui/LineEditor.mjs';
 import { createSpinner } from '../ui/spinner.mjs';
-import { buildCommandList, showTestSelector, showHelpSelector, showTierSelector, showModelSelector } from '../ui/CommandSelector.mjs';
+import { buildCommandList, showCommandSelector, showTestSelector, showHelpSelector, showTierSelector, showModelSelector } from '../ui/CommandSelector.mjs';
 import { SlashCommandHandler } from './SlashCommandHandler.mjs';
 import { summarizeResult } from '../ui/ResultFormatter.mjs';
 import { HistoryManager } from './HistoryManager.mjs';
@@ -43,6 +43,10 @@ import {
     getSelectedModel,
     setSelectedModel,
 } from '../lib/achillesSettings.mjs';
+import {
+    buildConversationInitialHistory,
+    ConversationSessionStore,
+} from '../lib/conversationSessionStore.mjs';
 
 // Import tier utilities from achillesAgentLib (direct path — not re-exported from index)
 let _listTiersFromCache = null;
@@ -94,6 +98,11 @@ export class REPLSession {
         this.historyManager = options.historyManager || new HistoryManager({
             workingDir: this.workingDir,
         });
+        this.sessionStore = options.sessionStore || new ConversationSessionStore({
+            workingDir: this.workingDir,
+        });
+        this.currentConversation = this.sessionStore.ensureCurrentSession();
+        this.pendingConversationHistory = buildConversationInitialHistory(this.currentConversation);
 
         // Context for skill execution
         this.context = {
@@ -112,12 +121,15 @@ export class REPLSession {
         this.slashHandler = new SlashCommandHandler({
             executeSkill: (skillName, input, opts) => this._executeSkill(skillName, input, opts),
             getUserSkills: () => this.getUserSkills(),
-            getSkills: () => agent.getSkills(),
+            getSkills: () => this.agent.getSkills(),
             buildSkills: () => this.reloadSkills(),
             historyManager: this.historyManager,
             getTaskSummary: (args) => formatWorkspaceTaskSummary(this.workingDir, args),
             getPermissions: options.getPermissions,
             setPermissions: options.setPermissions,
+            getSessions: () => this.sessionStore.listSessions(),
+            createSession: () => this._activateConversation(this.sessionStore.createSession()),
+            resumeSession: (sessionId) => this._activateConversation(this.sessionStore.resumeSession(sessionId)),
         });
 
         // Build command list for interactive selector
@@ -132,7 +144,7 @@ export class REPLSession {
             slashHandler: this.slashHandler,
             commandList: this.commandList,
             getUserSkills: () => this.getUserSkills(),
-            getAllSkills: () => agent.getSkills(),
+            getAllSkills: () => this.agent.getSkills(),
             getModelName: () => this.pinnedModel || this._getCurrentTierModel(),
         });
 
@@ -289,9 +301,24 @@ export class REPLSession {
             systemPrompt: buildOrchestratorSystemPrompt(),
             ...restOptions,
         };
+        if (this.pendingConversationHistory.length > 0) {
+            execOpts.initialHistory = this.pendingConversationHistory;
+        }
+        // History belongs to this process bootstrap and is offered to exactly one
+        // natural-language execution, even when that execution is cancelled.
+        this.pendingConversationHistory = [];
+        const turn = this.sessionStore.beginTurn({ text: userPrompt });
+        this.currentConversation = turn.session;
         let result;
         try {
             result = await this.agent.executePrompt(userPrompt, execOpts);
+        } catch (error) {
+            this.currentConversation = this.sessionStore.completeTurn(
+                turn.session.sessionId,
+                turn.assistantMessageIndex,
+                error?.name === 'AbortError' ? '[cancelled]' : (error?.message || String(error)),
+            );
+            throw error;
         } finally {
             await drainWorkspaceSkillsRefresh(this.agent, { logger: this.agent.logger });
         }
@@ -303,9 +330,19 @@ export class REPLSession {
                 if (parsed && (parsed.executions || parsed.type === 'orchestrator')) {
                     result = parsed;
                 } else {
+                    this.currentConversation = this.sessionStore.completeTurn(
+                        turn.session.sessionId,
+                        turn.assistantMessageIndex,
+                        result,
+                    );
                     return result;
                 }
             } catch {
+                this.currentConversation = this.sessionStore.completeTurn(
+                    turn.session.sessionId,
+                    turn.assistantMessageIndex,
+                    result,
+                );
                 return result;
             }
         }
@@ -313,18 +350,103 @@ export class REPLSession {
         // In debug mode, show full JSON
         if (this.debug) {
             if (result?.result) {
-                return typeof result.result === 'string'
+                const formatted = typeof result.result === 'string'
                     ? result.result
                     : JSON.stringify(result.result, null, 2);
+                this.currentConversation = this.sessionStore.completeTurn(
+                    turn.session.sessionId,
+                    turn.assistantMessageIndex,
+                    formatted,
+                );
+                return formatted;
             }
             if (result?.output) {
+                this.currentConversation = this.sessionStore.completeTurn(
+                    turn.session.sessionId,
+                    turn.assistantMessageIndex,
+                    result.output,
+                );
                 return result.output;
             }
-            return JSON.stringify(result, null, 2);
+            const formatted = JSON.stringify(result, null, 2);
+            this.currentConversation = this.sessionStore.completeTurn(
+                turn.session.sessionId,
+                turn.assistantMessageIndex,
+                formatted,
+            );
+            return formatted;
         }
 
         // Non-debug mode: show summarized output
-        return summarizeResult(result);
+        const formatted = summarizeResult(result);
+        this.currentConversation = this.sessionStore.completeTurn(
+            turn.session.sessionId,
+            turn.assistantMessageIndex,
+            formatted,
+        );
+        return formatted;
+    }
+
+    async _activateConversation(session) {
+        if (typeof this.options.createAgent !== 'function') {
+            throw new Error('This runtime cannot replace its MainAgent for a conversation switch.');
+        }
+        this.agent.cancelCurrentSession?.('session-changed');
+        const nextAgent = await this.options.createAgent();
+        this.agent = nextAgent;
+        this.context.skilledAgent = nextAgent;
+        this.context.llmAgent = nextAgent.llmAgent;
+        nextAgent.context = this.context;
+        this.nlProcessor.agent = nextAgent;
+        this.currentConversation = session;
+        this.pendingConversationHistory = buildConversationInitialHistory(session);
+        this.activeTier = TIERS.FAST;
+        this.pinnedModel = getSelectedModel(this.workingDir);
+        this._registerLLMIO();
+        return session;
+    }
+
+    _formatSessionList(payload) {
+        const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+        if (sessions.length === 0) return 'No saved conversation sessions.';
+        return sessions.map((session) => {
+            const marker = session.sessionId === payload.currentSessionId ? '*' : ' ';
+            return `${marker} ${session.sessionId}  ${session.preview || 'New session'}  ${session.updatedAt}`;
+        }).join('\n');
+    }
+
+    _printConversation(session) {
+        for (const message of session?.messages || []) {
+            if (message?.type === 'task') {
+                console.log(`[task] ${message.taskId}`);
+                continue;
+            }
+            const text = String(message?.text || '').trim();
+            if (!text) continue;
+            console.log(`${message.role === 'user' ? 'you' : 'assistant'}> ${text}`);
+        }
+    }
+
+    async _handleSessionPicker() {
+        const payload = this.sessionStore.listSessions();
+        const items = [
+            { name: 'New', description: 'Create a new conversation session' },
+            ...payload.sessions.map((session) => ({
+                name: session.sessionId,
+                description: `${session.preview || 'New session'} · ${session.updatedAt}`,
+            })),
+        ];
+        const selected = await showCommandSelector(items, {
+            prompt: 'Session> ',
+            maxVisible: 10,
+            theme: UIContext.getTheme(),
+        });
+        if (!selected) return null;
+        const session = selected.name === 'New'
+            ? this.sessionStore.createSession()
+            : this.sessionStore.resumeSession(selected.name);
+        await this._activateConversation(session);
+        return session;
     }
 
     /**
@@ -480,15 +602,17 @@ export class REPLSession {
      */
     async start() {
         this._showBanner();
-        await startIntroSkill(this.agent, {
-            workingDir: this.workingDir,
-            context: this.context,
-            logger: this.agent.logger,
-            model: this.pinnedModel || this.activeTier,
-            write: async (message) => {
-                console.log(String(message || '').trimEnd());
-            },
-        });
+        if (this.currentConversation.messages.length === 0) {
+            await startIntroSkill(this.agent, {
+                workingDir: this.workingDir,
+                context: this.context,
+                logger: this.agent.logger,
+                model: this.pinnedModel || this.activeTier,
+                write: async (message) => {
+                    console.log(String(message || '').trimEnd());
+                },
+            });
+        }
 
         // Main REPL loop
         while (true) {
@@ -604,6 +728,22 @@ export class REPLSession {
                 } else if (result.showHelpPicker) {
                     spinner.stop();
                     await this._handleHelpPicker();
+                } else if (result.showSessionPicker) {
+                    spinner.stop();
+                    const selected = await this._handleSessionPicker();
+                    if (selected) {
+                        console.log(`\nSession ${selected.sessionId}\n`);
+                        this._printConversation(selected);
+                        console.log('');
+                    }
+                } else if (result.sessionList) {
+                    spinner.stop();
+                    console.log(`${this._formatSessionList(result.sessionList)}\n`);
+                } else if (result.sessionChanged) {
+                    spinner.stop();
+                    console.log(`\nSession ${result.sessionChanged.sessionId}\n`);
+                    this._printConversation(result.sessionChanged);
+                    console.log('');
                 } else if (result.error) {
                     spinner.fail(result.error);
                 } else if (result.result) {

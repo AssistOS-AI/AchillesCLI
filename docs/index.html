@@ -41,7 +41,8 @@
     and there is no outside retry in the current implementation.
     The selected mode is stored per workspace under the <code>permissions</code> key in
     <code>.achilles-cli/settings.json</code> and restored at startup. Missing or invalid values fall back to
-    <code>ask-for-approval</code>. The settings object is unversioned and contains no <code>version</code> key;
+    <code>ask-for-approval</code>. The same settings object keeps the selected model and conversation
+    <code>currentSessionId</code>. It is unversioned and contains no <code>version</code> key;
     reusable exact-command approvals remain session-local.
     In WebChat, that decision appears in a dedicated three-choice selector while the original tool call remains suspended;
     it is control traffic and is not stored as a user or assistant message.
@@ -83,14 +84,14 @@
     In webchat runtime mode, AchillesCLI emits structured progress metadata before loop-session tool calls.
     The metadata carries the planner reason for the selected tool and is intended for browser UI progress rendering,
     not for transcript or final-answer text.
-    The startup intro is skipped when <code>PLOINKY_WEBCHAT_HAS_HISTORY=1</code> and otherwise runs normally;
-    no WebChat session-id environment variable is required by AchillesCLI.
-    When a recreated WebChat runtime forwards prior turns, AchillesCLI keeps the current prompt separate and hydrates
-    MainAgent with the envelope's ordered <code>{ role, message }</code> history. Synthetic transcript delimiters are
-    not forwarded to the planner, and prompt-only cached results are skipped for that restoring turn.
-    AchillesCLI also publishes a random <code>runtimeInstanceId</code> that remains stable for the process lifetime.
-    Ploinky uses a changed identifier to distinguish a replaced MainAgent from a browser or EventSource reconnect,
-    reload durable folder history, and rearm one-time continuation delivery without exposing the identifier to the browser.
+    AchillesCLI loads its current workspace conversation at startup and skips the intro when that session has history.
+    The prior natural-language turns are supplied once as <code>initialHistory</code> on the first normal prompt;
+    slash commands neither consume that pending hydration nor enter conversation history.
+    AchillesCLI publishes <code>__webchatSession</code> current, list, and selected snapshots so Ploinky can render
+    session UI without owning persistence. Runtime-state metadata carries the selected model only and has no
+    process-instance identifier. WebChat prompts use a recoverable serial queue. Errors from post-turn
+    workspace-skill refresh are logged without rejecting later messages, and a refresh that remains pending
+    for five seconds stops gating the next prompt.
     Asynchronous AgentServer tools are detached from the active WebChat reply: AchillesCLI acknowledges the start with
     the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,
     follows the remote task through the router, and emits dedicated lifecycle and log envelopes. Ongoing tasks are
@@ -101,6 +102,16 @@
     a Markdown link through the authenticated workspace-file route. The underlying AchillesAgentLib message is
     preserved so missing model text, invalid planner output, provider status failures, and execution limits remain
     distinguishable. Unknown absolute stack paths and serialized provider response bodies remain hidden.
+  </div>
+
+  <h2>Conversation Sessions</h2>
+  <div class="card">
+    Durable conversations live under <code>.achilles-cli/sessions/</code>. The selected
+    <code>currentSessionId</code> is stored in <code>.achilles-cli/settings.json</code> beside model and permissions.
+    Terminal users can open the selector with <code>/session</code>, create a conversation with
+    <code>/session new</code>, and resume one with <code>/session resume &lt;session-id&gt;</code>.
+    WebChat autocomplete shows saved conversation names after <code>/session resume</code> while inserting the
+    corresponding session id, and its Sessions control refreshes the same list through <code>/session</code>.
   </div>
 
   <h2>Repository Maintenance</h2>

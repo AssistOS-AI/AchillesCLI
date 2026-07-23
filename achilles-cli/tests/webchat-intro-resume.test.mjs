@@ -27,9 +27,7 @@ test('existing WebChat history suppresses the startup intro', async () => {
     const agent = makeAgent();
     const messages = [];
     const result = await startWebchatIntroSkill(agent, {
-        env: {
-            PLOINKY_WEBCHAT_HAS_HISTORY: '1',
-        },
+        hasHistory: true,
         write: async (message) => messages.push(message),
     });
 
@@ -38,19 +36,15 @@ test('existing WebChat history suppresses the startup intro', async () => {
     assert.deepEqual(messages, []);
 });
 
-test('empty or unspecified WebChat history keeps the startup intro', async () => {
-    assert.equal(shouldStartWebchatIntro({
-        PLOINKY_WEBCHAT_HAS_HISTORY: '0',
-    }), true);
-    assert.equal(shouldStartWebchatIntro({ PLOINKY_WEBCHAT_HAS_HISTORY: '1' }), false);
+test('empty or unspecified AchillesCLI history keeps the startup intro', async () => {
+    assert.equal(shouldStartWebchatIntro({ hasHistory: false }), true);
+    assert.equal(shouldStartWebchatIntro({ hasHistory: true }), false);
     assert.equal(shouldStartWebchatIntro({}), true);
 
     const agent = makeAgent();
     const messages = [];
     const result = await startWebchatIntroSkill(agent, {
-        env: {
-            PLOINKY_WEBCHAT_HAS_HISTORY: '0',
-        },
+        hasHistory: false,
         write: async (message) => messages.push(message),
     });
 

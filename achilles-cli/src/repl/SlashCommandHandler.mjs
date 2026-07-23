@@ -207,6 +207,13 @@ export const COMMAND_DEFINITIONS = {
         args: 'optional',
         needsSkillArg: false,
     },
+    'session': {
+        usage: '/session [new|resume <session-id>]',
+        description: 'Select or create an AchillesCLI conversation session',
+        args: 'optional',
+        needsSkillArg: false,
+        catalogSubOptions: ['new', 'resume'],
+    },
     'exit': {
         usage: '/exit',
         description: 'Exit the REPL',
@@ -274,6 +281,22 @@ export const SUB_OPTIONS = {
             usage: '/update repos',
             description: 'Pull all cloned repositories',
             args: 'optional',
+            needsSkillArg: false,
+        },
+    },
+    'session': {
+        'new': {
+            skill: null,
+            usage: '/session new',
+            description: 'Create and select a new conversation session',
+            args: 'optional',
+            needsSkillArg: false,
+        },
+        'resume': {
+            skill: null,
+            usage: '/session resume <session-id>',
+            description: 'Resume a saved conversation session',
+            args: 'required',
             needsSkillArg: false,
         },
     },
@@ -355,6 +378,9 @@ export class SlashCommandHandler {
      * @param {Function} [options.loadModels] - Load selectable Soul Gateway models
      * @param {Function} [options.getPermissions] - Read the current Bash permission mode
      * @param {Function} [options.setPermissions] - Change the current Bash permission mode
+     * @param {Function} [options.getSessions] - List conversation sessions
+     * @param {Function} [options.createSession] - Create a conversation session
+     * @param {Function} [options.resumeSession] - Resume a conversation session
      */
     constructor({
         executeSkill,
@@ -366,6 +392,9 @@ export class SlashCommandHandler {
         loadModels,
         getPermissions,
         setPermissions,
+        getSessions,
+        createSession,
+        resumeSession,
     }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
@@ -376,6 +405,9 @@ export class SlashCommandHandler {
         this.loadModels = loadModels || loadSoulGatewayModels;
         this.getPermissions = getPermissions;
         this.setPermissions = setPermissions;
+        this.getSessions = getSessions;
+        this.createSession = createSession;
+        this.resumeSession = resumeSession;
         this.availableModels = [];
     }
 
@@ -540,6 +572,17 @@ export class SlashCommandHandler {
             }
         }
 
+        if (command === 'session') {
+            if (typeof this.getSessions !== 'function') {
+                return { handled: true, error: 'Conversation sessions are unavailable.' };
+            }
+            return {
+                handled: true,
+                showSessionPicker: true,
+                sessionList: this.getSessions(),
+            };
+        }
+
         // Handle direct skill commands
         const cmdDef = COMMAND_DEFINITIONS[command];
         if (!cmdDef) {
@@ -642,6 +685,24 @@ export class SlashCommandHandler {
                 handled: true,
                 error: `Usage: ${subDef.usage}\n  ${subDef.description}`,
             };
+        }
+
+        if (command === 'session' && subOption === 'new') {
+            if (typeof this.createSession !== 'function') {
+                return { handled: true, error: 'Conversation sessions are unavailable.' };
+            }
+            return { handled: true, sessionChanged: await this.createSession() };
+        }
+
+        if (command === 'session' && subOption === 'resume') {
+            if (typeof this.resumeSession !== 'function') {
+                return { handled: true, error: 'Conversation sessions are unavailable.' };
+            }
+            try {
+                return { handled: true, sessionChanged: await this.resumeSession(args.trim()) };
+            } catch (error) {
+                return { handled: true, error: error.message };
+            }
         }
 
         // /update repos

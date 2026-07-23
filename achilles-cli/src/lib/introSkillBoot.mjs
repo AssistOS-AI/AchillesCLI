@@ -74,13 +74,13 @@ function extractSkillResultText(result) {
     return '';
 }
 
-export function shouldStartWebchatIntro(env = process.env) {
-    return String(env?.PLOINKY_WEBCHAT_HAS_HISTORY || '').trim() !== '1';
+export function shouldStartWebchatIntro({ hasHistory = false } = {}) {
+    return hasHistory !== true;
 }
 
 export function startWebchatIntroSkill(agent, options = {}) {
-    const { env = process.env, ...introOptions } = options;
-    if (!shouldStartWebchatIntro(env)) {
+    const { hasHistory = false, ...introOptions } = options;
+    if (!shouldStartWebchatIntro({ hasHistory })) {
         return null;
     }
     return startIntroSkill(agent, introOptions);

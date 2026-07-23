@@ -40,7 +40,7 @@ Configuration invariants:
 3. Missing required runtime dependencies must fail with explicit guidance.
 
 State and lifecycle invariants:
-1. Runtime state is split between session-local state (history, tier, working paths, and reusable exact-call approvals) and workspace settings (explicit model and Bash permission mode).
+1. Runtime state is split between MainAgent-local state (tier, working paths, and reusable exact-call approvals) and workspace-owned durable state. Durable state includes explicit model, Bash permission mode, and `currentSessionId` in `.achilles-cli/settings.json`, plus conversation records under `.achilles-cli/sessions/`.
 2. Skill catalog refresh (`reloadSkills`) must preserve runtime consistency after write/delete operations.
 3. Cancellation paths (for interactive execution) must leave terminal state recoverable.
 4. The workspace resolved at broker startup is fixed for the session and is the only writable filesystem tree exposed automatically to MainAgent.

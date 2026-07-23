@@ -190,11 +190,13 @@ Dacă un astfel de tool are nevoie de o cale din afara workspace-ului, nu prime�
 
 Apelurile către alți agenți prin MCP rămân sub politica MCP și prin routerul Ploinky. Sandboxul local nu înlocuiește autentificarea și politica agent-to-agent.
 
-## Restaurarea unei conversații WebChat
+## Conversation Sessions
 
-Când Ploinky recreează procesul AchillesCLI pentru o conversație existentă, istoricul nu este concatenat cu noul prompt. Envelope-ul WebChat conține separat `text`, care este cererea curentă, și `history`, care este lista ordonată de mesaje anterioare cu `role` și `message`.
+AchillesCLI owns conversation sessions independently of WebChat. Each workspace stores validated session JSON under `.achilles-cli/sessions/`, while `.achilles-cli/settings.json` keeps `currentSessionId` beside the selected model and permission mode. Only natural-language user/assistant turns enter this store; slash commands remain command history only.
 
-AchillesCLI validează numai rolurile `user` și `assistant`, apoi transmite lista ca `initialHistory` la crearea sesiunii `MainAgent`. AgentLib transformă aceste mesaje în istoricul intern al `LoopAgentSession`, iar providerul le primește din nou ca roluri distincte. Delimitatoarele textuale folosite de Ploinky pentru agenții vechi nu intră în contextul AchillesCLI. Istoricul este aplicat o singură dată; prompturile următoare folosesc sesiunea deja hidratată.
+At startup, AchillesCLI loads or creates the current session in single-shot, terminal REPL, and WebChat modes. Its ordered user/assistant records are supplied once as `initialHistory` on the first natural-language prompt that creates the new MainAgent session. Slash commands do not consume the pending history. `/session` opens or refreshes the session selector, `/session new` creates a fresh session, and `/session resume <session-id>` selects an existing one. The WebChat command catalog attaches saved-session completions to `resume`, displaying the first user-message preview while inserting the corresponding session id.
+
+In WebChat mode, AchillesCLI publishes `__webchatSession` control envelopes for current, list, and selected state. Ploinky forwards those snapshots to the browser and sends the same slash commands for UI actions, but it neither persists conversation files nor injects history into incoming messages.
 
 ## Ce rămâne neschimbat
 

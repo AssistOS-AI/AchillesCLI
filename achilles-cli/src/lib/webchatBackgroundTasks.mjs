@@ -69,7 +69,7 @@ function taskResultText(task) {
         .join('\n');
 }
 
-export async function createWebchatBackgroundTaskManager({ workingDir }) {
+export async function createWebchatBackgroundTaskManager({ workingDir, onTaskStarted = null }) {
     const agentClientModule = await import('/Agent/client/AgentMcpClient.mjs');
     if (typeof agentClientModule.setAgentTaskObserver !== 'function') {
         throw new Error('Ploinky AgentMcpClient does not support background task observers.');
@@ -187,6 +187,9 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
             timer: null,
         };
         active.set(id, record);
+        const conversation = !existing && typeof onTaskStarted === 'function'
+            ? onTaskStarted(record)
+            : null;
         emitTaskEvent({ event: existing ? 'reattached' : 'started', task: {
             id: record.id,
             targetAgent: record.targetAgent,
@@ -200,7 +203,10 @@ export async function createWebchatBackgroundTaskManager({ workingDir }) {
             error: '',
             ...(record.continuation ? { continuation: record.continuation } : {}),
             ...(record.logRetention === 'full' ? { logRetention: 'full' } : {}),
-        } });
+        }, ...(conversation ? {
+            sessionId: conversation.session?.sessionId,
+            messageIndex: conversation.messageIndex,
+        } : {}) });
         schedulePoll(record, getTaskStatus, 0);
         return record;
     };

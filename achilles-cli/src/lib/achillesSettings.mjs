@@ -35,6 +35,11 @@ export function getPermissionMode(workingDir = process.cwd()) {
         || PERMISSION_MODES.ASK;
 }
 
+export function getCurrentSessionId(workingDir = process.cwd()) {
+    const sessionId = readAchillesSettings(workingDir).currentSessionId;
+    return typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null;
+}
+
 function writeAchillesSettings(workingDir, settings) {
     const settingsPath = getAchillesSettingsPath(workingDir);
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -86,4 +91,16 @@ export function setPermissionMode(workingDir, mode) {
         permissions,
     });
     return permissions;
+}
+export function setCurrentSessionId(workingDir, sessionId) {
+    const currentSessionId = String(sessionId || '').trim();
+    if (!currentSessionId) {
+        throw new Error('A session id is required.');
+    }
+    const settings = readAchillesSettings(workingDir);
+    writeAchillesSettings(workingDir, {
+        ...settings,
+        currentSessionId,
+    });
+    return currentSessionId;
 }

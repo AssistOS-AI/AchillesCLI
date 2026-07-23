@@ -31,6 +31,7 @@ import {
     installWorkspaceSkillRefreshHook,
     refreshWorkspaceSkillsNow,
 } from './lib/workspaceSkillRefresh.mjs';
+import { appendRecoveringTask, runBoundedCleanup } from './lib/webchatTurnQueue.mjs';
 import { AkuMemoryAdapter } from './lib/akuMemory/AkuMemoryAdapter.mjs';
 import { buildAKUPlanningPacket } from './lib/akuMemory/akuPlanningPacket.mjs';
 import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMemory/akuContextFormatter.mjs';
@@ -43,6 +44,16 @@ import {
 } from './lib/webchatRuntimeState.mjs';
 import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
+import {
+    buildConversationInitialHistory,
+    ConversationSessionStore,
+} from './lib/conversationSessionStore.mjs';
+import {
+    createCurrentSessionEnvelope,
+    createSelectedSessionEnvelope,
+    createSessionListEnvelope,
+    emitWebchatSessionEnvelope,
+} from './lib/webchatSessionState.mjs';
 import { createSoulGatewayInvoker } from './lib/soulGatewayInvoker.mjs';
 import { BrokerClient } from './permissions/BrokerClient.mjs';
 import { BashSecuritySupervisor } from './permissions/BashSecuritySupervisor.mjs';
@@ -258,35 +269,35 @@ async function main() {
         mode,
     });
 
-    // Initialize MainAgent with all skill roots
-    const agent = new MainAgent({
-        startDir: workingDir,
-        supervisor,
-        llmAgentOptions: {
-            name: 'achilles-cli-agent',
-            invokerStrategy: createSoulGatewayInvoker(defaultLLMInvokerStrategy),
-        },
-        logger,
-    });
-
-    registerSkillRoots(agent, allSkillRoots, logger);
-    installWorkspaceSkillRefreshHook(agent);
-
-    // Set up I/O (LLMAgent API fallback to global IOServices)
     const inputReader = createCliInputReader();
     const outputWriter = webchatRuntime
         ? createSilentOutputWriter()
         : createCliOutputWriter();
-    if (typeof agent.llmAgent?.setInputReader === 'function') {
-        agent.llmAgent.setInputReader(inputReader);
-    } else {
-        IOServices.setInputReader(inputReader);
-    }
-    if (typeof agent.llmAgent?.setOutputWriter === 'function') {
-        agent.llmAgent.setOutputWriter(outputWriter);
-    } else {
-        IOServices.setOutputWriter(outputWriter);
-    }
+    const createConfiguredAgent = () => {
+        const configuredAgent = new MainAgent({
+            startDir: workingDir,
+            supervisor,
+            llmAgentOptions: {
+                name: 'achilles-cli-agent',
+                invokerStrategy: createSoulGatewayInvoker(defaultLLMInvokerStrategy),
+            },
+            logger,
+        });
+        registerSkillRoots(configuredAgent, allSkillRoots, logger);
+        installWorkspaceSkillRefreshHook(configuredAgent);
+        if (typeof configuredAgent.llmAgent?.setInputReader === 'function') {
+            configuredAgent.llmAgent.setInputReader(inputReader);
+        } else {
+            IOServices.setInputReader(inputReader);
+        }
+        if (typeof configuredAgent.llmAgent?.setOutputWriter === 'function') {
+            configuredAgent.llmAgent.setOutputWriter(outputWriter);
+        } else {
+            IOServices.setOutputWriter(outputWriter);
+        }
+        return configuredAgent;
+    };
+    const agent = createConfiguredAgent();
 
     // Initialize UI provider based on selected style
     try {
@@ -302,6 +313,10 @@ async function main() {
 
     if (prompt) {
         // Single-shot mode: execute prompt and exit
+        const sessionStore = new ConversationSessionStore({ workingDir });
+        let currentConversation = sessionStore.ensureCurrentSession();
+        const initialHistory = buildConversationInitialHistory(currentConversation);
+        let currentTurn = null;
         try {
             if (verbose) {
                 console.log(`Processing: "${prompt}"\n`);
@@ -324,23 +339,29 @@ async function main() {
                 context,
                 sessionState: akuSessionState,
                 logger,
+                sessionId: currentConversation.sessionId,
             });
             agent.context = context;
             const executionModel = selectedModel || persistedModel || 'deep';
-            await startIntroSkill(agent, {
-                workingDir,
-                context,
-                logger,
-                model: executionModel,
-                write: async (message) => {
-                    process.stdout.write(message);
-                },
-            });
+            if (currentConversation.messages.length === 0) {
+                await startIntroSkill(agent, {
+                    workingDir,
+                    context,
+                    logger,
+                    model: executionModel,
+                    write: async (message) => {
+                        process.stdout.write(message);
+                    },
+                });
+            }
 
+            currentTurn = sessionStore.beginTurn({ text: prompt });
+            currentConversation = currentTurn.session;
             let result = await agent.executePrompt(akuPrompt.prompt, {
                 context,
                 model: executionModel,
                 systemPrompt: buildOrchestratorSystemPrompt(),
+                ...(initialHistory.length > 0 ? { initialHistory } : {}),
             });
             await drainWorkspaceSkillsRefresh(agent, { logger });
 
@@ -360,8 +381,25 @@ async function main() {
                 result = JSON.stringify(result, null, 2);
             }
 
+            currentConversation = sessionStore.completeTurn(
+                currentTurn.session.sessionId,
+                currentTurn.assistantMessageIndex,
+                result,
+            );
+            currentTurn = null;
             console.log(result);
         } catch (error) {
+            if (currentTurn) {
+                try {
+                    currentConversation = sessionStore.completeTurn(
+                        currentTurn.session.sessionId,
+                        currentTurn.assistantMessageIndex,
+                        error?.name === 'AbortError' ? '[cancelled]' : (error?.message || String(error)),
+                    );
+                } catch {
+                    // Preserve the original execution error.
+                }
+            }
             await drainWorkspaceSkillsRefresh(agent, { logger });
             console.error('Error:', error.message);
             if (verbose) {
@@ -381,6 +419,7 @@ async function main() {
             setPermissions,
             debug,
             renderMarkdown,
+            createAgent: createConfiguredAgent,
         });
     } else {
         // REPL mode
@@ -393,6 +432,7 @@ async function main() {
             bashExecutor,
             getPermissions,
             setPermissions,
+            createAgent: createConfiguredAgent,
         });
         await session.start();
     }
@@ -406,6 +446,7 @@ async function preparePromptForAKUMemory({
     context,
     sessionState,
     logger,
+    sessionId = null,
 }) {
     const adapter = context.akuMemoryAdapter instanceof AkuMemoryAdapter
         ? context.akuMemoryAdapter
@@ -426,7 +467,7 @@ async function preparePromptForAKUMemory({
         workingDir,
         workspaceRoot: workspaceRoot || workingDir,
         previousSessionState: sessionState?.toJSON?.() ?? null,
-        sessionId: process.env.SSO_SESSION_ID || null,
+        sessionId: sessionId || process.env.SSO_SESSION_ID || null,
     });
 
     try {
@@ -563,6 +604,8 @@ function hasSsoEnvironment() {
     });
 }
 
+let activeWebchatConversationProgress = null;
+
 async function runWebchatInteractive(agent, options) {
     const {
         workingDir,
@@ -574,9 +617,15 @@ async function runWebchatInteractive(agent, options) {
         setPermissions,
         debug,
         renderMarkdown,
+        createAgent,
     } = options;
+    let activeAgent = agent;
     const historyManager = new HistoryManager({ workingDir });
-    const akuSessionState = createAKUSessionState();
+    const sessionStore = new ConversationSessionStore({ workingDir });
+    let currentConversation = sessionStore.ensureCurrentSession();
+    let pendingConversationHistory = buildConversationInitialHistory(currentConversation);
+    let currentTurn = null;
+    let akuSessionState = createAKUSessionState();
     const slashState = {
         activeTier: TIERS.FAST,
         pinnedModel: getSelectedModel(workingDir),
@@ -586,19 +635,46 @@ async function runWebchatInteractive(agent, options) {
     const context = {
         workingDir,
         skillsDir,
-        skilledAgent: agent,
-        llmAgent: agent.llmAgent,
+        skilledAgent: activeAgent,
+        llmAgent: activeAgent.llmAgent,
         bashExecutor,
     };
     context.akuSessionState = akuSessionState;
-    agent.context = context;
-    const backgroundTaskManager = await createWebchatBackgroundTaskManager({ workingDir });
+    activeAgent.context = context;
+    const backgroundTaskManager = await createWebchatBackgroundTaskManager({
+        workingDir,
+        onTaskStarted: (task) => {
+            if (!currentTurn || !task?.id) return null;
+            try {
+                return sessionStore.insertTask(
+                    currentTurn.session.sessionId,
+                    currentTurn.assistantMessageIndex,
+                    task.id,
+                );
+            } catch (_) {
+                return null;
+            }
+        },
+    });
     context.backgroundTaskManager = backgroundTaskManager;
-    await startWebchatIntroSkill(agent, {
+    activeWebchatConversationProgress = (reason) => {
+        if (!currentTurn) return;
+        try {
+            sessionStore.appendProgress(
+                currentTurn.session.sessionId,
+                currentTurn.assistantMessageIndex,
+                reason,
+            );
+        } catch (_) {
+            // Conversation persistence must not break live progress output.
+        }
+    };
+    await startWebchatIntroSkill(activeAgent, {
         workingDir,
         context,
-        logger: agent.logger,
+        logger: activeAgent.logger,
         model: slashState.pinnedModel || slashState.activeTier,
+        hasHistory: currentConversation.messages.length > 0,
         onStart: async () => {
             emitWebchatProgress('intro-skill', 'Generating workspace intro');
         },
@@ -606,23 +682,48 @@ async function runWebchatInteractive(agent, options) {
             process.stdout.write(message);
         },
     });
+    emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+
+    const activateConversation = async (session) => {
+        if (typeof createAgent !== 'function') {
+            throw new Error('This runtime cannot replace its MainAgent for a conversation switch.');
+        }
+        activeAgent.cancelCurrentSession?.('session-changed');
+        activeAgent = await createAgent();
+        akuSessionState = createAKUSessionState();
+        context.skilledAgent = activeAgent;
+        context.llmAgent = activeAgent.llmAgent;
+        context.akuSessionState = akuSessionState;
+        activeAgent.context = context;
+        currentConversation = session;
+        pendingConversationHistory = buildConversationInitialHistory(session);
+        currentTurn = null;
+        slashState.activeTier = TIERS.FAST;
+        slashState.pinnedModel = getSelectedModel(workingDir);
+        emitWebchatSessionEnvelope(createSelectedSessionEnvelope(session));
+        return session;
+    };
+
     const slashHandler = new SlashCommandHandler({
         executeSkill: (skillName, input, opts) => executeWebchatSkill({
-            agent,
+            agent: activeAgent,
             skillName,
             input,
             opts,
             slashState,
         }),
-        getUserSkills: () => agent.getSkills().filter((skill) => !skill.isInternal),
-        getSkills: () => agent.getSkills(),
+        getUserSkills: () => activeAgent.getSkills().filter((skill) => !skill.isInternal),
+        getSkills: () => activeAgent.getSkills(),
         buildSkills: async () => {
-            await refreshWorkspaceSkillsNow(agent, { logger: agent.logger });
+            await refreshWorkspaceSkillsNow(activeAgent, { logger: activeAgent.logger });
         },
         historyManager,
         getTaskSummary: (args) => formatWorkspaceTaskSummary(workingDir, args),
         getPermissions,
         setPermissions,
+        getSessions: () => sessionStore.listSessions(),
+        createSession: () => activateConversation(sessionStore.createSession()),
+        resumeSession: (sessionId) => activateConversation(sessionStore.resumeSession(sessionId)),
     });
 
     let isClosing = false;
@@ -635,7 +736,7 @@ async function runWebchatInteractive(agent, options) {
     const stdinIsTTY = Boolean(process.stdin?.isTTY);
     const handleControlData = (chunk) => {
         const interrupted = handleWebchatControlChunk(chunk, {
-            agent,
+            agent: activeAgent,
             isProcessing,
             abortController: activeAbortController
         });
@@ -653,7 +754,7 @@ async function runWebchatInteractive(agent, options) {
         const decision = approvalDecisionFromInteractionOption(response.optionId);
         if (!decision) return;
         approvalControlClient.resolvePendingApproval(decision, response.id).catch((error) => {
-            agent.logger?.error?.(`Failed to resolve WebChat interaction: ${error.message}`);
+            activeAgent.logger?.error?.(`Failed to resolve WebChat interaction: ${error.message}`);
         });
     };
 
@@ -679,7 +780,7 @@ async function runWebchatInteractive(agent, options) {
             return;
         }
 
-        processingChain = processingChain.then(async () => {
+        processingChain = appendRecoveringTask(processingChain, async () => {
             isProcessing = true;
             activeAbortController = new AbortController();
             const isSlash = slashHandler.isSlashCommand(message);
@@ -699,6 +800,12 @@ async function runWebchatInteractive(agent, options) {
                         process.stdout.write(`${slashOutput.output}\n`);
                     }
                 } else {
+                    currentTurn = sessionStore.beginTurn({
+                        text: normalizedMessage.rawText,
+                        attachments: normalizedMessage.attachments,
+                        references: normalizedMessage.references,
+                    });
+                    currentConversation = currentTurn.session;
                     const akuPrompt = await preparePromptForAKUMemory({
                         prompt: message,
                         normalizedMessage,
@@ -706,20 +813,28 @@ async function runWebchatInteractive(agent, options) {
                         workspaceRoot: workingDir,
                         context,
                         sessionState: akuSessionState,
-                        logger: agent.logger,
+                        logger: activeAgent.logger,
+                        sessionId: currentConversation.sessionId,
                     });
 
-                    const initialHistory = normalizedMessage.history;
+                    const initialHistory = pendingConversationHistory;
                     const cachedProviderResult = initialHistory.length === 0
                         ? await lookupCachedProviderResultForPrompt(context, {
                             prompt: message,
                             workingDir,
-                            logger: agent.logger,
+                            logger: activeAgent.logger,
                         })
                         : null;
                     if (cachedProviderResult?.hit) {
+                        currentConversation = sessionStore.completeTurn(
+                            currentTurn.session.sessionId,
+                            currentTurn.assistantMessageIndex,
+                            cachedProviderResult.resultText,
+                        );
                         process.stdout.write(`${cachedProviderResult.resultText}\n`);
                         historyManager.add(message);
+                        emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                        currentTurn = null;
                         return;
                     }
 
@@ -727,39 +842,82 @@ async function runWebchatInteractive(agent, options) {
                         context.providerLauncherResults = [];
                     }
                     const launcherResultStart = context.providerLauncherResults.length;
-                    let result = await agent.executePrompt(akuPrompt.prompt, {
+                    // The restored history is process-bootstrap state. Consume it
+                    // before execution so retries after cancellation do not resend it.
+                    pendingConversationHistory = [];
+                    let result = await activeAgent.executePrompt(akuPrompt.prompt, {
                         signal: activeAbortController.signal,
                         context,
-                        supervisor: agent.supervisor || null,
+                        supervisor: activeAgent.supervisor || null,
                         model: slashState.pinnedModel || slashState.activeTier,
                         systemPrompt: buildOrchestratorSystemPrompt(),
                         ...(initialHistory.length > 0 ? { initialHistory } : {}),
                     });
-                    await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });
+                    await drainWorkspaceSkillsRefresh(activeAgent, { logger: activeAgent.logger });
                     result = formatExecutionResult(result, debug);
                     await persistProviderLauncherResults(context, {
                         prompt: message,
                         workingDir,
                         fromIndex: launcherResultStart,
-                        logger: agent.logger,
+                        logger: activeAgent.logger,
                     });
 
+                    currentConversation = sessionStore.completeTurn(
+                        currentTurn.session.sessionId,
+                        currentTurn.assistantMessageIndex,
+                        result,
+                    );
                     process.stdout.write(`${result}\n`);
                     historyManager.add(message);
+                    emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                    currentTurn = null;
                 }
             } catch (error) {
+                const output = activeAbortController?.signal?.aborted || error?.name === 'AbortError'
+                    ? '[cancelled]'
+                    : formatWebchatError(error, {
+                        publicBaseUrl: context?.webchatOrigin?.publicBaseUrl,
+                    });
+                if (currentTurn) {
+                    try {
+                        currentConversation = sessionStore.completeTurn(
+                            currentTurn.session.sessionId,
+                            currentTurn.assistantMessageIndex,
+                            output,
+                        );
+                        emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                    } catch (_) {
+                        // Persistence failure is reported through the live error path below.
+                    }
+                    currentTurn = null;
+                }
                 if (activeAbortController?.signal?.aborted || error?.name === 'AbortError') {
                     process.stdout.write('[cancelled]\n');
                 } else {
-                    process.stdout.write(`${formatWebchatError(error, {
-                        publicBaseUrl: context?.webchatOrigin?.publicBaseUrl,
-                    })}\n`);
+                    process.stdout.write(`${output}\n`);
                 }
             } finally {
-                await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });
-                isProcessing = false;
-                activeAbortController = null;
+                try {
+                    await runBoundedCleanup(
+                        () => drainWorkspaceSkillsRefresh(activeAgent, { logger: activeAgent.logger }),
+                        {
+                            onError: (error) => activeAgent.logger?.error?.(
+                                `Post-turn workspace skill refresh failed: ${error.message}`,
+                            ),
+                            onTimeout: (timeoutMs) => activeAgent.logger?.warn?.(
+                                `Post-turn workspace skill refresh exceeded ${timeoutMs}ms; continuing WebChat input processing.`,
+                            ),
+                        },
+                    );
+                } finally {
+                    isProcessing = false;
+                    activeAbortController = null;
+                }
             }
+        }, {
+            onPreviousError: (error) => activeAgent.logger?.error?.(
+                `Recovered WebChat prompt queue after an unhandled turn failure: ${error.message}`,
+            ),
         });
     };
 
@@ -839,6 +997,7 @@ async function runWebchatInteractive(agent, options) {
         });
         await processingChain;
     } finally {
+        activeWebchatConversationProgress = null;
         backgroundTaskManager.close();
         try {
             handleControlData.cleanup?.();
@@ -981,6 +1140,16 @@ async function executeWebchatSlashCommand({
     if (result.showRunTestsPicker) {
         return { output: 'Usage: /run-tests <skill-name|all>' };
     }
+    if (result.sessionList) {
+        emitWebchatSessionEnvelope(createSessionListEnvelope(result.sessionList));
+        return { output: '' };
+    }
+    if (result.sessionChanged) {
+        return { output: '' };
+    }
+    if (result.showSessionPicker) {
+        return { output: 'Usage: /session new or /session resume <session-id>.' };
+    }
     if (result.result) {
         return { output: result.result };
     }
@@ -1041,6 +1210,7 @@ function emitWebchatProgress(tool, reason) {
     if (!text) {
         return;
     }
+    activeWebchatConversationProgress?.(text);
     const payload = {
         __webchatProgress: 1,
         type: 'tool_reason',
