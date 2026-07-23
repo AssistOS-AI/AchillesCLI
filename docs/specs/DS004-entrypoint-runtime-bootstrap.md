@@ -37,7 +37,7 @@ Runtime wiring:
 3. Register built-in and discovered skill roots before accepting requests.
 4. In webchat mode, run the startup intro unless `PLOINKY_WEBCHAT_HAS_HISTORY=1`; no folder session identifier is required by the agent process.
    When the first forwarded envelope carries role-separated history, normalize it as ordered `{ role, message }` records and use it only to hydrate the newly created MainAgent session. The current envelope text remains the current prompt.
-5. In webchat mode, publish the explicit model restored from `.achilles-cli/settings.json` as generic runtime-state metadata before accepting user input; publish `null` when that setting is absent.
+5. In webchat mode, generate one version-4 `runtimeInstanceId` for the lifetime of the AchillesCLI process and include it in every generic runtime-state envelope. Publish the explicit model restored from `.achilles-cli/settings.json` before accepting user input and publish `null` when that setting is absent. Model-selection updates must retain the same instance identifier. A recreated process must generate a different identifier so a compatible WebChat host can rehydrate the new MainAgent session from durable folder history without confusing an EventSource reconnect with a process replacement.
 6. The broker remains outside Bubblewrap and handles authorization only. MainAgent, skill code, the local Bash executor, and every Bash child process inherit the persistent workspace sandbox.
 7. Bubblewrap keeps the network namespace shared and exposes only system runtime paths, read-only Achilles code/dependencies, isolated temporary storage, the broker socket, and the writable session workspace.
 8. Startup fails closed when Bubblewrap or the broker connection is unavailable.
@@ -67,6 +67,11 @@ MainAgent must reach configured LLM services and router-mediated agents during n
 
 Response:
 Bubblewrap must probe whether the current runtime permits mounting a private proc filesystem. Native host execution uses a private `/proc` when supported. A nested unprivileged container that rejects the proc mount must receive an empty `/proc` directory instead; it must never bind the outer container's `/proc`, because that would expose process-root paths across the filesystem boundary.
+
+### Question #4: Why does AchillesCLI publish a random runtime instance id instead of relying on a PID?
+
+Response:
+The process observed by Ploinky may be a launcher or sandbox wrapper, and operating-system PIDs may be reused. AchillesCLI owns the MainAgent session whose in-memory history is lost at process exit, so an identifier generated inside that process is the narrow signal that identifies the lifetime of the relevant state. Keeping the identifier stable across model changes prevents duplicate hydration, while generating a new value at startup lets WebChat restore durable conversation history after any replacement cause.
 
 ## Conclusion
 Entrypoint bootstrap is the operational root of AchillesCLI and must remain deterministic, debuggable, and override-friendly across local and integrated environments.

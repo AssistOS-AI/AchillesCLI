@@ -92,6 +92,13 @@ Ploinky integration boundary:
     prompt creates MainAgent's LoopAgentSession. It must not concatenate the
     restored transcript or synthetic continuation delimiters into the current
     user message.
+    AchillesCLI must also publish one process-lifetime version-4 UUID as
+    `runtimeInstanceId` in every version-1 `__webchatRuntimeState` envelope.
+    The identifier remains stable across `/model` and `/tier` updates and changes
+    only when the AchillesCLI process is recreated. Ploinky may use a changed
+    identifier to reload the selected folder session and rearm one-time
+    `initialHistory` delivery; the identifier is runtime metadata, not
+    authentication material or persisted conversation state.
 16. In WebChat runtime mode, AchillesCLI registers a generic asynchronous-task
     observer with Ploinky `AgentMcpClient.mjs`. Launcher skills that delegate
     long-running work use `callToolWithoutWait`, so an AgentServer response

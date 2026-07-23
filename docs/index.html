@@ -88,6 +88,9 @@
     When a recreated WebChat runtime forwards prior turns, AchillesCLI keeps the current prompt separate and hydrates
     MainAgent with the envelope's ordered <code>{ role, message }</code> history. Synthetic transcript delimiters are
     not forwarded to the planner, and prompt-only cached results are skipped for that restoring turn.
+    AchillesCLI also publishes a random <code>runtimeInstanceId</code> that remains stable for the process lifetime.
+    Ploinky uses a changed identifier to distinguish a replaced MainAgent from a browser or EventSource reconnect,
+    reload durable folder history, and rearm one-time continuation delivery without exposing the identifier to the browser.
     Asynchronous AgentServer tools are detached from the active WebChat reply: AchillesCLI acknowledges the start with
     the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,
     follows the remote task through the router, and emits dedicated lifecycle and log envelopes. Ongoing tasks are

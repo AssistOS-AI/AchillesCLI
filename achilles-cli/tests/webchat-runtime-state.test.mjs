@@ -15,21 +15,46 @@ import {
     setSelectedModel,
 } from '../src/lib/achillesSettings.mjs';
 
-test('runtime-state envelope exposes only the explicitly selected settings model', () => {
-    assert.deepEqual(createWebchatRuntimeStateEnvelope('  provider/deep  '), {
+const TEST_RUNTIME_INSTANCE_ID = '123e4567-e89b-42d3-a456-426614174000';
+
+test('runtime-state envelope exposes the selected model and process instance', () => {
+    assert.deepEqual(createWebchatRuntimeStateEnvelope('  provider/deep  ', {
+        runtimeInstanceId: TEST_RUNTIME_INSTANCE_ID,
+    }), {
         __webchatRuntimeState: 1,
         version: 1,
         model: 'provider/deep',
+        runtimeInstanceId: TEST_RUNTIME_INSTANCE_ID,
     });
-    assert.deepEqual(createWebchatRuntimeStateEnvelope(null), {
+    assert.deepEqual(createWebchatRuntimeStateEnvelope(null, {
+        runtimeInstanceId: TEST_RUNTIME_INSTANCE_ID,
+    }), {
         __webchatRuntimeState: 1,
         version: 1,
         model: null,
+        runtimeInstanceId: TEST_RUNTIME_INSTANCE_ID,
     });
 
     const writes = [];
-    emitWebchatRuntimeState('deep', { write: (value) => writes.push(value) });
-    assert.equal(writes[0], '{"__webchatRuntimeState":1,"version":1,"model":"deep"}\n');
+    emitWebchatRuntimeState('deep', {
+        write: (value) => writes.push(value),
+        runtimeInstanceId: TEST_RUNTIME_INSTANCE_ID,
+    });
+    assert.equal(
+        writes[0],
+        `{"__webchatRuntimeState":1,"version":1,"model":"deep","runtimeInstanceId":"${TEST_RUNTIME_INSTANCE_ID}"}\n`,
+    );
+});
+
+test('runtime-state emissions keep one generated instance id for the process lifetime', () => {
+    const first = createWebchatRuntimeStateEnvelope('fast');
+    const second = createWebchatRuntimeStateEnvelope('deep');
+
+    assert.match(
+        first.runtimeInstanceId,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    assert.equal(second.runtimeInstanceId, first.runtimeInstanceId);
 });
 
 test('/model persistence is read back before publishing the WebChat runtime state', (t) => {
