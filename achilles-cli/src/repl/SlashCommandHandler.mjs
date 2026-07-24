@@ -244,7 +244,7 @@ export const SUB_OPTIONS = {
         'view': {
             skill: null,
             usage: '/task view <task-id>',
-            description: 'Show task metadata and its stored log',
+            description: 'Show task metadata and its latest stored log lines',
             args: 'required',
             needsSkillArg: false,
         },
@@ -516,7 +516,30 @@ export class SlashCommandHandler {
      */
     getSubOptions(command) {
         const cmdDef = COMMAND_DEFINITIONS[command];
-        return cmdDef?.subOptions || null;
+        if (!cmdDef) return null;
+        const subOptions = [
+            ...(Array.isArray(cmdDef.subOptions) ? cmdDef.subOptions : []),
+            ...(Array.isArray(cmdDef.catalogSubOptions) ? cmdDef.catalogSubOptions : []),
+        ];
+        return subOptions.length > 0 ? subOptions : null;
+    }
+
+    /**
+     * Build picker/autocomplete entries for persisted conversation sessions.
+     * @returns {Array<{value: string, label: string, description: string}>}
+     */
+    getSessionCompletions() {
+        if (typeof this.getSessions !== 'function') return [];
+        const payload = this.getSessions();
+        return (payload?.sessions || []).map((session) => ({
+            value: session.sessionId,
+            label: session.preview || 'New session',
+            description: [
+                session.sessionId === payload.currentSessionId ? 'Current session' : '',
+                session.sessionId,
+                session.updatedAt,
+            ].filter(Boolean).join(' · '),
+        }));
     }
 
     /**
@@ -1038,6 +1061,14 @@ export class SlashCommandHandler {
                     .filter((task) => [task.value, task.label, task.description]
                         .some((value) => String(value || '').toLowerCase().includes(prefix)))
                     .map((task) => `/${command} ${subOption} ${task.value}`);
+                return [matching, line];
+            }
+            if (command === 'session' && subOption === 'resume') {
+                const prefix = args.toLowerCase();
+                const matching = this.getSessionCompletions()
+                    .filter((session) => [session.value, session.label, session.description]
+                        .some((value) => String(value || '').toLowerCase().includes(prefix)))
+                    .map((session) => `/${command} ${subOption} ${session.value}`);
                 return [matching, line];
             }
             // /list skills - suggest skill names

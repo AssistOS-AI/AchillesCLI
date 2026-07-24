@@ -921,9 +921,10 @@ ${C.bold}${C.yellow}Usage:${C.reset}
   ${C.green}/task continue <task-id> <prompt>${C.reset}
 
 ${C.bold}${C.yellow}Description:${C.reset}
-  Views the complete stored log, stops queued or running remote work, or
-  continues a terminal task using its saved continuation handle. Press Tab
-  after an action to select a compatible task by name and insert its task id.
+  Views task metadata and the latest five stored log lines, bounded to 2 KiB,
+  stops queued or running remote work, or continues a terminal task using its
+  saved continuation handle. Press Tab after an action to select a compatible
+  task by name and insert its task id.
 `,
     },
 

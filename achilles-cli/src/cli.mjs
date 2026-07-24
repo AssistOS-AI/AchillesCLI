@@ -14,12 +14,14 @@ const __dirname = path.dirname(__filename);
 async function main() {
     const argv = process.argv.slice(2);
     const options = parseBrokerBootstrapOptions(argv);
+    const webchat = isWebchatRuntime();
     fs.mkdirSync(options.workingDir, { recursive: true });
     const exitCode = await runBrokeredMainAgent({
         workspace: options.workingDir,
         argv,
         entryPath: path.join(__dirname, 'index.mjs'),
-        webchat: isWebchatRuntime(),
+        webchat,
+        clientManagedApprovals: !webchat && !options.singleShot,
         permissionMode: options.permissionMode,
         extraReadOnlyPaths: options.skillRoots,
     });
@@ -29,6 +31,7 @@ async function main() {
 export function parseBrokerBootstrapOptions(args) {
     let workingDir = process.cwd();
     let requestedPermissionMode = null;
+    let singleShot = false;
     const skillRoots = [];
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
@@ -56,10 +59,15 @@ export function parseBrokerBootstrapOptions(args) {
             requestedPermissionMode = requested;
         } else if (arg === '--skip-permissions') {
             requestedPermissionMode = PERMISSION_MODES.FULL;
+        } else if (arg === '--ui' || arg === '--ui-style') {
+            index += 1;
+        } else if (!arg.startsWith('-')) {
+            singleShot = true;
+            break;
         }
     }
     const permissionMode = requestedPermissionMode || getPermissionMode(workingDir);
-    return { workingDir, permissionMode, skillRoots };
+    return { workingDir, permissionMode, skillRoots, singleShot };
 }
 
 function isWebchatRuntime() {

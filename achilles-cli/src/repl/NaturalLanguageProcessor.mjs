@@ -28,6 +28,7 @@ export class NaturalLanguageProcessor {
         this.processPrompt = options.processPrompt;
         this.historyManager = options.historyManager;
         this.isMarkdownEnabled = options.isMarkdownEnabled || (() => true);
+        this.approvalController = options.approvalController || null;
     }
 
     /**
@@ -58,6 +59,19 @@ export class NaturalLanguageProcessor {
             }
         };
 
+        const suspendInput = () => {
+            if (!process.stdin.isTTY) return;
+            process.stdin.setRawMode(false);
+            process.stdin.removeListener('data', handleKeypress);
+        };
+
+        const restoreInput = () => {
+            if (!process.stdin.isTTY || wasInterrupted) return;
+            process.stdin.setRawMode(true);
+            process.stdin.removeListener('data', handleKeypress);
+            process.stdin.on('data', handleKeypress);
+        };
+
         // Enable raw mode to capture individual keypresses
         if (process.stdin.isTTY) {
             process.stdin.setRawMode(true);
@@ -80,11 +94,7 @@ export class NaturalLanguageProcessor {
                     }
 
                     actionReporter.pause();
-
-                    if (process.stdin.isTTY) {
-                        process.stdin.setRawMode(false);
-                        process.stdin.removeListener('data', handleKeypress);
-                    }
+                    suspendInput();
 
                     return new Promise((resolve) => {
                         const rl = readline.createInterface({
@@ -93,10 +103,7 @@ export class NaturalLanguageProcessor {
                         });
                         rl.question(prompt, (answer) => {
                             rl.close();
-                            if (process.stdin.isTTY) {
-                                process.stdin.setRawMode(true);
-                                process.stdin.on('data', handleKeypress);
-                            }
+                            restoreInput();
                             actionReporter.resume();
                             resolve(answer);
                         });
@@ -113,6 +120,12 @@ export class NaturalLanguageProcessor {
 
         // Start with initial "Thinking" action
         actionReporter.thinking();
+        const approvalMonitor = this.approvalController?.start({
+            pause: () => actionReporter.pause(),
+            resume: () => actionReporter.resume(),
+            suspendInput,
+            restoreInput,
+        });
 
         try {
             const result = await this.processPrompt(input, {
@@ -134,6 +147,7 @@ export class NaturalLanguageProcessor {
                 console.error(`\n${error.message}\n`);
             }
         } finally {
+            await approvalMonitor?.stop();
             // Clean up ESC listener
             if (process.stdin.isTTY) {
                 process.stdin.setRawMode(false);

@@ -26,6 +26,7 @@ export class AchillesBroker {
     constructor({
         workspace,
         webchat = false,
+        clientManagedApprovals = false,
         permissionMode = PERMISSION_MODES.ASK,
         stdout = process.stdout,
         stdin = process.stdin,
@@ -33,6 +34,7 @@ export class AchillesBroker {
     } = {}) {
         this.workspace = fs.realpathSync(workspace);
         this.webchat = webchat;
+        this.clientManagedApprovals = clientManagedApprovals;
         this.permissionMode = normalizePermissionMode(permissionMode) || PERMISSION_MODES.ASK;
         this.stdout = stdout;
         this.stdin = stdin;
@@ -122,7 +124,14 @@ export class AchillesBroker {
 
     async _requestApproval({ toolName, params, phase, escalation, sandboxResult = null }) {
         const prompt = formatApprovalPrompt({ params, escalation });
-        if (this.webchat || !this.stdin?.isTTY) {
+        if (!this.webchat && !this.clientManagedApprovals && !this.stdin?.isTTY) {
+            return {
+                ok: true,
+                status: 'denied',
+                reason: 'Bash approval requires an interactive terminal. The command was not executed.',
+            };
+        }
+        if (this.webchat || this.clientManagedApprovals || !this.stdin?.isTTY) {
             if (this.pendingApproval) {
                 return {
                     ok: true,
@@ -148,7 +157,9 @@ export class AchillesBroker {
                     timer,
                     resolve,
                 };
-                this.stdout.write(`${JSON.stringify(interaction)}\n`);
+                if (this.webchat) {
+                    this.stdout.write(`${JSON.stringify(interaction)}\n`);
+                }
             });
             if (settled.decision === APPROVAL_DECISIONS.DENY) {
                 const reason = settled.status === 'expired'
@@ -202,7 +213,7 @@ export class AchillesBroker {
         if (!pending) return false;
         this.pendingApproval = null;
         clearTimeout(pending.timer);
-        if (this.webchat || !this.stdin?.isTTY) {
+        if (this.webchat) {
             const optionId = decision === APPROVAL_DECISIONS.ALWAYS_ALLOW ? 'always-allow' : decision;
             this.stdout.write(`${JSON.stringify(createWebchatInteractionResolved({
                 id: pending.id,
@@ -240,6 +251,7 @@ export async function runBrokeredMainAgent({
     argv = process.argv.slice(2),
     entryPath = process.argv[1],
     webchat = false,
+    clientManagedApprovals = false,
     permissionMode = PERMISSION_MODES.ASK,
     extraReadOnlyPaths = [],
 } = {}) {
@@ -247,7 +259,12 @@ export async function runBrokeredMainAgent({
     if (!bwrap) {
         throw new Error('AchillesCLI requires bubblewrap (bwrap). Run the agent install hook before starting it.');
     }
-    const broker = new AchillesBroker({ workspace, webchat, permissionMode });
+    const broker = new AchillesBroker({
+        workspace,
+        webchat,
+        clientManagedApprovals,
+        permissionMode,
+    });
     await broker.startServer();
     const childEnv = {
         ...process.env,

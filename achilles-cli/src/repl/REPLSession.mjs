@@ -52,6 +52,7 @@ import {
     buildConversationInitialHistory,
     ConversationSessionStore,
 } from '../lib/conversationSessionStore.mjs';
+import { CliApprovalController } from '../permissions/CliApprovalController.mjs';
 
 // Import tier utilities from achillesAgentLib (direct path — not re-exported from index)
 let _listTiersFromCache = null;
@@ -151,6 +152,11 @@ export class REPLSession {
 
         // Markdown rendering toggle (default: enabled)
         this.markdownEnabled = options.renderMarkdown !== false;
+        this.approvalController = options.approvalControlClient
+            ? new CliApprovalController({
+                approvalControlClient: options.approvalControlClient,
+            })
+            : null;
 
         // Initialize sub-modules
         this.inputPrompt = new InteractivePrompt({
@@ -167,6 +173,7 @@ export class REPLSession {
             processPrompt: (input, opts) => this.processPrompt(input, opts),
             historyManager: this.historyManager,
             isMarkdownEnabled: () => this.markdownEnabled,
+            approvalController: this.approvalController,
         });
 
         this._activeSpinner = null;
@@ -698,6 +705,24 @@ export class REPLSession {
             process.stdin.on('data', handleKeypress);
         }
 
+        const suspendInput = () => {
+            if (!process.stdin.isTTY) return;
+            process.stdin.setRawMode(false);
+            process.stdin.removeListener('data', handleKeypress);
+        };
+        const restoreInput = () => {
+            if (!process.stdin.isTTY || wasInterrupted) return;
+            process.stdin.setRawMode(true);
+            process.stdin.removeListener('data', handleKeypress);
+            process.stdin.on('data', handleKeypress);
+        };
+        const approvalMonitor = this.approvalController?.start({
+            pause: () => spinner.pause?.(),
+            resume: () => spinner.resume?.(),
+            suspendInput,
+            restoreInput,
+        });
+
         try {
             const fullArgs = parsed.subOption
                 ? `${parsed.subOption} ${parsed.args}`.trim()
@@ -801,6 +826,7 @@ export class REPLSession {
                 spinner.fail(error.message);
             }
         } finally {
+            await approvalMonitor?.stop();
             if (process.stdin.isTTY) {
                 process.stdin.setRawMode(false);
                 process.stdin.removeListener('data', handleKeypress);

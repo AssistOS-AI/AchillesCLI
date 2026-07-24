@@ -48,6 +48,7 @@ import {
 } from './lib/webchatRuntimeState.mjs';
 import {
     buildTaskCompletions,
+    formatWorkspaceTaskDetail,
     formatWorkspaceTaskSummary,
 } from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
@@ -454,6 +455,7 @@ async function main() {
             bashExecutor,
             getPermissions,
             setPermissions,
+            approvalControlClient: permissionControlClient,
             createAgent: createConfiguredAgent,
         });
         await session.start();
@@ -742,11 +744,11 @@ async function runWebchatInteractive(agent, options) {
         historyManager,
         getTaskSummary: (args) => {
             backgroundTaskManager.listTasks();
-            return args ? formatWorkspaceTaskSummary(workingDir, args) : '';
+            return formatWorkspaceTaskSummary(workingDir, args);
         },
         viewTask: (taskId) => {
             backgroundTaskManager.viewTask(taskId);
-            return '';
+            return formatWorkspaceTaskDetail(workingDir, taskId);
         },
         continueTask: async (taskId, prompt) => {
             try { return await backgroundTaskManager.continueTask(taskId, prompt); }

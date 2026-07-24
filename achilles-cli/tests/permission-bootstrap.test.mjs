@@ -37,3 +37,16 @@ test('broker startup defaults missing workspace settings to ask-for-approval', a
     const options = parseBrokerBootstrapOptions(['--dir', workingDir]);
     assert.equal(options.permissionMode, 'ask-for-approval');
 });
+
+test('broker distinguishes the interactive REPL from single-shot prompts', async () => {
+    const workingDir = await mkdtemp(join(tmpdir(), 'achilles-permission-runtime-'));
+
+    assert.equal(
+        parseBrokerBootstrapOptions(['--dir', workingDir, '--ui', 'minimal']).singleShot,
+        false,
+    );
+    assert.equal(
+        parseBrokerBootstrapOptions(['--dir', workingDir, 'inspect the repo']).singleShot,
+        true,
+    );
+});

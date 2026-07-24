@@ -479,7 +479,7 @@ export function formatWorkspaceTaskSummary(workingDir, rawArgs = '') {
 export function formatWorkspaceTaskDetail(workingDir, taskId) {
     const task = userSafeTaskRead(() => getTask(workingDir, String(taskId || '').trim()));
     if (!task) throw new Error('Task not found.');
-    const log = userSafeTaskRead(() => readTaskLog(workingDir, task.id));
+    const log = userSafeTaskRead(() => readTaskLogTail(workingDir, task.id));
     const name = task.description || task.toolName || task.id;
     const output = [
         `## ${escapeMarkdownInline(name)}`,
@@ -491,7 +491,9 @@ export function formatWorkspaceTaskDetail(workingDir, taskId) {
         `Updated: ${formatTimestamp(task.updatedAt)}`,
     ];
     if (task.error) output.push(`Error: ${escapeMarkdownInline(task.error)}`);
-    output.push('', '```text', safeLogFence(log.text || 'No log output yet.'), '```');
+    output.push('', 'Latest log:', '```text');
+    if (log.truncated) output.push('[earlier log output omitted]');
+    output.push(safeLogFence(log.text || 'No log output yet.'), '```');
     return output.join('\n');
 }
 

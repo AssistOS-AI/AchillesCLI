@@ -10,6 +10,7 @@ import {
     __testables,
     beginTaskContinuation,
     buildTaskCompletions,
+    formatWorkspaceTaskDetail,
     formatWorkspaceTaskSummary,
     getTask,
     ingestTaskEvent,
@@ -142,6 +143,14 @@ test('task summary defaults to ten, supports count and all, and shows only termi
         assert.throws(() => formatWorkspaceTaskSummary(fixture.workspace, '0'), /between 1 and 100/);
         assert.throws(() => formatWorkspaceTaskSummary(fixture.workspace, '101'), /between 1 and 100/);
         assert.throws(() => formatWorkspaceTaskSummary(fixture.workspace, 'recent'), /Usage: \/tasks/);
+
+        const detail = formatWorkspaceTaskDetail(fixture.workspace, FINISHED_ID);
+        assert.match(detail, /^## Build \\\*\\\*the\\\*\\\* project/m);
+        assert.match(detail, /Status: finished/);
+        assert.match(detail, /Latest log:/);
+        assert.match(detail, /\[earlier log output omitted\]/);
+        assert.doesNotMatch(detail, /line 1|line 2|\u001b/);
+        assert.match(detail, /line 3[\s\S]*line 7/);
     } finally {
         fs.rmSync(fixture.workspace, { recursive: true, force: true });
     }
@@ -371,6 +380,13 @@ test('terminal and WebChat bootstraps use the AchillesCLI task manager', () => {
     const webchatSource = fs.readFileSync(new URL('../src/index.mjs', import.meta.url), 'utf8');
     assert.match(replSource, /getTaskSummary:\s*\(args\) => formatWorkspaceTaskSummary\(this\.workingDir, args\)/);
     assert.match(webchatSource, /backgroundTaskManager\.listTasks\(\)/);
+    assert.match(webchatSource, /return formatWorkspaceTaskSummary\(workingDir, args\)/);
+    assert.match(webchatSource, /backgroundTaskManager\.viewTask\(taskId\)/);
+    assert.match(webchatSource, /return formatWorkspaceTaskDetail\(workingDir, taskId\)/);
+    assert.match(
+        webchatSource,
+        /import\s*\{[^}]*formatWorkspaceTaskDetail[^}]*\}\s*from '\.\/lib\/workspaceTasks\.mjs';/s,
+    );
 });
 
 test('help surfaces document /tasks arguments and bounded terminal logs', () => {
@@ -381,4 +397,5 @@ test('help surfaces document /tasks arguments and bounded terminal logs', () => 
     assert.match(help, /2 KiB per task/);
     assert.match(getQuickReference(), /\/task.*<action> <id>/);
     assert.match(showHelp('task'), /\/task continue <task-id> <prompt>/);
+    assert.match(showHelp('task'), /latest five stored log lines/);
 });
