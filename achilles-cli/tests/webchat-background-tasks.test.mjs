@@ -14,6 +14,10 @@ import {
     readTaskLog,
 } from '../src/lib/workspaceTasks.mjs';
 
+test('detached WebChat tasks poll remote status every two seconds', () => {
+    assert.equal(__testables.TASK_POLL_INTERVAL_MS, 2000);
+});
+
 test('background task ids are stable per target agent and remote task', () => {
     const first = __testables.localTaskId('opencodeAgent', 'abc');
     assert.equal(first, __testables.localTaskId('opencodeAgent', 'abc'));
@@ -185,6 +189,165 @@ test('AchillesCLI manager stops and continues tasks through agent commands', asy
             ['ensure', 'worker', { mode: 'global' }],
             ['continue', 'continue-task', { handle: 'opaque-task-handle', prompt: 'finish the tests' }],
         ]);
+    } finally {
+        fs.rmSync(workspace, { recursive: true, force: true });
+    }
+});
+
+test('a completed continuation persists its terminal state on the current turn', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-continuation-'));
+    const taskId = 'task_333333333333333333333333';
+    const createdAt = '2026-07-23T10:00:00.000Z';
+    const continuationStartedAt = '2026-07-24T06:39:10.000Z';
+    const completedAt = '2026-07-24T06:39:14.000Z';
+    let observer = null;
+    const agentClientModule = {
+        setAgentTaskObserver(next) {
+            observer = next;
+            return () => { observer = null; };
+        },
+        async createAgentClient(agentName) {
+            return {
+                async ensureAgentRunning() { },
+                async callToolWithoutWait(toolName, args) {
+                    await observer({
+                        agentName,
+                        taskId: 'remote-turn-two',
+                        toolName,
+                        arguments: args,
+                        metadata: {
+                            status: 'queued',
+                            createdAt: continuationStartedAt,
+                            updatedAt: continuationStartedAt,
+                        },
+                        getTaskStatus: async () => ({
+                            id: 'remote-turn-two',
+                            status: 'completed',
+                            updatedAt: completedAt,
+                            logTail: 'Done.',
+                            logSeq: 1,
+                            result: { content: [{ type: 'text', text: 'Done.' }] },
+                        }),
+                    });
+                },
+            };
+        },
+    };
+
+    try {
+        ingestTaskEvent(workspace, { task: {
+            id: taskId,
+            targetAgent: 'worker',
+            remoteTaskId: 'remote-turn-one',
+            toolName: 'run-task',
+            status: 'finished',
+            remoteStatus: 'completed',
+            createdAt,
+            updatedAt: createdAt,
+            turn: 1,
+            continuation: {
+                version: 1,
+                targetAgent: 'worker',
+                toolName: 'continue-task',
+                handle: 'opaque-task-handle',
+            },
+        } });
+
+        const manager = await createWebchatBackgroundTaskManager({
+            workingDir: workspace,
+            emitProtocol: false,
+            agentClientModule,
+        });
+        try {
+            const continued = await manager.continueTask(taskId, 'continue');
+            assert.equal(continued.turn, 2);
+
+            let stored = getTask(workspace, taskId);
+            const deadline = Date.now() + 500;
+            while (stored?.status !== 'finished' && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                stored = getTask(workspace, taskId);
+            }
+
+            assert.equal(stored.status, 'finished');
+            assert.equal(stored.remoteStatus, 'completed');
+            assert.equal(stored.remoteTaskId, 'remote-turn-two');
+            assert.equal(stored.turn, 2);
+            assert.equal(stored.createdAt, createdAt);
+            assert.equal(stored.executionStartedAt, continuationStartedAt);
+            assert.equal(stored.updatedAt, completedAt);
+        } finally {
+            manager.close();
+        }
+    } finally {
+        fs.rmSync(workspace, { recursive: true, force: true });
+    }
+});
+
+test('reattachment starts a manual target agent before polling its task', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-reattach-'));
+    const taskId = 'task_444444444444444444444444';
+    const createdAt = '2026-07-24T07:00:00.000Z';
+    let targetRunning = false;
+    const calls = [];
+    const agentClientModule = {
+        setAgentTaskObserver() {
+            return () => { };
+        },
+        async createAgentClient(agentName) {
+            calls.push(['client', agentName]);
+            return {
+                async ensureAgentRunning(targetAgent, options) {
+                    calls.push(['ensure', targetAgent, options]);
+                    targetRunning = true;
+                },
+                async getTaskStatus(remoteTaskId) {
+                    assert.equal(targetRunning, true);
+                    calls.push(['status', remoteTaskId]);
+                    return {
+                        id: remoteTaskId,
+                        status: 'completed',
+                        updatedAt: createdAt,
+                    };
+                },
+            };
+        },
+    };
+
+    try {
+        ingestTaskEvent(workspace, { task: {
+            id: taskId,
+            targetAgent: 'manual-worker',
+            remoteTaskId: 'remote-running',
+            toolName: 'run-task',
+            status: 'ongoing',
+            remoteStatus: 'running',
+            createdAt,
+            updatedAt: createdAt,
+        } });
+
+        const manager = await createWebchatBackgroundTaskManager({
+            workingDir: workspace,
+            emitProtocol: false,
+            agentClientModule,
+        });
+        try {
+            let stored = getTask(workspace, taskId);
+            const deadline = Date.now() + 750;
+            while (stored?.status !== 'finished' && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                stored = getTask(workspace, taskId);
+            }
+
+            assert.equal(stored.status, 'finished');
+            assert.deepEqual(calls, [
+                ['client', 'manual-worker'],
+                ['ensure', 'manual-worker', { mode: 'global' }],
+                ['status', 'remote-running'],
+            ]);
+        } finally {
+            manager.close();
+        }
     } finally {
         fs.rmSync(workspace, { recursive: true, force: true });
     }

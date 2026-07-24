@@ -60,6 +60,17 @@ export function normalizeWebchatOrigin(rawOrigin) {
     return {};
 }
 
+export function isWebchatMessageEnvelope(raw) {
+    const text = String(raw || '').trim();
+    if (!text.startsWith('{')) return false;
+    try {
+        const parsed = JSON.parse(text);
+        return Boolean(parsed && typeof parsed === 'object' && parsed.__webchatMessage);
+    } catch {
+        return false;
+    }
+}
+
 export function normalizeWebchatMessage(raw) {
     const text = String(raw || '').trim();
     if (!text) {

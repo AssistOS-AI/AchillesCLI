@@ -23,6 +23,7 @@ import { buildOrchestratorSystemPrompt } from './prompts/orchestrator-prompt.mjs
 import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
 import {
+    isWebchatMessageEnvelope,
     normalizeWebchatMessage,
     shouldEmitWebchatOutput,
 } from './lib/webchatEnvelope.mjs';
@@ -1053,6 +1054,12 @@ async function runWebchatInteractive(agent, options) {
                     const interactionResponse = parseWebchatInteractionResponse(segment);
                     if (interactionResponse) {
                         handleInteractionResponse(interactionResponse);
+                        continue;
+                    }
+                    if (isWebchatMessageEnvelope(segment)) {
+                        flushPendingLines();
+                        pendingLines.push(segment);
+                        flushPendingLines();
                         continue;
                     }
                     pendingLines.push(segment);

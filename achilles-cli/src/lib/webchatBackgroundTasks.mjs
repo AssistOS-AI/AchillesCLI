@@ -8,7 +8,7 @@ import {
     readWorkspaceTasks,
 } from './workspaceTasks.mjs';
 
-const TASK_POLL_INTERVAL_MS = 5000;
+const TASK_POLL_INTERVAL_MS = 2000;
 const DESCRIPTION_LIMIT = 240;
 
 function trim(value) {
@@ -148,6 +148,8 @@ export async function createWebchatBackgroundTaskManager({
                         remoteStatus,
                         createdAt: record.createdAt,
                         updatedAt: task?.updatedAt || new Date().toISOString(),
+                        executionStartedAt: record.executionStartedAt,
+                        turn: record.turn,
                         error: trim(task?.error),
                         ...(record.continuation ? { continuation: record.continuation } : {}),
                         ...(record.logRetention === 'full' ? { logRetention: 'full' } : {}),
@@ -207,7 +209,7 @@ export async function createWebchatBackgroundTaskManager({
             description: existing?.description || describeTask(agentName, toolName, args),
             status: 'ongoing',
             remoteStatus: trim(metadata?.status) || existing?.remoteStatus || 'pending',
-            createdAt: metadata?.createdAt || existing?.createdAt || now,
+            createdAt: existing?.createdAt || metadata?.createdAt || now,
             updatedAt: metadata?.updatedAt || now,
             executionStartedAt: existing?.executionStartedAt || metadata?.createdAt || now,
             turn: existing?.turn || 1,
@@ -298,7 +300,8 @@ export async function createWebchatBackgroundTaskManager({
             return;
         }
         for (const task of ongoingTasks) {
-            void agentClientModule.createAgentClient(task.targetAgent).then((client) => {
+            void agentClientModule.createAgentClient(task.targetAgent).then(async (client) => {
+                await client.ensureAgentRunning(task.targetAgent, { mode: 'global' });
                 watch({
                     agentName: task.targetAgent,
                     taskId: task.remoteTaskId,
@@ -430,6 +433,7 @@ export async function createWebchatBackgroundTaskManager({
 }
 
 export const __testables = {
+    TASK_POLL_INTERVAL_MS,
     describeTask,
     localTaskId,
     normalizeStatus,
