@@ -93,6 +93,10 @@
     process-instance identifier. WebChat prompts use a recoverable serial queue. Errors from post-turn
     workspace-skill refresh are logged without rejecting later messages, and a refresh that remains pending
     for five seconds stops gating the next prompt.
+    AchillesCLI also publishes a hidden workspace-file snapshot at startup and added/removed deltas after periodic
+    five-second scans. It refreshes the index immediately before emitting a response so files created by the current
+    turn are visible to WebChat without waiting for the timer. Ploinky can use this volatile index to link only paths
+    that currently exist while the authenticated workspace-file route remains responsible for every actual read.
     Asynchronous AgentServer tools are detached from the active reply in single-shot, terminal, and WebChat modes:
     AchillesCLI acknowledges the start with
     the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,

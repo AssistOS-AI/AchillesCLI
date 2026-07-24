@@ -37,7 +37,17 @@ Runtime wiring:
 3. Register built-in and discovered skill roots before accepting requests.
 4. Before single-shot execution or either interactive loop starts, load or create the current AchillesCLI conversation from `<workspace>/.achilles-cli/sessions/`. The selected id is the `currentSessionId` key in `.achilles-cli/settings.json`, beside model and permissions.
 5. Run the startup intro only when the current AchillesCLI conversation has no messages. In single-shot, REPL, and WebChat modes, pass stored user/assistant turns once as `initialHistory` on the first natural-language prompt after process startup or session selection; slash commands must not consume this pending hydration.
-6. In webchat mode, publish the explicit model restored from `.achilles-cli/settings.json` before accepting user input and publish `null` when that setting is absent. Runtime-state envelopes do not carry a process-instance identifier. Publish the current conversation through a `__webchatSession` envelope after startup, session selection, and completed turns.
+6. In webchat mode, publish the explicit model restored from
+   `.achilles-cli/settings.json` before accepting user input and publish `null`
+   when that setting is absent. Runtime-state envelopes do not carry a
+   process-instance identifier. Publish the current conversation through a
+   `__webchatSession` envelope after startup, session selection, and completed
+   turns. Also publish a version-1 `__webchatWorkspaceFiles` full snapshot for
+   the active working directory at startup, refresh it every five seconds, and
+   refresh it immediately before assistant or command output. Later
+   publications must be added/removed deltas and must be omitted when the
+   indexed file set did not change. These control records are WebChat metadata
+   and must not alter ordinary terminal output or conversation history.
 7. The broker remains outside Bubblewrap and handles authorization only. MainAgent, skill code, the local Bash executor, and every Bash child process inherit the persistent workspace sandbox.
 8. Bubblewrap keeps the network namespace shared and exposes only system runtime paths, read-only Achilles code/dependencies, isolated temporary storage, the broker socket, and the writable session workspace.
 9. Startup fails closed when Bubblewrap or the broker connection is unavailable.

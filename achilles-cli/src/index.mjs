@@ -29,6 +29,7 @@ import {
 } from './lib/webchatEnvelope.mjs';
 import { formatWebchatError } from './lib/webchatError.mjs';
 import { materializeWebchatContext } from './lib/webchatResources.mjs';
+import { createWebchatWorkspaceFileIndex } from './lib/webchatWorkspaceFiles.mjs';
 import { startIntroSkill, startWebchatIntroSkill } from './lib/introSkillBoot.mjs';
 import {
     drainWorkspaceSkillsRefresh,
@@ -665,6 +666,16 @@ async function runWebchatInteractive(agent, options) {
     };
     context.akuSessionState = akuSessionState;
     activeAgent.context = context;
+    const workspaceFileIndex = createWebchatWorkspaceFileIndex({ workingDir });
+    await workspaceFileIndex.start();
+    const writeWebchatAnswer = async (message) => {
+        try {
+            await workspaceFileIndex.refresh({ afterCurrent: true });
+        } catch (error) {
+            activeAgent.logger?.debug?.(`Workspace file index refresh failed: ${error.message}`);
+        }
+        process.stdout.write(message);
+    };
     const backgroundTaskManager = await createWebchatBackgroundTaskManager({
         workingDir,
         onTaskStarted: (task) => {
@@ -703,7 +714,7 @@ async function runWebchatInteractive(agent, options) {
             emitWebchatProgress('intro-skill', 'Generating workspace intro');
         },
         write: async (message) => {
-            process.stdout.write(message);
+            await writeWebchatAnswer(message);
         },
     });
     emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
@@ -822,7 +833,7 @@ async function runWebchatInteractive(agent, options) {
             return;
         }
         if (message === 'exit' || message === 'quit' || message === ':q') {
-            process.stdout.write('Use /exit only in terminal REPL mode.\n');
+            void writeWebchatAnswer('Use /exit only in terminal REPL mode.\n');
             return;
         }
 
@@ -857,9 +868,9 @@ async function runWebchatInteractive(agent, options) {
                         ? (slashOutput.output || 'Exit is not supported in webchat.')
                         : (slashOutput?.output || '');
                     if (slashOutput?.exit && emitOutput) {
-                        process.stdout.write(`${output}\n`);
+                        await writeWebchatAnswer(`${output}\n`);
                     } else if (output && emitOutput) {
-                        process.stdout.write(`${output}\n`);
+                        await writeWebchatAnswer(`${output}\n`);
                     }
                     if (commandTurn) {
                         const completed = sessionStore.completeCommand(
@@ -906,7 +917,7 @@ async function runWebchatInteractive(agent, options) {
                             currentTurn.assistantMessageIndex,
                             cachedProviderResult.resultText,
                         );
-                        process.stdout.write(`${cachedProviderResult.resultText}\n`);
+                        await writeWebchatAnswer(`${cachedProviderResult.resultText}\n`);
                         historyManager.add(message);
                         emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
                         currentTurn = null;
@@ -942,7 +953,7 @@ async function runWebchatInteractive(agent, options) {
                         currentTurn.assistantMessageIndex,
                         result,
                     );
-                    process.stdout.write(`${result}\n`);
+                    await writeWebchatAnswer(`${result}\n`);
                     historyManager.add(message);
                     emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
                     currentTurn = null;
@@ -979,9 +990,9 @@ async function runWebchatInteractive(agent, options) {
                 }
                 if (emitOutput) {
                     if (activeAbortController?.signal?.aborted || error?.name === 'AbortError') {
-                        process.stdout.write('[cancelled]\n');
+                        await writeWebchatAnswer('[cancelled]\n');
                     } else {
-                        process.stdout.write(`${output}\n`);
+                        await writeWebchatAnswer(`${output}\n`);
                     }
                 }
             } finally {
@@ -1092,6 +1103,7 @@ async function runWebchatInteractive(agent, options) {
         await processingChain;
     } finally {
         activeWebchatConversationProgress = null;
+        workspaceFileIndex.stop();
         backgroundTaskManager.close();
         try {
             handleControlData.cleanup?.();

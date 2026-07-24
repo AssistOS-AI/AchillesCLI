@@ -45,12 +45,14 @@ Ploinky integration boundary:
 9. Generic WebChat envelope and resource helpers live in AchillesCLI. These
    helpers normalize envelope text, extract the
    invocation token, and materialize browser attachments or workspace
-   references only from supported WebChat storage: legacy shared blob ids under
-   the configured shared root and Ploinky session-upload paths under the active
-   WebChat working directory (`uploads/<sessionId>/...`). Cwd-relative session
-   upload paths must stay inside the working directory after realpath
-   resolution, reject traversal, `.secrets`/`*.secrets`, and upload metadata
-   internals, and preserve the same byte caps as other forwarded resources.
+   references from legacy shared blob ids under the configured shared root or
+   safe cwd-relative files uploaded directly below the active WebChat working
+   directory. Direct paths must stay inside the working directory after
+   realpath resolution, reject traversal, `.secrets`/`*.secrets`, metadata
+   internals, and symlink escapes, and preserve the same byte caps as other
+   forwarded resources. Files above the inline byte limit must remain available
+   to launcher integrations through their validated path rather than being
+   discarded.
 10. Non-slash WebChat turns are routed through the built-in `copilot-router`
    oskill. The router may call deterministic launcher cskills such as
    `launch-open-interpreter`, `launch-web-search`, `launch-opencode`, or
@@ -158,6 +160,16 @@ Ploinky integration boundary:
     remote task id. The router verifies that assertion and replaces it with a
     target-scoped Router Request. AchillesCLI must not receive or forward a
     browser session token for this action.
+24. In WebChat mode, AchillesCLI owns the recursive index of regular files in
+    its active working directory. It must publish a bounded version-1
+    `__webchatWorkspaceFiles` reset snapshot at startup, rescan every five
+    seconds, and rescan immediately before emitting assistant or command output.
+    It must publish added/removed deltas only when the set changes. The scan must
+    reject symlinks, reserved secret names, AchillesCLI/Ploinky runtime state,
+    dependency trees, and VCS internals. Index envelopes are transport metadata:
+    they must remain outside terminal presentation and durable conversation
+    history, and they must not replace Ploinky's authenticated read-time path
+    validation.
 
 AchillesIDE interoperability boundary:
 1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.

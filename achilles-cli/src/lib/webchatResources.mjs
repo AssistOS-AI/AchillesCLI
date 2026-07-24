@@ -4,7 +4,7 @@ import path from 'node:path';
 const MAX_RESOURCE_BYTES = 128 * 1024;
 const MAX_RESOURCE_TOTAL_BYTES = 384 * 1024;
 const TEXT_LIKE_EXT_RE = /\.(txt|md|markdown|json|yaml|yml|csv|tsv|xml|js|mjs|ts|tsx|jsx|py|rb|go|rs|java|c|cc|cpp|h|hpp)$/i;
-const REFERENCE_SECRET_RE = /(^|\/)\.secrets$|\.secrets$/i;
+const REFERENCE_SECRET_RE = /(^|\/)[^/]*\.secrets(?:\/|$)/i;
 
 function isTextLikeAttachment(mime, filename = '') {
     const normalized = String(mime || '').toLowerCase();
@@ -42,22 +42,22 @@ function resolveSharedAttachmentPath(localPath, sharedRoot = '/shared') {
     }
 }
 
-function normalizeWorkspaceUploadAttachmentPath(localPath) {
+function normalizeWorkspaceAttachmentPath(localPath) {
     const raw = String(localPath || '').trim();
     if (!raw || raw.includes('\0')) return null;
-    const normalized = raw.replace(/\\+/g, '/').replace(/^\/+/, '');
-    if (!normalized.startsWith('uploads/')) return null;
+    const normalized = raw.replace(/\\+/g, '/');
+    if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) return null;
     const segments = normalized.split('/');
-    if (segments.some((segment) => segment === '..')) return null;
+    if (segments.some((segment) => !segment || segment === '.' || segment === '..')) return null;
     if (segments.includes('.webchat-upload-metadata')) return null;
     if (REFERENCE_SECRET_RE.test(normalized)) return null;
     return normalized;
 }
 
-function resolveWorkspaceUploadAttachmentPath(localPath, options = {}) {
+function resolveWorkspaceAttachmentPath(localPath, options = {}) {
     const baseDir = options.workingDir || options.workspaceRoot || process.env.PLOINKY_WORKSPACE_ROOT || '';
     if (!baseDir) return null;
-    const normalizedPath = normalizeWorkspaceUploadAttachmentPath(localPath);
+    const normalizedPath = normalizeWorkspaceAttachmentPath(localPath);
     if (!normalizedPath) return null;
     const absoluteBase = path.resolve(baseDir);
     const resolved = path.resolve(absoluteBase, normalizedPath);
@@ -68,7 +68,10 @@ function resolveWorkspaceUploadAttachmentPath(localPath, options = {}) {
         const realBase = fs.realpathSync(absoluteBase);
         const realRelative = path.relative(realBase, real);
         if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) return null;
-        return real;
+        return {
+            absolutePath: real,
+            workspacePath: normalizedPath,
+        };
     } catch {
         return null;
     }
@@ -80,9 +83,9 @@ function resolveWebchatAttachmentPath(attachment, options = {}) {
         options.sharedRoot || process.env.PLOINKY_SHARED_DIR || '/shared'
     );
     if (sharedPath) {
-        return sharedPath;
+        return { absolutePath: sharedPath, workspacePath: null };
     }
-    return resolveWorkspaceUploadAttachmentPath(attachment?.localPath, options);
+    return resolveWorkspaceAttachmentPath(attachment?.localPath, options);
 }
 
 function resolveWorkspaceReferencePath(reference, options = {}) {
@@ -173,24 +176,27 @@ export function materializeWorkspaceReferences(references = [], options = {}) {
 
 export function materializeWebchatAttachments(attachments = [], options = {}) {
     const resources = [];
+    const paths = [];
     const warnings = [];
     let totalBytes = 0;
+    let totalLimitWarningEmitted = false;
     const sharedRoot = options.sharedRoot || process.env.PLOINKY_SHARED_DIR || '/shared';
     for (const attachment of Array.isArray(attachments) ? attachments : []) {
         if (!attachment || typeof attachment !== 'object') {
             continue;
         }
-        const filePath = resolveWebchatAttachmentPath(attachment, {
+        const resolution = resolveWebchatAttachmentPath(attachment, {
             sharedRoot,
             workingDir: options.workingDir || options.workspaceRoot || process.env.PLOINKY_WORKSPACE_ROOT || '',
             workspaceRoot: options.workspaceRoot || '',
         });
         const filename = String(attachment.filename || attachment.id || 'attachment').trim() || 'attachment';
         const mime = String(attachment.mime || 'application/octet-stream').trim() || 'application/octet-stream';
-        if (!filePath) {
-            warnings.push(`Attachment '${filename}' is not in supported WebChat attachment storage and was not forwarded.`);
+        if (!resolution) {
+            warnings.push(`Attachment '${filename}' is not a safe file in the active WebChat working directory and was not forwarded.`);
             continue;
         }
+        const filePath = resolution.absolutePath;
         let stat;
         try {
             stat = fs.statSync(filePath);
@@ -203,12 +209,31 @@ export function materializeWebchatAttachments(attachments = [], options = {}) {
             continue;
         }
         if (stat.size > MAX_RESOURCE_BYTES) {
-            warnings.push(`Attachment '${filename}' exceeds ${MAX_RESOURCE_BYTES} bytes and was not forwarded.`);
+            if (resolution.workspacePath) {
+                paths.push({
+                    path: resolution.workspacePath,
+                    type: 'file',
+                    label: filename,
+                });
+                warnings.push(`Attachment '${filename}' exceeds the ${MAX_RESOURCE_BYTES}-byte inline limit and remains available at path '${resolution.workspacePath}'.`);
+            } else {
+                warnings.push(`Attachment '${filename}' exceeds the ${MAX_RESOURCE_BYTES}-byte inline limit and was not inlined.`);
+            }
             continue;
         }
         if (totalBytes + stat.size > MAX_RESOURCE_TOTAL_BYTES) {
-            warnings.push('Attachment forwarding reached the total byte cap; remaining files were skipped.');
-            break;
+            if (resolution.workspacePath) {
+                paths.push({
+                    path: resolution.workspacePath,
+                    type: 'file',
+                    label: filename,
+                });
+            }
+            if (!totalLimitWarningEmitted) {
+                warnings.push('Attachment inlining reached the total byte cap; remaining workspace files are still available by path.');
+                totalLimitWarningEmitted = true;
+            }
+            continue;
         }
         const buffer = fs.readFileSync(filePath);
         totalBytes += buffer.length;
@@ -218,18 +243,22 @@ export function materializeWebchatAttachments(attachments = [], options = {}) {
             mime,
             size: buffer.length,
             downloadUrl: attachment.downloadUrl || null,
-            localPath: attachment.localPath || null,
+            localPath: resolution.workspacePath || attachment.localPath || null,
             ...(textLike
                 ? { content: buffer.toString('utf8') }
                 : { base64: buffer.toString('base64') })
         });
     }
-    return { resources, warnings };
+    return { resources, paths, warnings };
 }
 
 export function materializeWebchatContext(normalizedMessage = {}, options = {}) {
     const referenceWorkingDir = options.workingDir || process.env.PLOINKY_WORKSPACE_ROOT || '';
-    const { resources: attachmentResources, warnings: attachmentWarnings } = materializeWebchatAttachments(
+    const {
+        resources: attachmentResources,
+        paths: attachmentPaths,
+        warnings: attachmentWarnings,
+    } = materializeWebchatAttachments(
         normalizedMessage.attachments || [],
         { workingDir: referenceWorkingDir, workspaceRoot: options.workspaceRoot || '' }
     );
@@ -239,7 +268,7 @@ export function materializeWebchatContext(normalizedMessage = {}, options = {}) 
     );
     return {
         resources: [...attachmentResources, ...referenceResources],
-        paths: referencePaths,
+        paths: [...attachmentPaths, ...referencePaths],
         warnings: [...attachmentWarnings, ...referenceWarnings],
     };
 }
