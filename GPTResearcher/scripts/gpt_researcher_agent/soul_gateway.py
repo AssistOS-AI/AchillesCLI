@@ -38,7 +38,7 @@ def soul_gateway_router_base_url():
     router_url = normalize_string(os.environ.get("PLOINKY_ROUTER_URL"))
     if not router_url:
         raise RuntimeError("Soul Gateway local provider requires PLOINKY_ROUTER_URL.")
-    return f"{router_url.rstrip('/')}/services/soul-gateway/v1"
+    return f"{router_url.rstrip('/')}/base-agent-additional-server/soul-gateway/7000/v1"
 
 
 def soul_gateway_api_key():

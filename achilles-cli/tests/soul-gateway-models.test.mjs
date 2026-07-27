@@ -14,7 +14,7 @@ test('Soul Gateway model URL uses the router-mediated service route', () => {
         PLOINKY_ROUTER_URL: 'http://host.containers.internal:8080',
         SOUL_GATEWAY_BASE_URL: 'https://external.invalid/v1',
     });
-    assert.equal(url.href, 'http://host.containers.internal:8080/services/soul-gateway/v1/models');
+    assert.equal(url.href, 'http://host.containers.internal:8080/base-agent-additional-server/soul-gateway/7000/v1/models');
 });
 
 test('model catalog removes aliases, deduplicates names, and prioritizes recommendations', () => {
@@ -56,7 +56,7 @@ test('Soul Gateway models are fetched with the agent identity and cached', async
     const second = await loadSoulGatewayModels(options);
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, 'http://router.test:8080/services/soul-gateway/v1/models');
+    assert.equal(calls[0].url, 'http://router.test:8080/base-agent-additional-server/soul-gateway/7000/v1/models');
     assert.equal(calls[0].options.headers.Authorization, 'Bearer agent:test/key');
     assert.equal(first[0].name, 'fast');
     assert.equal(second[0].name, 'fast');

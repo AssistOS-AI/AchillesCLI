@@ -216,7 +216,7 @@ async function main() {
         throw new Error('PLOINKY_AGENT_API_KEY is required to list Soul Gateway models.');
     }
 
-    const url = `${routerUrl.replace(/\/+$/, '')}/services/soul-gateway/v1/models`;
+    const url = `${routerUrl.replace(/\/+$/, '')}/base-agent-additional-server/soul-gateway/7000/v1/models`;
     const response = await fetch(url, {
         headers: {
             Accept: 'application/json',

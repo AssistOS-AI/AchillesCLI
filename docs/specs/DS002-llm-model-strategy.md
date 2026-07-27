@@ -32,7 +32,7 @@ Model selection behavior:
 1. Runtime configuration may provide provider defaults and tier maps.
 2. Manual configuration overrides are applied before environment-derived defaults.
 3. Missing mandatory model/provider details must produce explicit errors.
-4. Selectable model names are loaded from the authenticated local Soul Gateway `GET /services/soul-gateway/v1/models` route. AchillesCLI uses its generated Ploinky agent identity and must not expose that credential to WebChat.
+4. Selectable model names are loaded from the authenticated local Soul Gateway `GET /base-agent-additional-server/soul-gateway/7000/v1/models` route. AchillesCLI uses its generated Ploinky agent identity and must not expose that credential to WebChat.
 5. Model aliases reported only as Soul Gateway compatibility aliases are excluded, while direct models and named cascades remain selectable.
 6. The current hosted Soul Gateway fallback through an explicit `SOUL_GATEWAY_API_KEY` is temporary and not canonical AchillesCLI model strategy. It exists only for the migration period in which `soul.axiologic.dev` is still required; the canonical future path is AchillesAgentLib using generated Ploinky credentials against the local Soul Gateway deployment.
 

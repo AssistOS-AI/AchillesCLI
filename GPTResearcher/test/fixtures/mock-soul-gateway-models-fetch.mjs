@@ -1,5 +1,5 @@
 globalThis.fetch = async (url, options = {}) => {
-    if (String(url) !== 'http://127.0.0.1:8080/services/soul-gateway/v1/models') {
+    if (String(url) !== 'http://127.0.0.1:8080/base-agent-additional-server/soul-gateway/7000/v1/models') {
         throw new Error(`Unexpected URL: ${url}`);
     }
     if (options.headers?.Authorization !== 'Bearer test-key') {

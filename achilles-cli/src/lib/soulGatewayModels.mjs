@@ -28,7 +28,7 @@ function normalizeBaseUrl(value) {
 export function resolveSoulGatewayModelsUrl(env = process.env) {
     const routerBase = normalizeBaseUrl(env.PLOINKY_ROUTER_URL);
     if (routerBase) {
-        return new URL('/services/soul-gateway/v1/models', routerBase);
+        return new URL('/base-agent-additional-server/soul-gateway/7000/v1/models', routerBase);
     }
 
     const explicitBase = normalizeBaseUrl(env.SOUL_GATEWAY_BASE_URL);
