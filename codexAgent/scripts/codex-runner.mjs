@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-export const DEFAULT_CODEX_BIN = '/usr/local/bin/codex';
+export const DEFAULT_CODEX_HOME = '/root';
+export const DEFAULT_CODEX_BIN = '/root/.local/bin/codex';
 export const CODEX_TIMEOUT_MS = 300000;
 
 const LOG_TAIL_LIMIT = 16 * 1024;
@@ -26,7 +27,9 @@ export function createContainerLogStream() {
 export function resolveCodexBinary(env = process.env) {
     const configured = String(env.CODEX_BIN || '').trim();
     if (configured) return configured;
-    return fs.existsSync(DEFAULT_CODEX_BIN) ? DEFAULT_CODEX_BIN : 'codex';
+    const home = String(env.HOME || DEFAULT_CODEX_HOME);
+    const homeBinary = path.join(home, '.local', 'bin', 'codex');
+    return fs.existsSync(homeBinary) ? homeBinary : 'codex';
 }
 
 function textValue(value) {

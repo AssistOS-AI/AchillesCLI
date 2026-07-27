@@ -1,7 +1,6 @@
 {
   "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
   "install": "sh /code/scripts/installPrerequisites.sh",
-  "lite-sandbox": true,
   "env": [
     {
       "name": "SOUL_GATEWAY_API_KEY",

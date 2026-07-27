@@ -229,6 +229,13 @@ Provider launcher discovery:
    override `PI_CODING_AGENT_DIR`, so interactive CLI login, initial tasks, and
    continued tasks all use PI's persistent default configuration directory
    under the agent home, including the same OAuth credentials and settings.
+   The PI profile installer must install the package and stable launcher under
+   `$HOME/.local`, and the manifest and task runner must resolve that
+   home-relative launcher. It must not require writes to `/usr/local`, because
+   host-sandbox runtimes expose system files read-only while keeping the agent
+   home writable and persistent. The installer must resolve `npm` from the
+   runtime `PATH` instead of assuming a fixed image-specific npm CLI path; an
+   explicit `NPM_CLI` remains a test and operator override.
    `opencodeAgent` must run tasks in OpenCode's default
    formatted-output mode and must pass the captured provider session id through
    `--session` on continuation. OpenCode must relay provider stdout and stderr
@@ -282,6 +289,12 @@ Provider launcher discovery:
    runtime. On controlled cancellation the wrapper aborts Codex and preserves a
    reported thread id behind the existing opaque handle before exiting
    unsuccessfully.
+   Its profile installer must install the Codex package and launcher under
+   `$HOME/.local`; the manifest and execution runner must resolve the same
+   home-relative launcher so container recreation and host-sandbox execution
+   share one persistent installation location without writing to `/usr/local`.
+   The installer must resolve `npm` from the runtime `PATH`, while preserving
+   an explicit `NPM_CLI` override for deterministic tests or operator control.
 10. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent

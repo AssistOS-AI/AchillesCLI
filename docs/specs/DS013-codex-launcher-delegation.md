@@ -40,6 +40,17 @@ five-minute MCP tools with full task-log retention. `execute-task` is tagged
 both terminal and WebChat modes, and the browser does not call the provider
 tool directly.
 
+The default profile must install the Codex package and its stable launcher
+under `$HOME/.local`. The manifest and execution wrapper must resolve
+`$HOME/.local/bin/codex`, while an explicit `CODEX_BIN` remains available for
+tests or operator overrides. Installation must not write to `/usr/local`, so
+the same profile works in both writable container layers and Linux host
+sandboxes whose system paths are read-only. Because Ploinky persists the agent
+home, provider authentication, configuration, threads, and the installed CLI
+remain available after runtime recreation. The installer must resolve `npm`
+from the runtime `PATH` rather than assuming an image-specific npm CLI path;
+`NPM_CLI` remains available as an explicit test or operator override.
+
 Initial execution runs:
 
 ```text
@@ -117,6 +128,14 @@ The Codex process runs non-interactively inside the separately isolated
 Ploinky agent runtime. WebChat cannot answer CLI approval prompts, so the
 provider uses Codex's explicit automation flag and keeps the worker behind the
 router and MCP policy boundary.
+
+### Question #4: Why is Codex installed under the agent home?
+
+Response:
+Linux host sandboxes expose system paths such as `/usr` read-only, while the
+per-instance home is writable and persists across runtime recreation. A
+home-relative installation therefore gives container and Bubblewrap execution
+one launcher contract and keeps provider state scoped to the enabled instance.
 
 ## Conclusion
 

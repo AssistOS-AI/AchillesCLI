@@ -13,24 +13,23 @@ import {
     writeContinuationRecord,
 } from './continuation-store.mjs';
 
-const PI_BIN_CANDIDATES = ['/usr/local/bin/pi'];
 const PI_TIMEOUT_MS = 300000;
 const LOG_TAIL_LIMIT = 16 * 1024;
 const DEFAULT_PI_HOME = '/root';
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
 
-function resolvePiBinary(env = process.env) {
+export function resolvePiBinary(env = process.env) {
     if (typeof env.PI_BIN === 'string' && env.PI_BIN.trim()) return env.PI_BIN.trim();
-    for (const candidate of PI_BIN_CANDIDATES) {
-        if (candidate.includes('/') && fs.existsSync(candidate)) return candidate;
-        try {
-            const resolved = execFileSync('sh', ['-c', `command -v "$1"`, 'sh', candidate], {
-                stdio: ['ignore', 'pipe', 'ignore'],
-                encoding: 'utf8',
-            }).trim();
-            if (resolved) return resolved;
-        } catch {
-        }
+    const home = String(env.HOME || DEFAULT_PI_HOME);
+    const homeBinary = path.join(home, '.local', 'bin', 'pi');
+    if (fs.existsSync(homeBinary)) return homeBinary;
+    try {
+        const resolved = execFileSync('sh', ['-c', 'command -v "$1"', 'sh', 'pi'], {
+            stdio: ['ignore', 'pipe', 'ignore'],
+            encoding: 'utf8',
+        }).trim();
+        if (resolved) return resolved;
+    } catch {
     }
     return 'pi';
 }

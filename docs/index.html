@@ -213,6 +213,13 @@
     the final assistant message supplies the task result. Its interactive CLI,
     initial task runner, and continuation runner share PI's persistent default configuration
     directory under the agent home, so OAuth logins and provider settings apply consistently.
+    PI and Codex install their packages and stable launchers under
+    <code>$HOME/.local</code>, allowing the same profiles to run in containers and Linux
+    host sandboxes without writing to read-only system paths. Their installers resolve
+    <code>npm</code> from the runtime <code>PATH</code> instead of assuming an image-specific
+    npm installation path. Ploinky maps that home to the
+    enabled instance's persistent data directory, so CLI installation and provider state
+    survive runtime recreation.
     OpenCode tasks use the provider's
     default formatted output and resolve the created session through a separate random-title lookup before
     using <code>--session</code> when resumed. OpenCode relays provider stdout and stderr unchanged into

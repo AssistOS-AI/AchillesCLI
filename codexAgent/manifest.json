@@ -8,7 +8,7 @@
             "install": "sh /code/scripts/install-codex.sh"
         }
     },
-    "cli": "/usr/local/bin/codex",
+    "cli": "\"$HOME/.local/bin/codex\"",
     "env": {
         "OPENAI_API_KEY": {
             "name": "OPENAI_API_KEY"

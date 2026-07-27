@@ -8,7 +8,7 @@
             "install": "sh /code/scripts/install-pi.sh"
         }
     },
-    "cli": "/usr/local/bin/pi",
+    "cli": "\"$HOME/.local/bin/pi\"",
     "env": [
         "PLOINKY_WORKSPACE_ROOT",
         "ANTHROPIC_API_KEY",
