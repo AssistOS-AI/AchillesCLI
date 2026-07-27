@@ -284,9 +284,11 @@ Provider launcher discovery:
    resolved original project directory; it must not store a model.
    `continue-task` invokes `codex exec resume` in that directory without
    `--model`, so the Codex configuration active for the new turn remains the
-   model authority. Both initial and resumed execution use Codex's explicit
-   non-interactive approval-and-sandbox bypass inside the isolated Ploinky
-   runtime. On controlled cancellation the wrapper aborts Codex and preserves a
+   model authority. Both initial and resumed execution place Codex's global
+   `--sandbox workspace-write --ask-for-approval never` options before `exec`.
+   The selected project directory is writable, broader filesystem writes fail
+   without prompting, and the wrapper must not bypass Codex's sandbox. On
+   controlled cancellation the wrapper aborts Codex and preserves a
    reported thread id behind the existing opaque handle before exiting
    unsuccessfully.
    Its profile installer must install the Codex package and launcher under

@@ -173,11 +173,11 @@ test('AchillesCLI manager stops and continues tasks through agent commands', asy
             assert.equal(continued.status, 'ongoing');
             assert.equal(continued.remoteStatus, 'queued');
             assert.equal(getTask(workspace, finishedId).remoteTaskId, 'remote-next');
-            assert.match(readTaskLog(workspace, finishedId).text, /User: finish the tests/);
+            assert.match(readTaskLog(workspace, finishedId).text, /you> finish the tests/);
             const continuationEvent = published.find((event) => event.event === 'continued');
             assert.equal(continuationEvent.task.id, finishedId);
             assert.match(continuationEvent.logAppend, /\[Continuation 2\]/);
-            assert.match(continuationEvent.logAppend, /User: finish the tests/);
+            assert.match(continuationEvent.logAppend, /you> finish the tests/);
             assert.equal(continuationEvent.logOffset, readTaskLog(workspace, finishedId).nextOffset);
         } finally {
             manager.close();

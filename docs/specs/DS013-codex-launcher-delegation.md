@@ -55,11 +55,15 @@ override.
 Initial execution runs:
 
 ```text
-codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox [--model <initial-override>] <prompt>
+codex --sandbox workspace-write --ask-for-approval never exec --json --skip-git-repo-check [--model <initial-override>] <prompt>
 ```
 
-The command runs in the resolved project directory and must not use
-`--ephemeral`, because a provider thread must survive the initial process.
+The global sandbox and approval options must precede `exec`, so they also apply
+when execution enters the nested `resume` subcommand. The command runs in the
+resolved project directory, which is the writable workspace root, and must not
+use `--ephemeral`, because a provider thread must survive the initial process.
+Commands that require writes outside that workspace fail without prompting;
+the wrapper must not disable the Codex sandbox.
 An optional initial model remains available to direct internal MCP callers,
 but `launch-codex` never sends it.
 
@@ -83,7 +87,7 @@ Continuation accepts only the opaque handle and a new non-empty prompt. It
 loads the provider thread and original directory, then runs:
 
 ```text
-codex exec resume --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox <thread-id> <prompt>
+codex --sandbox workspace-write --ask-for-approval never exec resume --json --skip-git-repo-check <thread-id> <prompt>
 ```
 
 The resumed command must not receive `--model`. This omission is deliberate:
@@ -122,13 +126,15 @@ wrapper but are not native textual task output. Forwarding the textual agent
 and completed command payloads preserves live provider output without exposing
 control records or duplicating the final structured result.
 
-### Question #3: Why is the bypass flag permitted?
+### Question #3: Why does Codex use `workspace-write` with approvals disabled?
 
 Response:
-The Codex process runs non-interactively inside the separately isolated
-Ploinky agent runtime. WebChat cannot answer CLI approval prompts, so the
-provider uses Codex's explicit automation flag and keeps the worker behind the
-router and MCP policy boundary.
+WebChat cannot answer interactive CLI approval prompts, so the provider uses
+the `never` approval policy. Codex still enforces `workspace-write`, with the
+resolved project directory as its working root. This permits ordinary coding
+changes in the selected workspace while commands that need broader filesystem
+access fail instead of prompting or bypassing confinement. The Ploinky runtime
+remains an additional outer isolation boundary.
 
 ### Question #4: Why is Codex installed under the agent home?
 

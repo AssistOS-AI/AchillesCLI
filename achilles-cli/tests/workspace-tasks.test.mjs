@@ -271,6 +271,7 @@ test('continuation keeps the local id, advances the turn, and filters action com
         assert.equal(next.turn, 2);
         assert.equal(next.status, 'ongoing');
         assert.equal(next.remoteStatus, 'pending');
+        assert.match(readTaskLog(workspace, FINISHED_ID).text, /you> finish the tests/);
         assert.deepEqual(buildTaskCompletions(workspace, 'stop').map((item) => item.value), [FINISHED_ID]);
     } finally {
         fs.rmSync(workspace, { recursive: true, force: true });

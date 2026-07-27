@@ -65,22 +65,28 @@ function eventAgentMessage(event) {
 }
 
 export function buildCodexArgs({ prompt, model = '', threadId = '' }) {
+    const globalArgs = [
+        '--sandbox',
+        'workspace-write',
+        '--ask-for-approval',
+        'never',
+    ];
     if (threadId) {
         return [
+            ...globalArgs,
             'exec',
             'resume',
             '--json',
             '--skip-git-repo-check',
-            '--dangerously-bypass-approvals-and-sandbox',
             threadId,
             prompt,
         ];
     }
     return [
+        ...globalArgs,
         'exec',
         '--json',
         '--skip-git-repo-check',
-        '--dangerously-bypass-approvals-and-sandbox',
         ...(model ? ['--model', model] : []),
         prompt,
     ];

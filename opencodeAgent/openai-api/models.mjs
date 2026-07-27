@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveOpenCodeBin } from '../scripts/opencode-runner.mjs';
 
 const MODEL_LIST_TIMEOUT_MS = 30000;
-const DEFAULT_TAGS = ['coding', 'agentic'];
+const DEFAULT_TAGS = ['coding-agent'];
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
 
 function stripAnsi(value) {

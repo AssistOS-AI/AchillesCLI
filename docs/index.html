@@ -143,7 +143,8 @@
     local id. Terminal autocomplete shows task names and inserts ids after the selected action. WebChat uses these same
     commands for its Tasks overlay and task page; it does not own task persistence or actions. UI-originated task
     commands do not add acknowledgements or errors to the main chat. On continuation, AchillesCLI appends the submitted
-    prompt to the durable task log first, publishes that delta, and then appends provider output in arrival order.
+    prompt to the durable task log first with a visible <code>you&gt; </code> prefix, publishes that delta,
+    and then appends provider output in arrival order.
   </div>
 
   <h2>MCP Tool Exposure</h2>
@@ -199,6 +200,8 @@
     <code>/v1/chat/completions</code> and <code>/v1/models</code> handlers through AgentServer.
     Chat completions execute OpenCode in the Ploinky-provided <code>WORKSPACE_PATH</code>,
     and model discovery returns the OpenCode provider/model catalog for Soul Gateway.
+    Every published model uses the single functional umbrella tag <code>coding-agent</code>;
+    tool support, vision, limits, and pricing remain structured model metadata.
     AchillesCLI does not include OpenCode, PI, Codex, GPTResearcher, or Search Agent in
     its manifest dependency graph, and those workers declare <code>startup: manual</code>.
     Their launchers check Marketplace runtime state, enable an installed target in explicit
@@ -220,6 +223,11 @@
     runtime. Ploinky maps that home to the
     enabled instance's persistent data directory, so CLI installation and provider state
     survive runtime recreation.
+    Codex initial and continuation tasks run with <code>workspace-write</code>
+    confinement rooted at the selected project directory and an approval policy of
+    <code>never</code>. This keeps ordinary workspace edits non-interactive while
+    filesystem operations outside the permitted roots fail instead of disabling the
+    Codex sandbox.
     OpenCode tasks use the provider's
     default formatted output and resolve the created session through a separate random-title lookup before
     using <code>--session</code> when resumed. OpenCode relays provider stdout and stderr unchanged into

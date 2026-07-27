@@ -358,7 +358,10 @@ export function beginTaskContinuation(workingDir, taskId, { remoteTaskId, messag
     };
     appendMetadata(journalPath, next);
     const { logPath, cursorPath } = taskPaths(logDirectory, taskId);
-    appendTaskLog(logPath, `\n[Continuation ${next.turn}]\nUser: ${stripTerminalControls(message).trim()}\n\n`, { retainFull: true });
+    const prompt = stripTerminalControls(message).trim().split(/\r?\n/)
+        .map((line) => `you> ${line}`)
+        .join('\n');
+    appendTaskLog(logPath, `\n[Continuation ${next.turn}]\n${prompt}\n\n`, { retainFull: true });
     atomicWriteJson(cursorPath, { tail: '', seq: null, sourceId: nextRemoteTaskId, truncated: false });
     return next;
 }

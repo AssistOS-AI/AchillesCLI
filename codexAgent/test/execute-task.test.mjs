@@ -37,7 +37,7 @@ import fs from 'node:fs';
 const args = process.argv.slice(2);
 fs.writeFileSync(process.env.CODEX_ARGS_PATH, JSON.stringify(args));
 const resumeIndex = args.indexOf('resume');
-const threadId = resumeIndex >= 0 ? args[resumeIndex + 4] : '018f6f4a-4ec8-7d31-a852-0242ac120002';
+const threadId = resumeIndex >= 0 ? args.at(-2) : '018f6f4a-4ec8-7d31-a852-0242ac120002';
 process.stdout.write(JSON.stringify({ type: 'thread.started', thread_id: threadId }) + '\\n');
 process.stdout.write(JSON.stringify({
     type: 'item.completed',
@@ -65,10 +65,13 @@ test('Codex initial arguments persist a thread and allow an explicit initial mod
         prompt: 'Build this.',
         model: 'gpt-initial',
     }), [
+        '--sandbox',
+        'workspace-write',
+        '--ask-for-approval',
+        'never',
         'exec',
         '--json',
         '--skip-git-repo-check',
-        '--dangerously-bypass-approvals-and-sandbox',
         '--model',
         'gpt-initial',
         'Build this.',
@@ -82,11 +85,14 @@ test('Codex resume arguments never replay an initial model', () => {
         threadId: 'thread-1',
     });
     assert.deepEqual(args, [
+        '--sandbox',
+        'workspace-write',
+        '--ask-for-approval',
+        'never',
         'exec',
         'resume',
         '--json',
         '--skip-git-repo-check',
-        '--dangerously-bypass-approvals-and-sandbox',
         'thread-1',
         'Continue.',
     ]);
@@ -131,8 +137,15 @@ test('execute-task streams Codex text and stderr raw and persists only private r
     assert.doesNotMatch(result.stderr, /thread\.started|item\.completed|\[codex|exit code/);
 
     const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.equal(args[0], 'exec');
+    assert.deepEqual(args.slice(0, 5), [
+        '--sandbox',
+        'workspace-write',
+        '--ask-for-approval',
+        'never',
+        'exec',
+    ]);
     assert.equal(args.includes('--ephemeral'), false);
+    assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
     assert.equal(args[args.indexOf('--model') + 1], 'gpt-initial');
     const record = JSON.parse(await fs.readFile(
         path.join(continuationStore, `${payload.continuation.handle}.json`),
@@ -179,9 +192,16 @@ test('continue-task resumes the stored thread with the model configured now', as
     assert.equal(resumedPayload.outputText, 'gpt-current: final answer');
     assert.equal(resumedPayload.continuation.handle, initialPayload.continuation.handle);
     const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.equal(args[0], 'exec');
-    assert.equal(args[1], 'resume');
+    assert.deepEqual(args.slice(0, 6), [
+        '--sandbox',
+        'workspace-write',
+        '--ask-for-approval',
+        'never',
+        'exec',
+        'resume',
+    ]);
     assert.equal(args.includes('--model'), false);
+    assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
     assert.equal(args.at(-2), '018f6f4a-4ec8-7d31-a852-0242ac120002');
     assert.equal(args.at(-1), 'Continue the task');
 });

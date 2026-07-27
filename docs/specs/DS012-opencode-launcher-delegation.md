@@ -166,7 +166,9 @@ remain the exact OpenCode model id, such as `opencode/gpt-5` or `xai/grok-4.3`.
 Descriptors must include the standardized Soul Gateway fields for
 `modelId`, `providerModelId`, display name, token pricing when available,
 context and output limits when available, tool and vision capability flags, and
-the tags `coding` and `agentic`. Free OpenCode models must use
+exactly the umbrella tag `coding-agent`. The tag represents the coding-agent
+route without duplicating implied capabilities as `coding`, `agentic`, or
+`tool-calling`. Free OpenCode models must use
 `pricingMode: "free"`, models with numeric input or output prices must use
 `pricingMode: "token"`, and models whose pricing is unavailable must use
 `pricingMode: "external_directory"`.
@@ -253,6 +255,12 @@ immediately after the current OpenCode release avoids a dedicated image while
 ensuring the MCP runner and interactive CLI read the same provider config from
 their effective home. Ploinky injects the signed agent API key at runtime, so
 the template contains only an environment reference and no credential.
+
+### Question #12: Why does every OpenCode model use only `coding-agent`?
+Response: The routed model executes through the OpenCode coding agent, so the
+umbrella tag is the relevant functional category. Tool support, vision, limits,
+and pricing remain structured descriptor fields and are not duplicated as
+routing tags.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users

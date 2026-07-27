@@ -348,7 +348,7 @@ xai/grok-4.3
     assert.equal(free.contextWindow, 200000);
     assert.equal(free.maxOutputTokens, 32000);
     assert.equal(free.supportsTools, true);
-    assert.deepEqual(free.tags, ['coding', 'agentic']);
+    assert.deepEqual(free.tags, ['coding-agent']);
 
     const paid = opencodeModelDescriptor(records[1]);
     assert.equal(paid.id, 'xai/grok-4.3');
