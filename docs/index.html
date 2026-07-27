@@ -215,9 +215,9 @@
     directory under the agent home, so OAuth logins and provider settings apply consistently.
     PI and Codex install their packages and stable launchers under
     <code>$HOME/.local</code>, allowing the same profiles to run in containers and Linux
-    host sandboxes without writing to read-only system paths. Their installers resolve
-    <code>npm</code> from the runtime <code>PATH</code> instead of assuming an image-specific
-    npm installation path. Ploinky maps that home to the
+    host sandboxes without writing to read-only system paths. Their installers invoke npm
+    through an absolute CLI path selected for the container or mounted Bubblewrap Node
+    runtime. Ploinky maps that home to the
     enabled instance's persistent data directory, so CLI installation and provider state
     survive runtime recreation.
     OpenCode tasks use the provider's

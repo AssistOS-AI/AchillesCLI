@@ -233,9 +233,9 @@ Provider launcher discovery:
    `$HOME/.local`, and the manifest and task runner must resolve that
    home-relative launcher. It must not require writes to `/usr/local`, because
    host-sandbox runtimes expose system files read-only while keeping the agent
-   home writable and persistent. The installer must resolve `npm` from the
-   runtime `PATH` instead of assuming a fixed image-specific npm CLI path; an
-   explicit `NPM_CLI` remains a test and operator override.
+   home writable and persistent. The installer must invoke npm through an
+   absolute CLI path selected for the container or mounted Bubblewrap Node
+   runtime, while an explicit `NPM_CLI` remains a test and operator override.
    `opencodeAgent` must run tasks in OpenCode's default
    formatted-output mode and must pass the captured provider session id through
    `--session` on continuation. OpenCode must relay provider stdout and stderr
@@ -293,8 +293,9 @@ Provider launcher discovery:
    `$HOME/.local`; the manifest and execution runner must resolve the same
    home-relative launcher so container recreation and host-sandbox execution
    share one persistent installation location without writing to `/usr/local`.
-   The installer must resolve `npm` from the runtime `PATH`, while preserving
-   an explicit `NPM_CLI` override for deterministic tests or operator control.
+   The installer must invoke npm through an absolute CLI path selected for the
+   container or mounted Bubblewrap Node runtime, while preserving an explicit
+   `NPM_CLI` override for deterministic tests or operator control.
 10. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent

@@ -47,9 +47,10 @@ tests or operator overrides. Installation must not write to `/usr/local`, so
 the same profile works in both writable container layers and Linux host
 sandboxes whose system paths are read-only. Because Ploinky persists the agent
 home, provider authentication, configuration, threads, and the installed CLI
-remain available after runtime recreation. The installer must resolve `npm`
-from the runtime `PATH` rather than assuming an image-specific npm CLI path;
-`NPM_CLI` remains available as an explicit test or operator override.
+remain available after runtime recreation. The installer must invoke npm
+through an absolute CLI path selected for the container or mounted Bubblewrap
+Node runtime; `NPM_CLI` remains available as an explicit test or operator
+override.
 
 Initial execution runs:
 
