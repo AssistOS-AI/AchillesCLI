@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(TEST_DIR, '..');
 
-test('AchillesCLI starts Soul Gateway before model discovery', async () => {
+test('AchillesCLI starts Soul Gateway asynchronously before model discovery', async () => {
     const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
 
     assert.ok(Array.isArray(manifest.enable));
-    assert.ok(manifest.enable.includes('proxies/soul-gateway'));
+    assert.ok(manifest.enable.includes('proxies/soul-gateway no-wait'));
 });
 
 test('AchillesCLI opts into structured WebChat envelopes', async () => {
