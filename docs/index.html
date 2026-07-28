@@ -192,6 +192,10 @@
     <code>@open-interpreter</code> remain ordinary chat text. Explorer launch metadata may add generic
     parameters such as <code>forward-envelope=1</code> and <code>workspace-dir</code>, but provider tags,
     relay tool names, and provider agent ids stay out of WebChat launch URLs.
+    The AchillesCLI IDE plugin exposes <strong>Open Copilot here</strong> both in Explorer's
+    <strong>Tools</strong> menu for the currently displayed directory and in directory context menus for
+    selected child folders. At Explorer <code>/</code>, the Tools action targets the workspace root; it
+    does not expose or navigate to the workspace parent.
   </div>
 
   <h2>Coding Agent Providers</h2>
@@ -236,7 +240,10 @@
     <code>$HOME/.config/opencode/opencode.json</code>. That config adds the OpenAI-compatible
     <code>soul-gateway</code> provider and its <code>fast</code>, <code>deep</code>, and <code>plan</code>
     models using Ploinky-injected router and agent-identity environment values; it stores no credential,
-    selects no default model, and leaves other providers available. OpenCode's
+    selects no default model, and leaves other providers available. Tasks run with <code>--auto</code>
+    so normal operations do not prompt, while the config explicitly denies
+    <code>external_directory</code>; this is an OpenCode tool-policy boundary, not an operating-system
+    filesystem sandbox. OpenCode's
     exported session data is inspected only off-stream to identify the last assistant
     answer for final-result metadata, allowing WebChat to show intermediate output in
     grey while keeping the raw visible stream unchanged.

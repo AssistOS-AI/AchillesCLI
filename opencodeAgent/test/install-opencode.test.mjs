@@ -99,6 +99,10 @@ test('config and manifest preserve runtime model selection and generated identit
     assert.equal(config.model, undefined);
     assert.equal(config.small_model, undefined);
     assert.equal(config.enabled_providers, undefined);
+    assert.deepEqual(config.permission, {
+        '*': 'allow',
+        external_directory: 'deny',
+    });
     assert.equal(provider.npm, '@ai-sdk/openai-compatible');
     assert.equal(provider.options.baseURL, '{env:PLOINKY_ROUTER_URL}/services/soul-gateway/v1');
     assert.equal(provider.options.apiKey, '{env:PLOINKY_AGENT_API_KEY}');

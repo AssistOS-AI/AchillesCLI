@@ -176,6 +176,7 @@ AchillesIDE interoperability boundary:
 2. AchillesCLI documentation must remain explicit about what is native to CLI vs what belongs to IDE/router hosts.
 3. Shared conventions (safe user output, debug gating, deterministic command behavior) must remain compatible across ecosystem tools.
 4. AchillesCLI may ship IDE menu plugins through `achilles-cli/IDE-plugins/` for workspace skill-management affordances. The `edit-skills-manifest` plugin contributes only to Explorer folder context menus, uses Explorer's existing file read/write tools, and persists `ploinky-skills-manifest.json` as a JSON array of skill repository URLs in the selected folder. It must not add new router routes, MCP tools, or privileged policy surfaces.
+5. The AchillesCLI Copilot IDE integration must expose one logical application plugin through two contributions with the shared id `achilles-cli-copilot`. The mount contribution appears in `file-exp:toolbar-plugins-dropdown` as `Open Copilot here` and launches against the displayed directory using Explorer's `currentFsPath` and `workspaceFsRoot` context. The menu contribution preserves the same action for selected directory rows under `file-exp:context-menu:directory`. Explorer `/` maps to the workspace root; neither contribution may navigate above that boundary or require a synthetic parent entry.
 
 Cross-repository invariants:
 1. No repository should assume hidden runtime side effects from another without documented contracts.
@@ -237,16 +238,20 @@ Provider launcher discovery:
    absolute CLI path selected for the container or mounted Bubblewrap Node
    runtime, while an explicit `NPM_CLI` remains a test and operator override.
    `opencodeAgent` must run tasks in OpenCode's default
-   formatted-output mode and must pass the captured provider session id through
-   `--session` on continuation. OpenCode must relay provider stdout and stderr
-   byte-for-byte to the AgentServer live-log channel without synthetic status
-   messages or stream prefixes. Its profile install hook must install the
-   current OpenCode release and then atomically replace the OpenCode config
-   under the effective runtime `HOME` with the repository-owned Soul Gateway
-   provider template before AgentServer starts. The template must reference the
-   Ploinky-injected router URL and signed agent API key through OpenCode
-   environment substitution, must add the `fast`, `deep`, and `plan` models,
-   and must not select a default model or restrict other providers. For initial
+   formatted-output mode with `--auto`, must not use
+   `--dangerously-skip-permissions`, and must pass the captured provider session
+   id through `--session` on continuation. OpenCode must relay provider stdout
+   and stderr byte-for-byte to the AgentServer live-log channel without
+   synthetic status messages or stream prefixes. Its profile install hook must
+   install the current OpenCode release and then atomically replace the
+   OpenCode config under the effective runtime `HOME` with the repository-owned
+   Soul Gateway provider template before AgentServer starts. The template must
+   reference the Ploinky-injected router URL and signed agent API key through
+   OpenCode environment substitution, must add the `fast`, `deep`, and `plan`
+   models, must set the permission catch-all to `allow`, must override
+   `external_directory` to `deny`, and must not select a default model or
+   restrict other providers. This is an OpenCode application policy rather
+   than an operating-system filesystem sandbox. For initial
    PI tasks, the provider owns model selection. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,
    read the effective `defaultProvider`, `defaultModel`, and valid
@@ -372,6 +377,11 @@ global defaults. Resolving those settings immediately before continuation and
 passing explicit CLI flags preserves the current PI selection instead of the
 older model restored from the session. Invalid settings leave PI's native
 resume selection intact.
+
+### Question #9: Why does Copilot use both a Tools entry and a directory context-menu entry?
+
+Response:
+The directory context menu is precise when a child folder row exists, but Explorer's workspace root has no selectable row. The Tools entry targets the directory currently displayed by Explorer, which makes the workspace root actionable without exposing its parent. Both surfaces share one plugin id so installation and workspace plugin policy still treat them as one AchillesCLI-owned capability.
 
 ## Conclusion
 AchillesCLI is a first-class runtime component inside a larger ecosystem; integration quality depends on explicit boundaries with Ploinky orchestration, AchillesAgentLib runtime semantics, and AchillesIDE interoperability expectations.

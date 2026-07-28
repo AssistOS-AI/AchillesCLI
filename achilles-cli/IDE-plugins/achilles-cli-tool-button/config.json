@@ -1,12 +1,13 @@
 {
-    "pluginCategory": "application",
-    "contributionType": "menu",
-    "id": "achilles-cli-copilot",
-    "component": "achilles-cli-tool-button",
-    "location": ["file-exp:context-menu:directory"],
-    "label": "Copilot",
-    "tooltip": "Open Achilles CLI Copilot from the selected file context",
-    "icon": "./icon.svg",
-    "menuModule": "menu-contributions.js",
-    "dependencies": []
+  "pluginCategory": "application",
+  "id": "achilles-cli-copilot",
+  "component": "achilles-cli-tool-button",
+  "location": ["file-exp:toolbar-plugins-dropdown"],
+  "label": "Copilot",
+  "tooltip": "Open Achilles CLI Copilot in the current folder",
+  "icon": "./icon.svg",
+  "presenter": "AchillesCliToolButton",
+  "type": "embedded",
+  "autoPin": false,
+  "dependencies": []
 }

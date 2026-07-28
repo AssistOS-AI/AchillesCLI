@@ -1,4 +1,4 @@
-import { buildCopilotUrl } from './copilot-launch.js';
+import { buildCopilotUrl } from '../achilles-cli-tool-button/copilot-launch.js';
 
 function normalizePath(value) {
     return String(value || '').trim();

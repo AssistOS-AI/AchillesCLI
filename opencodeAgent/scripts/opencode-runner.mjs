@@ -186,7 +186,7 @@ export function runOpenCode({
         const startedAt = Date.now();
         const args = [
             'run',
-            '--dangerously-skip-permissions',
+            '--auto',
         ];
         const sessionTitle = captureSession && !sessionId
             ? `ploinky-task-${randomUUID()}`

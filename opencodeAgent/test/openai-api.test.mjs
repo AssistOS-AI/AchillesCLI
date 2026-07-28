@@ -41,9 +41,11 @@ async function makeFakeOpenCodeBin(dir) {
     await fs.writeFile(binPath, `#!/usr/bin/env node
 import fs from 'node:fs';
 
+const writeStdout = (text) => fs.writeSync(1, text);
+
 if (process.argv[2] === 'session') {
     const title = fs.readFileSync(process.env.OPENCODE_TITLE_PATH, 'utf8');
-    process.stdout.write(JSON.stringify([{
+    writeStdout(JSON.stringify([{
         id: 'ses_test_resume',
         title,
         directory: process.env.OPENCODE_PROJECT_DIR
@@ -51,7 +53,7 @@ if (process.argv[2] === 'session') {
     process.exit(0);
 }
 if (process.argv[2] === 'export') {
-    process.stdout.write('Exporting session\\n' + JSON.stringify({
+    writeStdout('Exporting session\\n' + JSON.stringify({
         messages: [{
             info: { role: 'assistant' },
             parts: [{ type: 'text', text: 'fake opencode output' }]
@@ -65,14 +67,14 @@ if (titleIndex > 0) {
     fs.writeFileSync(process.env.OPENCODE_TITLE_PATH, process.argv[titleIndex + 1]);
 }
 if (titleIndex > 0 || process.argv.includes('--session')) {
-    process.stdout.write('reading repository\\n');
+    writeStdout('reading repository\\n');
 }
-process.stdout.write('fake opencode ');
+writeStdout('fake opencode ');
 await new Promise((resolve) => setTimeout(
     resolve,
     Number(process.env.FAKE_OPENCODE_WAIT_MS || 25),
 ));
-process.stdout.write('output');
+writeStdout('output');
 if (process.env.FAKE_OPENCODE_FAIL === '1') {
     process.stderr.write('insufficient credits');
     process.exitCode = 1;
@@ -131,7 +133,7 @@ test('chat completions runs OpenCode in WORKSPACE_PATH with requested model', as
     const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
     assert.deepEqual(args.slice(0, 5), [
         'run',
-        '--dangerously-skip-permissions',
+        '--auto',
         '--dir',
         workspaceDir,
         '--model',

@@ -41,23 +41,27 @@ agent returns it. Failed runs return the agent error text or an MCP failure
 message.
 
 The `opencodeAgent` task wrapper must execute OpenCode in its default formatted
-output mode. Provider stdout and stderr must be relayed byte-for-byte into the
-AgentServer live-log channel without parsing, filtering, synthetic status
-messages, or stream prefixes. An initial task must receive an unpredictable
-internal title. After execution, the wrapper must query OpenCode's session-list
-interface separately and match both that title and the resolved project
-directory to capture the provider-issued session id. It must then inspect that
-session's exported message data and select the last assistant text as the
-bounded `outputText`. Session-list and export output must not enter visible
-task logs. The wrapper stdout must be one structured result containing that
-final answer and a versioned continuation descriptor. If provider execution
-fails after OpenCode created the session, the wrapper must still persist that
-session, emit the structured descriptor, and exit unsuccessfully. TaskQueue
-retains the descriptor as result metadata for both completed and failed tasks
-while exposing `outputText` as ordinary MCP result text only on success, so
-provider session details do not enter the visible result or log. The
-OpenAI-compatible chat-completions path does not create resumable tasks and
-continues to use normal OpenCode text output.
+output mode with `--auto`. The repository-owned permission configuration must
+allow ordinary tool operations without prompting and explicitly deny
+`external_directory`, so auto mode cannot approve access outside the directory
+selected through `--dir`. The wrapper must not use
+`--dangerously-skip-permissions`. Provider stdout and stderr must be relayed
+byte-for-byte into the AgentServer live-log channel without parsing, filtering,
+synthetic status messages, or stream prefixes. An initial task must receive an
+unpredictable internal title. After execution, the wrapper must query
+OpenCode's session-list interface separately and match both that title and the
+resolved project directory to capture the provider-issued session id. It must
+then inspect that session's exported message data and select the last assistant
+text as the bounded `outputText`. Session-list and export output must not enter
+visible task logs. The wrapper stdout must be one structured result containing
+that final answer and a versioned continuation descriptor. If provider
+execution fails after OpenCode created the session, the wrapper must still
+persist that session, emit the structured descriptor, and exit unsuccessfully.
+TaskQueue retains the descriptor as result metadata for both completed and
+failed tasks while exposing `outputText` as ordinary MCP result text only on
+success, so provider session details do not enter the visible result or log.
+The OpenAI-compatible chat-completions path does not create resumable tasks and
+continues to use normal OpenCode text output with the same permission policy.
 
 Initial task execution that creates an OpenCode session must store its session
 id and resolved project directory in agent-private persistent storage behind a
@@ -147,7 +151,8 @@ the repository template. The provider must expose `fast`, `deep`, and `plan`
 as `soul-gateway/fast`, `soul-gateway/deep`, and `soul-gateway/plan`. The config
 must not set `model` or `small_model`, must not allowlist providers, and must
 therefore preserve OpenCode's existing recent-model selection and other
-configured providers.
+configured providers. Its global permission map must set `*` to `allow` and
+override `external_directory` to `deny`.
 
 The `opencodeAgent` manifest must expose AgentServer `endpoints.chatCompletions`
 and `endpoints.models` handlers. The chat-completions handler must reuse the
@@ -261,6 +266,14 @@ Response: The routed model executes through the OpenCode coding agent, so the
 umbrella tag is the relevant functional category. Tool support, vision, limits,
 and pricing remain structured descriptor fields and are not duplicated as
 routing tags.
+
+### Question #13: Why does the runner use `--auto` with an explicit external-directory denial?
+Response: Non-interactive tasks must proceed without approval prompts while
+preserving the configured denial. OpenCode auto mode approves only permission
+requests that are not explicitly denied, whereas
+`--dangerously-skip-permissions` bypasses the intended application-level
+policy. This is an OpenCode permission boundary rather than an operating-system
+filesystem sandbox.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users
