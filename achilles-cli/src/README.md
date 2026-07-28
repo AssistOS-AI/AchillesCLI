@@ -11,6 +11,8 @@ A CLI agent specialized in managing, generating, and testing skill definition fi
 - **Diff Preview** - See changes before applying them
 - **Full CRUD** - Create, read, update, delete skills
 - **Interactive REPL** - Natural language interface
+- **Workspace Sandbox** - MainAgent and Bash run through bubblewrap with only the selected workspace writable
+- **Brokered Bash Approval** - `/permissions` controls approval prompts without putting policy in the Bash skill
 
 ## Installation
 
@@ -40,13 +42,23 @@ achilles-cli "create a tskill called inventory"
 achilles-cli [options] [prompt]
 
 Options:
-  -d, --dir <path>   Working directory with skills (default: cwd)
-  -v, --verbose      Enable verbose logging
-  --fast             Use fast LLM mode (cheaper, quicker)
-  --deep             Use deep LLM mode (default, more capable)
-  -h, --help         Show help
-  --version          Show version
+  -d, --dir <path>       Sandboxed working directory (default: cwd)
+  --permissions <mode>  ask-for-approval or full-access
+  -v, --verbose          Enable verbose logging
+  --fast                 Use fast LLM mode (cheaper, quicker)
+  --deep                 Use deep LLM mode (default, more capable)
+  -h, --help             Show help
+  --version              Show version
 ```
+
+`full-access` means full Bash access inside the selected workspace. Access to
+paths outside it is not available; approvals control whether a Bash command may
+start, but never widen its filesystem sandbox.
+The Bash executor runs inside MainAgent and starts commands as ordinary child
+processes that inherit the existing sandbox; it does not create another bwrap.
+The mode selected with `/permissions` is persisted beside the selected model
+in `<workspace>/.achilles-cli/settings.json`. An explicit `--permissions`
+option overrides that saved mode for the current process without rewriting it.
 
 ### REPL Mode
 

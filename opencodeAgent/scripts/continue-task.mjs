@@ -5,7 +5,10 @@ import {
     readContinuationRecord,
     writeContinuationRecord,
 } from './continuation-store.mjs';
-import { executeOpenCodeTask } from './opencode-runner.mjs';
+import {
+    executeOpenCodeTask,
+    readRecentOpenCodeModel,
+} from './opencode-runner.mjs';
 
 async function readStdin() {
     process.stdin.setEncoding('utf8');
@@ -24,18 +27,32 @@ function parseInput(raw) {
 }
 
 async function main() {
+    const cancellation = new AbortController();
+    process.on('SIGTERM', () => cancellation.abort());
     const input = parseInput(await readStdin());
     const handle = String(input?.handle || '').trim();
     const prompt = String(input?.prompt || '').trim();
     if (!handle || !prompt) throw new Error('handle and prompt are required');
     const record = readContinuationRecord(handle);
+    const currentModel = await readRecentOpenCodeModel();
     const result = await executeOpenCodeTask({
         prompt,
         projectDir: record.projectDir,
         sessionId: record.sessionId,
+        model: currentModel.model,
+        variant: currentModel.variant,
         createProjectDir: false,
+        signal: cancellation.signal,
     });
-    if (!result.ok) throw new Error(result.error || 'OpenCode continuation failed.');
+    if (!result.ok) {
+        process.stdout.write(JSON.stringify({
+            outputText: result.outputText || '',
+            continuation: continuationDescriptor(handle),
+        }));
+        process.stderr.write(`${result.error || 'OpenCode continuation failed.'}\n`);
+        process.exitCode = 1;
+        return;
+    }
     writeContinuationRecord(handle, {
         ...record,
         sessionId: result.sessionId || record.sessionId,

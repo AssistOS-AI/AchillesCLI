@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, symlink, unlink, lstat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, symlink, unlink, lstat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { ConversationSessionStore } from '../src/lib/conversationSessionStore.mjs';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const localDependencyPath = join(repoRoot, 'node_modules', 'achillesAgentLib');
@@ -96,6 +98,108 @@ test('command catalog exposes the workspace task summary command', async () => {
     assert.equal(tasks.usage, '/tasks [count|all]');
     assert.match(tasks.description, /background task status/i);
     assert.deepEqual(tasks.argCompletions, []);
+});
+
+test('command catalog exposes named session ids only under /session resume', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?sessions=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) {
+            await unlink(localDependencyPath);
+        }
+    }
+
+    const sessionCompletions = [{
+        value: '123e4567-e89b-42d3-a456-426614174000',
+        label: 'Review authentication flow',
+        description: '123e4567-e89b-42d3-a456-426614174000 · 2026-07-23T10:00:00.000Z',
+    }];
+    const catalog = toAutocompleteCatalog({ dir: repoRoot, sessionCompletions });
+    const session = catalog.commands.find((command) => command.name === '/session');
+    const resume = session.subCommands.find((command) => command.name === 'resume');
+
+    assert.equal(catalog.commands.some((command) => command.name === '/sessions'), false);
+    assert.deepEqual(resume.argCompletions, sessionCompletions);
+});
+
+test('task action completions display task names and insert opaque task ids', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?task-actions=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) await unlink(localDependencyPath);
+    }
+    const completion = {
+        value: 'task_1234567890abcdef12345678',
+        label: 'Build the project',
+        description: 'ongoing · queued · task_1234567890abcdef12345678',
+    };
+    const catalog = toAutocompleteCatalog({
+        dir: repoRoot,
+        taskCompletions: { view: [completion], continue: [], stop: [completion] },
+    });
+    const task = catalog.commands.find((command) => command.name === '/task');
+    assert.deepEqual(task.subCommands.map((sub) => sub.name), ['view', 'continue', 'stop']);
+    assert.deepEqual(task.subCommands.find((sub) => sub.name === 'view').argCompletions, [completion]);
+    assert.deepEqual(task.subCommands.find((sub) => sub.name === 'stop').argCompletions, [completion]);
+});
+
+test('persisted sessions become named resume completions', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let buildSessionCompletions;
+    try {
+        ({ buildSessionCompletions } = await import(`../src/mcp/list-slash-commands.mjs?persisted-sessions=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) {
+            await unlink(localDependencyPath);
+        }
+    }
+
+    const tempRoot = await mkdtemp(join(tmpdir(), 'achilles-cli-session-catalog-'));
+    try {
+        const store = new ConversationSessionStore({ workingDir: tempRoot });
+        const session = store.createSession();
+        store.beginTurn({ text: 'Review authentication flow' });
+
+        const completion = buildSessionCompletions(tempRoot)
+            .find((entry) => entry.value === session.sessionId);
+        assert.equal(completion.label, 'Review authentication flow');
+        assert.match(completion.description, new RegExp(session.sessionId));
+    } finally {
+        await rm(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('command catalog exposes the workspace Bash permission command', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?permissions=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) {
+            await unlink(localDependencyPath);
+        }
+    }
+
+    const catalog = toAutocompleteCatalog({ dir: repoRoot });
+    const permissions = catalog.commands.find((command) => command.name === '/permissions');
+    assert.equal(permissions.usage, '/permissions [ask-for-approval|full-access]');
+    assert.match(permissions.description, /Bash permission mode/i);
+    assert.deepEqual(permissions.argCompletions, [
+        {
+            value: 'ask-for-approval',
+            label: 'ask-for-approval',
+            description: 'Ask before each new Bash command',
+        },
+        {
+            value: 'full-access',
+            label: 'full-access',
+            description: 'Run Bash automatically inside the current workspace',
+        },
+    ]);
 });
 
 test('command catalog exposes Soul Gateway models only as /model arguments', async () => {

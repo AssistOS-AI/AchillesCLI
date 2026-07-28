@@ -35,6 +35,9 @@ Model selection behavior:
 4. Selectable model names are loaded from the authenticated local Soul Gateway `GET /base-agent-additional-server/soul-gateway/7000/v1/models` route. AchillesCLI uses its generated Ploinky agent identity and must not expose that credential to WebChat.
 5. Model aliases reported only as Soul Gateway compatibility aliases are excluded, while direct models and named cascades remain selectable.
 6. The current hosted Soul Gateway fallback through an explicit `SOUL_GATEWAY_API_KEY` is temporary and not canonical AchillesCLI model strategy. It exists only for the migration period in which `soul.axiologic.dev` is still required; the canonical future path is AchillesAgentLib using generated Ploinky credentials against the local Soul Gateway deployment.
+7. AchillesCLI must decorate AchillesAgentLib's standard invoker with the explicit `soul_gateway` provider key for every LLM call while preserving the requested model identifier byte-for-byte.
+8. An explicitly selected model must not require a matching entry in AchillesAgentLib's process-local model snapshot before it can be forwarded. Soul Gateway remains responsible for validating model existence, routing, and caller authorization.
+9. The decorated invoker must preserve the standard invoker's supported-model, catalog, last-invocation, and description helpers so existing AchillesAgentLib introspection behavior remains available.
 
 Task metadata requirements:
 1. Routing-sensitive operations must carry explicit tags.
@@ -61,6 +64,11 @@ Soul Gateway can expose hundreds of direct models and cascades, but the minimal 
 
 Response:
 The header is a view of the current workspace configuration. AchillesCLI can read that value deterministically before any request and immediately after a slash-command change, while an effective cascade leaf belongs to one provider response and may differ between internal calls. Publishing the persisted selection keeps the UI useful without introducing per-message model metadata or requiring WebChat to understand Soul Gateway routing.
+
+### Question #4: Why does AchillesCLI provide an explicit Soul Gateway invoker?
+
+Response:
+The selectable catalog is a user-interface and automatic-selection aid, not a client-side model allowlist. Agent-backed model identifiers may contain repository, agent, provider, and model segments and may appear after an AchillesCLI process has initialized its local catalog snapshot. Supplying `providerKey: soul_gateway` at the central invoker boundary lets AchillesAgentLib select the transport adapter, base URL, and credential while forwarding the opaque model identifier unchanged. Soul Gateway then applies its current catalog and authorization policy without requiring WebChat refreshes or AchillesCLI process restarts.
 
 ## Conclusion
 All LLM execution in AchillesCLI must remain centralized through `LLMAgent`, governed by explicit tier/model policy, and controllable through workspace-aware runtime commands.

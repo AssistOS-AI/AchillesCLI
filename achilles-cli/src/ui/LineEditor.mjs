@@ -19,6 +19,7 @@
 
 import { copyToClipboard, pasteFromClipboard } from '../lib/clipboard.mjs';
 import { baseTheme } from './themes/base.mjs';
+import { getTerminalSize } from './terminalSize.mjs';
 
 // ANSI escape codes for terminal control (not theme-dependent)
 const ANSI = {
@@ -414,7 +415,7 @@ export class LineEditor {
 
         // If there's a right hint, display it
         if (this.rightHint) {
-            const cols = process.stdout.columns || 80;
+            const cols = getTerminalSize(this.stream).columns;
             const contentLen = visiblePromptLen + this.buffer.length;
             const hintLen = this.rightHint.replace(/\x1b\[[0-9;]*m/g, '').length;
 
@@ -435,18 +436,21 @@ export class LineEditor {
      * Render with a box around the input
      */
     _renderBoxed() {
-        const cols = process.stdout.columns || 80;
+        const cols = getTerminalSize(this.stream).columns;
         const { gray, reset } = this.colors;
         const { topLeft, topRight, bottomLeft, bottomRight, horizontal, vertical } = this.box;
 
         // Calculate visible lengths (strip ANSI codes)
         const visiblePromptLen = this.prompt.replace(/\x1b\[[0-9;]*m/g, '').length;
-        const hintLen = this.rightHint.replace(/\x1b\[[0-9;]*m/g, '').length;
+        const fullHintLen = this.rightHint.replace(/\x1b\[[0-9;]*m/g, '').length;
+        const showHint = fullHintLen > 0 && cols - 4 - visiblePromptLen - fullHintLen >= 12;
+        const displayedHint = showHint ? this.rightHint : '';
+        const hintLen = showHint ? fullHintLen : 0;
 
         // Layout for middle line: │ {prompt}{content}{hint} │
         // = 1 (│) + 1 (space) + prompt + content + hint + 1 (space) + 1 (│)
         // = 4 + prompt + content + hint = cols
-        const contentAreaWidth = cols - 4 - visiblePromptLen - hintLen;
+        const contentAreaWidth = Math.max(1, cols - 4 - visiblePromptLen - hintLen);
         // Horizontal line width (between corners) = cols - 2
         const horizontalWidth = cols - 2;
         const horizontalLine = horizontal.repeat(horizontalWidth);
@@ -472,7 +476,7 @@ export class LineEditor {
             output += `${gray}${vertical}${reset} `;
             output += this.prompt;
             output += paddedBuffer;
-            output += this.rightHint;
+            output += displayedHint;
             output += ` ${gray}${vertical}${reset}\n`;
             output += `${gray}${bottomLeft}${horizontalLine}${bottomRight}${reset}`;
             // Move cursor back up to content line
@@ -484,17 +488,25 @@ export class LineEditor {
             output += `${gray}${vertical}${reset} `;
             output += this.prompt;
             output += paddedBuffer;
-            output += this.rightHint;
+            output += displayedHint;
             output += ` ${gray}${vertical}${reset}`;
         }
 
         // Position cursor within the content line
         const cursorInBuffer = this.cursorPos - bufferOffset;
-        const cursorColumn = 2 + visiblePromptLen + cursorInBuffer + 1;
+        const cursorColumn = Math.min(cols - 1, 2 + visiblePromptLen + cursorInBuffer + 1);
         output += ANSI.MOVE_TO_COL(cursorColumn);
 
         // Single write to avoid flickering
         this.stream.write(output);
+    }
+
+    /** Redraw the complete editor after terminal dimensions change. */
+    redraw() {
+        if (this.boxed && this.boxDrawn) {
+            this.clearBox();
+        }
+        this.render();
     }
 
     /**

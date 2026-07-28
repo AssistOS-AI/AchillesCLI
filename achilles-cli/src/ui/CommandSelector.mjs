@@ -1,5 +1,6 @@
 import readline from 'node:readline';
 import { baseTheme, terminal } from './themes/base.mjs';
+import { getTerminalSize } from './terminalSize.mjs';
 
 /**
  * Terminal control sequences (not theme-dependent)
@@ -12,6 +13,53 @@ const TERMINAL = {
     MOVE_DOWN: terminal.moveDown,
     MOVE_TO_COL: terminal.moveToCol,
 };
+
+function terminalWidth(stream = process.stdout) {
+    return getTerminalSize(stream).columns;
+}
+
+function visibleLength(value) {
+    return String(value || '').replace(/\x1b\[[0-9;]*m/g, '').length;
+}
+
+function truncateText(value, width) {
+    const text = String(value || '');
+    if (width <= 0) return '';
+    if (text.length <= width) return text;
+    if (width === 1) return '…';
+    return `${text.slice(0, width - 1)}…`;
+}
+
+export function listenForResize(render, stream = process.stdout, {
+    pollIntervalMs = 100,
+    setIntervalFn = setInterval,
+    clearIntervalFn = clearInterval,
+} = {}) {
+    let { columns: lastColumns, rows: lastRows } = getTerminalSize(stream);
+    const redrawIfDimensionsChanged = () => {
+        try { stream._refreshSize?.(); } catch {}
+        const { columns, rows } = getTerminalSize(stream);
+        if (columns === lastColumns && rows === lastRows) return;
+        lastColumns = columns;
+        lastRows = rows;
+        render();
+    };
+    const handleResize = () => {
+        ({ columns: lastColumns, rows: lastRows } = getTerminalSize(stream));
+        render();
+    };
+    stream.on('resize', handleResize);
+    const resizePoll = setIntervalFn(redrawIfDimensionsChanged, pollIntervalMs);
+    resizePoll?.unref?.();
+    return () => {
+        stream.removeListener('resize', handleResize);
+        clearIntervalFn(resizePoll);
+    };
+}
+
+export function createCommandSelection(selected) {
+    return selected ? { ...selected, args: '' } : null;
+}
 
 /**
  * CommandSelector - Interactive command picker with arrow key navigation
@@ -46,7 +94,7 @@ export class CommandSelector {
         this.filter = input.toLowerCase();
         const matches = this.commands.filter(cmd =>
             cmd.name.toLowerCase().includes(this.filter) ||
-            cmd.description.toLowerCase().includes(this.filter)
+            String(cmd.description || '').toLowerCase().includes(this.filter)
         );
 
         // Sort by match quality: exact > prefix > contains
@@ -103,7 +151,7 @@ export class CommandSelector {
     /**
      * Render the command list to a string array (Claude Code style)
      */
-    render() {
+    render(width = terminalWidth()) {
         const { gray, reset, cyan, magenta } = this.colors;
         const lines = [];
         const visible = this.filteredCommands.slice(
@@ -122,14 +170,18 @@ export class CommandSelector {
 
             // Claude Code style: selected item has ❯ prefix and cyan highlight
             const prefix = isSelected ? `${magenta}❯${reset}` : ' ';
-            // Pad the raw name before applying colors (ANSI codes would break padEnd calculation)
-            const paddedCmdName = cmd.name.padEnd(16);
+            const chromeWidth = 3; // leading space, selector glyph, separating space
+            const availableWidth = Math.max(1, width - chromeWidth);
+            const preferredNameWidth = Math.max(8, Math.floor(availableWidth * 0.4));
+            const nameWidth = Math.min(32, availableWidth, preferredNameWidth);
+            const descriptionWidth = Math.max(0, availableWidth - nameWidth);
+            const paddedCmdName = truncateText(cmd.name, nameWidth).padEnd(nameWidth);
             const name = isSelected
                 ? `${cyan}${paddedCmdName}${reset}`
                 : `${reset}${paddedCmdName}`;
-            const desc = `${gray}${cmd.description}${reset}`;
+            const desc = `${gray}${truncateText(cmd.description, descriptionWidth)}${reset}`;
 
-            // Two-column layout: command name (16 chars) + description
+            // Two-column layout constrained to the current terminal width.
             lines.push(` ${prefix} ${name}${desc}`);
         });
 
@@ -178,7 +230,7 @@ export async function showCommandSelector(commands, options = {}) {
     } = options;
 
     // Calculate visible prompt length for cursor positioning
-    const visiblePromptLen = 4; // "> /" = 4 chars
+    const visiblePromptLen = visibleLength(prompt);
 
     return new Promise((resolve) => {
         const selector = new CommandSelector(commands, { ...options, maxVisible, theme });
@@ -219,11 +271,11 @@ export async function showCommandSelector(commands, options = {}) {
             output += `${prompt}${currentInput}`;
 
             // Horizontal separator line
-            const cols = process.stdout.columns || 80;
+            const cols = terminalWidth();
             output += `\n${colors.gray}${'─'.repeat(cols)}${colors.reset}`;
 
             // Render command list below
-            const lines = selector.render();
+            const lines = selector.render(terminalWidth());
             lines.forEach(line => {
                 output += `\n${TERMINAL.CLEAR_LINE}${line}`;
             });
@@ -245,7 +297,9 @@ export async function showCommandSelector(commands, options = {}) {
             process.stdout.write(output);
         };
 
+        const stopResizeListener = listenForResize(render);
         const cleanup = () => {
+            stopResizeListener();
             // Batch the clear and cursor show in a single write
             process.stdout.write(clearDisplay() + TERMINAL.SHOW_CURSOR);
             process.stdin.setRawMode(false);
@@ -275,7 +329,7 @@ export async function showCommandSelector(commands, options = {}) {
                 const selected = selector.getSelected();
                 cleanup();
                 if (selected) {
-                    resolve({ name: selected.name, args: '', needsSkillArg: selected.needsSkillArg, needsRepoArg: selected.needsRepoArg, hasSubOptions: selected.hasSubOptions, subOptions: selected.subOptions });
+                    resolve(createCommandSelection(selected));
                 } else {
                     resolve(null);
                 }
@@ -308,7 +362,7 @@ export async function showCommandSelector(commands, options = {}) {
                 const selected = selector.getSelected();
                 if (selected) {
                     cleanup();
-                    resolve({ name: selected.name, args: '', needsSkillArg: selected.needsSkillArg, needsRepoArg: selected.needsRepoArg, hasSubOptions: selected.hasSubOptions, subOptions: selected.subOptions });
+                    resolve(createCommandSelection(selected));
                 }
                 return;
             }
@@ -338,6 +392,10 @@ export function buildCommandList(commandDefs) {
     const commands = [];
 
     for (const [name, def] of Object.entries(commandDefs)) {
+        const subOptions = [
+            ...(Array.isArray(def.subOptions) ? def.subOptions : []),
+            ...(Array.isArray(def.catalogSubOptions) ? def.catalogSubOptions : []),
+        ];
         commands.push({
             name: `/${name}`,
             description: def.description,
@@ -345,8 +403,8 @@ export function buildCommandList(commandDefs) {
             skill: def.skill || null,
             needsSkillArg: def.needsSkillArg || false,
             needsRepoArg: def.needsRepoArg || false,
-            hasSubOptions: Array.isArray(def.subOptions) && def.subOptions.length > 0,
-            subOptions: def.subOptions || null,
+            hasSubOptions: subOptions.length > 0,
+            subOptions: subOptions.length > 0 ? subOptions : null,
         });
     }
 
@@ -370,6 +428,7 @@ export async function buildSubOptionList(command, subOptions) {
         description: subDefs[opt]?.description || opt,
         usage: subDefs[opt]?.usage || `/${command} ${opt}`,
         skill: subDefs[opt]?.skill || null,
+        args: subDefs[opt]?.args || 'optional',
         needsSkillArg: subDefs[opt]?.needsSkillArg || false,
     }));
 }
@@ -431,7 +490,7 @@ export async function showSkillSelector(skills, options = {}) {
 
             output += `${prompt}${currentInput}`;
 
-            const lines = selector.render();
+            const lines = selector.render(terminalWidth());
             lines.forEach(line => {
                 output += `\n${TERMINAL.CLEAR_LINE}${line}`;
             });
@@ -449,7 +508,9 @@ export async function showSkillSelector(skills, options = {}) {
             process.stdout.write(output);
         };
 
+        const stopResizeListener = listenForResize(render);
         const cleanup = () => {
+            stopResizeListener();
             // Batch the clear and cursor show in a single write
             process.stdout.write(clearDisplay() + TERMINAL.SHOW_CURSOR);
             process.stdin.setRawMode(false);
@@ -581,7 +642,7 @@ export async function showTestSelector(tests, options = {}) {
 
             output += `${prompt}${currentInput}`;
 
-            const lines = selector.render();
+            const lines = selector.render(terminalWidth());
             lines.forEach(line => {
                 output += `\n${TERMINAL.CLEAR_LINE}${line}`;
             });
@@ -599,7 +660,9 @@ export async function showTestSelector(tests, options = {}) {
             process.stdout.write(output);
         };
 
+        const stopResizeListener = listenForResize(render);
         const cleanup = () => {
+            stopResizeListener();
             // Batch the clear and cursor show in a single write
             process.stdout.write(clearDisplay() + TERMINAL.SHOW_CURSOR);
             process.stdin.setRawMode(false);
@@ -749,7 +812,7 @@ export async function showHelpSelector(topics, options = {}) {
 
             output += `${prompt}${currentInput}`;
 
-            const lines = selector.render();
+            const lines = selector.render(terminalWidth());
             lines.forEach(line => {
                 output += `\n${TERMINAL.CLEAR_LINE}${line}`;
             });
@@ -767,7 +830,9 @@ export async function showHelpSelector(topics, options = {}) {
             process.stdout.write(output);
         };
 
+        const stopResizeListener = listenForResize(render);
         const cleanup = () => {
+            stopResizeListener();
             // Batch the clear and cursor show in a single write
             process.stdout.write(clearDisplay() + TERMINAL.SHOW_CURSOR);
             process.stdin.setRawMode(false);
@@ -917,7 +982,7 @@ export async function showRepoSelector(repos, options = {}) {
 
             output += `${prompt}${currentInput}`;
 
-            const lines = selector.render();
+            const lines = selector.render(terminalWidth());
             lines.forEach(line => {
                 output += `\n${TERMINAL.CLEAR_LINE}${line}`;
             });
@@ -935,7 +1000,9 @@ export async function showRepoSelector(repos, options = {}) {
             process.stdout.write(output);
         };
 
+        const stopResizeListener = listenForResize(render);
         const cleanup = () => {
+            stopResizeListener();
             // Batch the clear and cursor show in a single write
             process.stdout.write(clearDisplay() + TERMINAL.SHOW_CURSOR);
             process.stdin.setRawMode(false);
@@ -1043,7 +1110,7 @@ export async function showTierSelector(tiers, currentTier, options = {}) {
     });
 
     // Calculate visible prompt length for cursor positioning
-    const visiblePromptLen = 8; // "> tier: " = 8 chars
+    const visiblePromptLen = visibleLength(prompt);
 
     return new Promise((resolve) => {
         const selector = new CommandSelector(tierItems, { maxVisible, theme });
@@ -1077,10 +1144,10 @@ export async function showTierSelector(tiers, currentTier, options = {}) {
             let output = clearDisplay();
             output += `${prompt}${currentInput}`;
 
-            const cols = process.stdout.columns || 80;
+            const cols = terminalWidth();
             output += `\n${colors.gray}${'─'.repeat(cols)}${colors.reset}`;
 
-            const lines = selector.render();
+            const lines = selector.render(terminalWidth());
             lines.forEach(line => {
                 output += `\n${TERMINAL.CLEAR_LINE}${line}`;
             });
@@ -1098,7 +1165,9 @@ export async function showTierSelector(tiers, currentTier, options = {}) {
             process.stdout.write(output);
         };
 
+        const stopResizeListener = listenForResize(render);
         const cleanup = () => {
+            stopResizeListener();
             process.stdout.write(clearDisplay() + TERMINAL.SHOW_CURSOR);
             process.stdin.setRawMode(false);
             process.stdin.removeListener('data', handleKey);
@@ -1205,7 +1274,7 @@ export async function showModelSelector(catalog, options = {}) {
     }
 
     // Calculate visible prompt length for cursor positioning
-    const visiblePromptLen = 9; // "> model: " = 9 chars
+    const visiblePromptLen = visibleLength(prompt);
 
     return new Promise((resolve) => {
         const selector = new CommandSelector(modelItems, { maxVisible, theme });
@@ -1233,10 +1302,10 @@ export async function showModelSelector(catalog, options = {}) {
             let output = clearDisplay();
             output += `${prompt}${currentInput}`;
 
-            const cols = process.stdout.columns || 80;
+            const cols = terminalWidth();
             output += `\n${colors.gray}${'─'.repeat(cols)}${colors.reset}`;
 
-            const lines = selector.render();
+            const lines = selector.render(terminalWidth());
             lines.forEach(line => {
                 output += `\n${TERMINAL.CLEAR_LINE}${line}`;
             });
@@ -1254,7 +1323,9 @@ export async function showModelSelector(catalog, options = {}) {
             process.stdout.write(output);
         };
 
+        const stopResizeListener = listenForResize(render);
         const cleanup = () => {
+            stopResizeListener();
             process.stdout.write(clearDisplay() + TERMINAL.SHOW_CURSOR);
             process.stdin.setRawMode(false);
             process.stdin.removeListener('data', handleKey);

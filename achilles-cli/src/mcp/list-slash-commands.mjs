@@ -7,11 +7,26 @@ import { discoverSkills, discoverSkillsFromRoot } from 'achillesAgentLib/MainAge
 import { parseSkillDocument } from 'achillesAgentLib/utils/skillDocumentParser.mjs';
 import { buildSlashCommandCatalog } from '../repl/SlashCommandHandler.mjs';
 import { getSelectedModel } from '../lib/achillesSettings.mjs';
+import { ConversationSessionStore } from '../lib/conversationSessionStore.mjs';
+import { buildTaskCompletions } from '../lib/workspaceTasks.mjs';
 import { loadSoulGatewayModels, toModelCompletions } from '../lib/soulGatewayModels.mjs';
+import { PERMISSION_MODES } from '../permissions/protocol.mjs';
 
 const OPTIONAL_SKILL_ARG_COMMANDS = new Set(['/test', '/run-tests']);
 const NOOP_LOGGER = { debug() {}, warn() {}, info() {}, log() {}, error() {} };
 const BUILT_IN_SKILLS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'skills');
+const PERMISSION_MODE_COMPLETIONS = Object.freeze([
+    {
+        value: PERMISSION_MODES.ASK,
+        label: PERMISSION_MODES.ASK,
+        description: 'Ask before each new Bash command',
+    },
+    {
+        value: PERMISSION_MODES.FULL,
+        label: PERMISSION_MODES.FULL,
+        description: 'Run Bash automatically inside the current workspace',
+    },
+]);
 
 function normalizeHelpText(value) {
     return String(value || '')
@@ -119,9 +134,35 @@ function commandUsesSkillArgument(command) {
     return Boolean(command?.needsSkillArg) || OPTIONAL_SKILL_ARG_COMMANDS.has(command?.name);
 }
 
+export function buildSessionCompletions(dir) {
+    if (!dir) return [];
+    try {
+        const payload = new ConversationSessionStore({ workingDir: dir }).listSessions();
+        return payload.sessions.map((session) => ({
+            value: session.sessionId,
+            label: session.preview || 'New session',
+            description: [
+                session.sessionId === payload.currentSessionId ? 'Current session' : '',
+                session.sessionId,
+                session.updatedAt,
+            ].filter(Boolean).join(' · '),
+        }));
+    } catch {
+        return [];
+    }
+}
+
+export function buildTaskActionCompletions(dir, action) {
+    if (!dir) return [];
+    try { return buildTaskCompletions(dir, action); } catch { return []; }
+}
+
 function buildArgCompletions(command, skillCompletions, modelCompletions) {
     if (command?.name === '/model') {
         return modelCompletions;
+    }
+    if (command?.name === '/permissions') {
+        return PERMISSION_MODE_COMPLETIONS;
     }
     if (!commandUsesSkillArgument(command)) {
         return [];
@@ -140,6 +181,12 @@ export function toAutocompleteCatalog(options = {}) {
     const modelCompletions = Array.isArray(options.modelCompletions)
         ? options.modelCompletions
         : [];
+    const sessionCompletions = Array.isArray(options.sessionCompletions)
+        ? options.sessionCompletions
+        : [];
+    const taskCompletions = options.taskCompletions && typeof options.taskCompletions === 'object'
+        ? options.taskCompletions
+        : {};
     const commands = buildSlashCommandCatalog().map((command) => ({
         name: command.name,
         usage: command.usage,
@@ -147,12 +194,20 @@ export function toAutocompleteCatalog(options = {}) {
         argMatchMode: command.argMatchMode,
         argSuggestionLimit: command.argSuggestionLimit,
         subCommands: Array.isArray(command.subCommands)
-            ? command.subCommands.map((subCommand) => ({
-                name: subCommand.name,
-                usage: subCommand.usage,
-                description: subCommand.description,
-                argCompletions: subCommand.needsSkillArg ? skillCompletions : [],
-            }))
+            ? command.subCommands.map((subCommand) => {
+                const isSessionResume = command.name === '/session' && subCommand.name === 'resume';
+                const isTaskAction = command.name === '/task';
+                return {
+                    name: subCommand.name,
+                    usage: subCommand.usage,
+                    description: subCommand.description,
+                    argCompletions: isSessionResume
+                        ? sessionCompletions
+                        : (isTaskAction
+                            ? (taskCompletions[subCommand.name] || [])
+                            : (subCommand.needsSkillArg ? skillCompletions : [])),
+                };
+            })
             : [],
         argCompletions: buildArgCompletions(command, skillCompletions, modelCompletions),
     }));
@@ -175,6 +230,12 @@ export async function loadAutocompleteCatalog(options = {}) {
     return toAutocompleteCatalog({
         ...options,
         modelCompletions: toModelCompletions(models),
+        sessionCompletions: buildSessionCompletions(options.dir),
+        taskCompletions: {
+            view: buildTaskActionCompletions(options.dir, 'view'),
+            continue: buildTaskActionCompletions(options.dir, 'continue'),
+            stop: buildTaskActionCompletions(options.dir, 'stop'),
+        },
     });
 }
 

@@ -1,10 +1,10 @@
 # Bash
 
 ## Summary
-Execute shell commands with tiered permission controls.
+Execute a command inside MainAgent's existing workspace sandbox.
 
 ## Description
-Use this when the user asks to run a shell command in the current workspace. Commands are parsed into executable and arguments, classified for risk, and run with `shell: false`. Dangerous commands require explicit confirmation and blocked patterns are refused.
+Use this when the user asks to run a shell command. The skill only parses the executable and arguments and delegates execution to the local executor inside MainAgent's existing sandbox. Permission mode and user approval are controlled by the external Supervisor and `/permissions`; workspace confinement is inherited from MainAgent.
 
 ## Help
 Input: command text exactly as it should be run, or JSON with `command`.
@@ -30,20 +30,11 @@ JSON command:
 ```
 
 ## Output Format
-Returns stdout text. If stderr, non-zero exit code, timeout, or denial occurs, the response includes a readable error or status message.
+Returns stdout text. If stderr, non-zero exit code, timeout, pending approval, or denial occurs, the response includes a readable status message.
 
 ## Constraints
-- Commands execute with `spawnSync` and `shell: false`.
-- Blocked destructive patterns are refused.
-- Dangerous or caution commands require permission unless bash permissions are skipped.
-- Timeout defaults to 30 seconds.
-- Output is limited to 1MB.
-
-## Risk Tiers
-
-| Tier | Example Commands | Behavior |
-|------|------------------|----------|
-| Blocked | rm -rf /, fork bombs | Refused entirely |
-| Dangerous | rm, chmod, kill | Red warning, "yes" required |
-| Caution | mv, sed -i | Yellow warning, confirmation |
-| Normal | ls, cat, grep | Standard permission |
+- The skill contains no approval prompts, risk classifier, allowlist, or denial memory.
+- Commands execute without a shell; pipes, redirections, and shell operators are not interpreted.
+- Glob expansion is applied before the structured command is sent to the local executor.
+- The local executor is mandatory and fails closed when unavailable.
+- `/permissions` controls only Bash execution; other skills are unaffected.

@@ -15,7 +15,7 @@ import {
     setSelectedModel,
 } from '../src/lib/achillesSettings.mjs';
 
-test('runtime-state envelope exposes only the explicitly selected settings model', () => {
+test('runtime-state envelope exposes only the selected model', () => {
     assert.deepEqual(createWebchatRuntimeStateEnvelope('  provider/deep  '), {
         __webchatRuntimeState: 1,
         version: 1,
@@ -28,8 +28,13 @@ test('runtime-state envelope exposes only the explicitly selected settings model
     });
 
     const writes = [];
-    emitWebchatRuntimeState('deep', { write: (value) => writes.push(value) });
-    assert.equal(writes[0], '{"__webchatRuntimeState":1,"version":1,"model":"deep"}\n');
+    emitWebchatRuntimeState('deep', {
+        write: (value) => writes.push(value),
+    });
+    assert.equal(
+        writes[0],
+        '{"__webchatRuntimeState":1,"version":1,"model":"deep"}\n',
+    );
 });
 
 test('/model persistence is read back before publishing the WebChat runtime state', (t) => {

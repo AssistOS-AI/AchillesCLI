@@ -17,7 +17,9 @@ export function createWebchatRuntimeStateEnvelope(model) {
     };
 }
 
-export function emitWebchatRuntimeState(model, { write } = {}) {
+export function emitWebchatRuntimeState(model, {
+    write,
+} = {}) {
     const output = typeof write === 'function'
         ? write
         : (value) => process.stdout.write(value);

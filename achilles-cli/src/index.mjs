@@ -5,8 +5,9 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { MainAgent, SecuritySupervisor, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
+import { MainAgent, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
 import { LLMAgent } from 'achillesAgentLib/LLMAgents';
+import { defaultLLMInvokerStrategy } from 'achillesAgentLib/utils/LLMClient.mjs';
 import { IOServices } from 'achillesAgentLib';
 import { HistoryManager } from './repl/HistoryManager.mjs';
 import { CommandSelector, showCommandSelector, showSkillSelector, buildCommandList } from './ui/CommandSelector.mjs';
@@ -21,15 +22,21 @@ import { BUILT_IN_SKILLS, TIERS } from './lib/constants.mjs';
 import { buildOrchestratorSystemPrompt } from './prompts/orchestrator-prompt.mjs';
 import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
-import { normalizeWebchatMessage } from './lib/webchatEnvelope.mjs';
+import {
+    isWebchatMessageEnvelope,
+    normalizeWebchatMessage,
+    shouldEmitWebchatOutput,
+} from './lib/webchatEnvelope.mjs';
 import { formatWebchatError } from './lib/webchatError.mjs';
 import { materializeWebchatContext } from './lib/webchatResources.mjs';
+import { createWebchatWorkspaceFileIndex } from './lib/webchatWorkspaceFiles.mjs';
 import { startIntroSkill, startWebchatIntroSkill } from './lib/introSkillBoot.mjs';
 import {
     drainWorkspaceSkillsRefresh,
     installWorkspaceSkillRefreshHook,
     refreshWorkspaceSkillsNow,
 } from './lib/workspaceSkillRefresh.mjs';
+import { appendRecoveringTask, runBoundedCleanup } from './lib/webchatTurnQueue.mjs';
 import { AkuMemoryAdapter } from './lib/akuMemory/AkuMemoryAdapter.mjs';
 import { buildAKUPlanningPacket } from './lib/akuMemory/akuPlanningPacket.mjs';
 import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMemory/akuContextFormatter.mjs';
@@ -40,8 +47,33 @@ import {
     emitWebchatRuntimeState,
     selectWebchatRuntimeModel,
 } from './lib/webchatRuntimeState.mjs';
-import { formatWorkspaceTaskSummary } from './lib/workspaceTasks.mjs';
+import {
+    buildTaskCompletions,
+    formatWorkspaceTaskDetail,
+    formatWorkspaceTaskSummary,
+} from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
+import {
+    buildConversationInitialHistory,
+    ConversationSessionStore,
+} from './lib/conversationSessionStore.mjs';
+import {
+    createCurrentSessionEnvelope,
+    createSelectedSessionEnvelope,
+    createSessionListEnvelope,
+    emitWebchatSessionEnvelope,
+} from './lib/webchatSessionState.mjs';
+import { createSoulGatewayInvoker } from './lib/soulGatewayInvoker.mjs';
+import { BrokerClient } from './permissions/BrokerClient.mjs';
+import { BashSecuritySupervisor } from './permissions/BashSecuritySupervisor.mjs';
+import { createBashExecutor } from './permissions/LocalBashExecutor.mjs';
+import { setPersistedBrokerPermissionMode } from './permissions/PersistedPermissionMode.mjs';
+import {
+    approvalDecisionFromInteractionOption,
+    normalizePermissionMode,
+    parseWebchatInteractionResponse,
+    PERMISSION_MODES,
+} from './permissions/protocol.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,7 +124,7 @@ async function main() {
     let selectedModel = null;
     let renderMarkdown = true;
     let uiStyle = process.env.ACHILLES_CLI_UI || 'claude-code'; // Default UI style
-    let skipBashPermissions = false; // Skip bash command permission prompts
+    let requestedPermissionMode = null;
     const cliSkillRoots = []; // Skill roots from --skill-root flags
 
     for (let i = 0; i < args.length; i++) {
@@ -142,7 +174,18 @@ async function main() {
             console.log('achilles-cli v3.0.0');
             process.exit(0);
         } else if (arg === '--skip-permissions') {
-            skipBashPermissions = true;
+            requestedPermissionMode = PERMISSION_MODES.FULL;
+        } else if (arg === '--permissions') {
+            requestedPermissionMode = normalizePermissionMode(args[i + 1]);
+            if (!requestedPermissionMode) {
+                throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
+            }
+            i += 1;
+        } else if (arg.startsWith('--permissions=')) {
+            requestedPermissionMode = normalizePermissionMode(arg.slice('--permissions='.length));
+            if (!requestedPermissionMode) {
+                throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
+            }
         } else if (!arg.startsWith('-')) {
             // Collect remaining args as the prompt
             prompt = args.slice(i).join(' ');
@@ -206,36 +249,64 @@ async function main() {
         logger.log(`Additional skill roots: ${[...cliSkillRoots, ...nodeModulesSkillRoots, ...ploinkyRepoSkillRoots].join(', ')}`);
     }
 
-    const supervisor = webchatRuntime ? new WebchatProgressSupervisor() : null;
-
-    // Initialize MainAgent with all skill roots
-    const agent = new MainAgent({
-        startDir: workingDir,
-        ...(supervisor ? { supervisor } : {}),
-        llmAgentOptions: {
-            name: 'achilles-cli-agent',
-        },
+    const controlTokenPath = path.join(path.dirname(process.env.ACHILLES_BROKER_SOCKET || ''), 'control-token');
+    let controlToken = null;
+    try {
+        controlToken = fs.readFileSync(controlTokenPath, 'utf8').trim();
+        fs.unlinkSync(controlTokenPath);
+    } catch {
+        // The control client remains fail-closed when the bootstrap capability is unavailable.
+    }
+    const brokerClient = new BrokerClient();
+    const permissionControlClient = new BrokerClient({ controlToken });
+    if (!brokerClient.available) {
+        throw new Error('Achilles Broker connection is unavailable. Refusing to start an unsandboxed MainAgent.');
+    }
+    const supervisor = new BashSecuritySupervisor({
+        brokerClient,
         logger,
+        outputWriter: webchatRuntime ? createWebchatProgressOutputWriter() : null,
+    });
+    const bashExecutor = createBashExecutor({ cwd: workingDir });
+    if (requestedPermissionMode) {
+        await permissionControlClient.setMode(requestedPermissionMode);
+    }
+    const getPermissions = async () => (await permissionControlClient.getMode()).mode;
+    const setPermissions = async (mode) => setPersistedBrokerPermissionMode({
+        permissionControlClient,
+        workingDir,
+        mode,
     });
 
-    registerSkillRoots(agent, allSkillRoots, logger);
-    installWorkspaceSkillRefreshHook(agent);
-
-    // Set up I/O (LLMAgent API fallback to global IOServices)
     const inputReader = createCliInputReader();
     const outputWriter = webchatRuntime
         ? createSilentOutputWriter()
         : createCliOutputWriter();
-    if (typeof agent.llmAgent?.setInputReader === 'function') {
-        agent.llmAgent.setInputReader(inputReader);
-    } else {
-        IOServices.setInputReader(inputReader);
-    }
-    if (typeof agent.llmAgent?.setOutputWriter === 'function') {
-        agent.llmAgent.setOutputWriter(outputWriter);
-    } else {
-        IOServices.setOutputWriter(outputWriter);
-    }
+    const createConfiguredAgent = () => {
+        const configuredAgent = new MainAgent({
+            startDir: workingDir,
+            supervisor,
+            llmAgentOptions: {
+                name: 'achilles-cli-agent',
+                invokerStrategy: createSoulGatewayInvoker(defaultLLMInvokerStrategy),
+            },
+            logger,
+        });
+        registerSkillRoots(configuredAgent, allSkillRoots, logger);
+        installWorkspaceSkillRefreshHook(configuredAgent);
+        if (typeof configuredAgent.llmAgent?.setInputReader === 'function') {
+            configuredAgent.llmAgent.setInputReader(inputReader);
+        } else {
+            IOServices.setInputReader(inputReader);
+        }
+        if (typeof configuredAgent.llmAgent?.setOutputWriter === 'function') {
+            configuredAgent.llmAgent.setOutputWriter(outputWriter);
+        } else {
+            IOServices.setOutputWriter(outputWriter);
+        }
+        return configuredAgent;
+    };
+    const agent = createConfiguredAgent();
 
     // Initialize UI provider based on selected style
     try {
@@ -251,6 +322,22 @@ async function main() {
 
     if (prompt) {
         // Single-shot mode: execute prompt and exit
+        const sessionStore = new ConversationSessionStore({ workingDir });
+        let currentConversation = sessionStore.ensureCurrentSession();
+        const initialHistory = buildConversationInitialHistory(currentConversation);
+        let currentTurn = null;
+        const backgroundTaskManager = await createWebchatBackgroundTaskManager({
+            workingDir,
+            emitProtocol: false,
+            onTaskStarted: (task) => {
+                if (!currentTurn || !task?.id) return null;
+                return sessionStore.insertTask(
+                    currentTurn.session.sessionId,
+                    currentTurn.assistantMessageIndex,
+                    task.id,
+                );
+            },
+        });
         try {
             if (verbose) {
                 console.log(`Processing: "${prompt}"\n`);
@@ -262,7 +349,8 @@ async function main() {
                 skilledAgent: agent,
                 llmAgent: agent.llmAgent,
                 logger,
-                skipBashPermissions,
+                bashExecutor,
+                backgroundTaskManager,
             };
             const akuSessionState = createAKUSessionState();
             context.akuSessionState = akuSessionState;
@@ -273,23 +361,29 @@ async function main() {
                 context,
                 sessionState: akuSessionState,
                 logger,
+                sessionId: currentConversation.sessionId,
             });
             agent.context = context;
             const executionModel = selectedModel || persistedModel || 'deep';
-            await startIntroSkill(agent, {
-                workingDir,
-                context,
-                logger,
-                model: executionModel,
-                write: async (message) => {
-                    process.stdout.write(message);
-                },
-            });
+            if (currentConversation.messages.length === 0) {
+                await startIntroSkill(agent, {
+                    workingDir,
+                    context,
+                    logger,
+                    model: executionModel,
+                    write: async (message) => {
+                        process.stdout.write(message);
+                    },
+                });
+            }
 
+            currentTurn = sessionStore.beginTurn({ text: prompt });
+            currentConversation = currentTurn.session;
             let result = await agent.executePrompt(akuPrompt.prompt, {
                 context,
                 model: executionModel,
                 systemPrompt: buildOrchestratorSystemPrompt(),
+                ...(initialHistory.length > 0 ? { initialHistory } : {}),
             });
             await drainWorkspaceSkillsRefresh(agent, { logger });
 
@@ -309,23 +403,47 @@ async function main() {
                 result = JSON.stringify(result, null, 2);
             }
 
+            currentConversation = sessionStore.completeTurn(
+                currentTurn.session.sessionId,
+                currentTurn.assistantMessageIndex,
+                result,
+            );
+            currentTurn = null;
             console.log(result);
         } catch (error) {
+            if (currentTurn) {
+                try {
+                    currentConversation = sessionStore.completeTurn(
+                        currentTurn.session.sessionId,
+                        currentTurn.assistantMessageIndex,
+                        error?.name === 'AbortError' ? '[cancelled]' : (error?.message || String(error)),
+                    );
+                } catch {
+                    // Preserve the original execution error.
+                }
+            }
             await drainWorkspaceSkillsRefresh(agent, { logger });
             console.error('Error:', error.message);
             if (verbose) {
                 console.error(error.stack);
             }
             process.exit(1);
+        } finally {
+            backgroundTaskManager.close();
         }
     } else if (webchatRuntime) {
         // Webchat mode: simple stdin → process → stdout loop (no REPL, no banner, no prompt)
         await runWebchatInteractive(agent, {
             workingDir,
             skillsDir,
-            skipBashPermissions,
+            brokerClient,
+            approvalControlClient: permissionControlClient,
+            bashExecutor,
+            getPermissions,
+            setPermissions,
             debug,
             renderMarkdown,
+            createAgent: createConfiguredAgent,
         });
     } else {
         // REPL mode
@@ -335,7 +453,11 @@ async function main() {
             builtInSkillsDir,
             debug,
             renderMarkdown,
-            skipBashPermissions,
+            bashExecutor,
+            getPermissions,
+            setPermissions,
+            approvalControlClient: permissionControlClient,
+            createAgent: createConfiguredAgent,
         });
         await session.start();
     }
@@ -349,6 +471,7 @@ async function preparePromptForAKUMemory({
     context,
     sessionState,
     logger,
+    sessionId = null,
 }) {
     const adapter = context.akuMemoryAdapter instanceof AkuMemoryAdapter
         ? context.akuMemoryAdapter
@@ -369,7 +492,7 @@ async function preparePromptForAKUMemory({
         workingDir,
         workspaceRoot: workspaceRoot || workingDir,
         previousSessionState: sessionState?.toJSON?.() ?? null,
-        sessionId: process.env.SSO_SESSION_ID || null,
+        sessionId: sessionId || process.env.SSO_SESSION_ID || null,
     });
 
     try {
@@ -506,10 +629,28 @@ function hasSsoEnvironment() {
     });
 }
 
+let activeWebchatConversationProgress = null;
+
 async function runWebchatInteractive(agent, options) {
-    const { workingDir, skillsDir, skipBashPermissions, debug, renderMarkdown } = options;
+    const {
+        workingDir,
+        skillsDir,
+        brokerClient,
+        approvalControlClient,
+        bashExecutor,
+        getPermissions,
+        setPermissions,
+        debug,
+        renderMarkdown,
+        createAgent,
+    } = options;
+    let activeAgent = agent;
     const historyManager = new HistoryManager({ workingDir });
-    const akuSessionState = createAKUSessionState();
+    const sessionStore = new ConversationSessionStore({ workingDir });
+    let currentConversation = sessionStore.ensureCurrentSession();
+    let pendingConversationHistory = buildConversationInitialHistory(currentConversation);
+    let currentTurn = null;
+    let akuSessionState = createAKUSessionState();
     const slashState = {
         activeTier: TIERS.FAST,
         pinnedModel: getSelectedModel(workingDir),
@@ -519,41 +660,127 @@ async function runWebchatInteractive(agent, options) {
     const context = {
         workingDir,
         skillsDir,
-        skilledAgent: agent,
-        llmAgent: agent.llmAgent,
-        skipBashPermissions,
+        skilledAgent: activeAgent,
+        llmAgent: activeAgent.llmAgent,
+        bashExecutor,
     };
     context.akuSessionState = akuSessionState;
-    agent.context = context;
-    const backgroundTaskManager = await createWebchatBackgroundTaskManager({ workingDir });
+    activeAgent.context = context;
+    const workspaceFileIndex = createWebchatWorkspaceFileIndex({ workingDir });
+    await workspaceFileIndex.start();
+    const writeWebchatAnswer = async (message) => {
+        try {
+            await workspaceFileIndex.refresh({ afterCurrent: true });
+        } catch (error) {
+            activeAgent.logger?.debug?.(`Workspace file index refresh failed: ${error.message}`);
+        }
+        process.stdout.write(message);
+    };
+    const backgroundTaskManager = await createWebchatBackgroundTaskManager({
+        workingDir,
+        onTaskStarted: (task) => {
+            if (!currentTurn || !task?.id) return null;
+            try {
+                return sessionStore.insertTask(
+                    currentTurn.session.sessionId,
+                    currentTurn.assistantMessageIndex,
+                    task.id,
+                );
+            } catch (_) {
+                return null;
+            }
+        },
+    });
     context.backgroundTaskManager = backgroundTaskManager;
-    await startWebchatIntroSkill(agent, {
+    activeWebchatConversationProgress = (reason) => {
+        if (!currentTurn) return;
+        try {
+            sessionStore.appendProgress(
+                currentTurn.session.sessionId,
+                currentTurn.assistantMessageIndex,
+                reason,
+            );
+        } catch (_) {
+            // Conversation persistence must not break live progress output.
+        }
+    };
+    await startWebchatIntroSkill(activeAgent, {
         workingDir,
         context,
-        logger: agent.logger,
+        logger: activeAgent.logger,
         model: slashState.pinnedModel || slashState.activeTier,
+        hasHistory: currentConversation.messages.length > 0,
         onStart: async () => {
             emitWebchatProgress('intro-skill', 'Generating workspace intro');
         },
         write: async (message) => {
-            process.stdout.write(message);
+            await writeWebchatAnswer(message);
         },
     });
+    emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+
+    const activateConversation = async (session) => {
+        if (typeof createAgent !== 'function') {
+            throw new Error('This runtime cannot replace its MainAgent for a conversation switch.');
+        }
+        activeAgent.cancelCurrentSession?.('session-changed');
+        activeAgent = await createAgent();
+        akuSessionState = createAKUSessionState();
+        context.skilledAgent = activeAgent;
+        context.llmAgent = activeAgent.llmAgent;
+        context.akuSessionState = akuSessionState;
+        activeAgent.context = context;
+        currentConversation = session;
+        pendingConversationHistory = buildConversationInitialHistory(session);
+        currentTurn = null;
+        slashState.activeTier = TIERS.FAST;
+        slashState.pinnedModel = getSelectedModel(workingDir);
+        emitWebchatSessionEnvelope(createSelectedSessionEnvelope(session));
+        return session;
+    };
+
     const slashHandler = new SlashCommandHandler({
         executeSkill: (skillName, input, opts) => executeWebchatSkill({
-            agent,
+            agent: activeAgent,
             skillName,
             input,
             opts,
             slashState,
         }),
-        getUserSkills: () => agent.getSkills().filter((skill) => !skill.isInternal),
-        getSkills: () => agent.getSkills(),
+        getUserSkills: () => activeAgent.getSkills().filter((skill) => !skill.isInternal),
+        getSkills: () => activeAgent.getSkills(),
         buildSkills: async () => {
-            await refreshWorkspaceSkillsNow(agent, { logger: agent.logger });
+            await refreshWorkspaceSkillsNow(activeAgent, { logger: activeAgent.logger });
         },
         historyManager,
-        getTaskSummary: (args) => formatWorkspaceTaskSummary(workingDir, args),
+        getTaskSummary: (args) => {
+            backgroundTaskManager.listTasks();
+            return formatWorkspaceTaskSummary(workingDir, args);
+        },
+        viewTask: (taskId) => {
+            backgroundTaskManager.viewTask(taskId);
+            return formatWorkspaceTaskDetail(workingDir, taskId);
+        },
+        continueTask: async (taskId, prompt) => {
+            try { return await backgroundTaskManager.continueTask(taskId, prompt); }
+            catch (error) {
+                backgroundTaskManager.reportActionError('continue', taskId, error);
+                throw error;
+            }
+        },
+        stopTask: async (taskId) => {
+            try { return await backgroundTaskManager.stopTask(taskId); }
+            catch (error) {
+                backgroundTaskManager.reportActionError('stop', taskId, error);
+                throw error;
+            }
+        },
+        getTaskCompletions: (action) => buildTaskCompletions(workingDir, action),
+        getPermissions,
+        setPermissions,
+        getSessions: () => sessionStore.listSessions(),
+        createSession: () => activateConversation(sessionStore.createSession()),
+        resumeSession: (sessionId) => activateConversation(sessionStore.resumeSession(sessionId)),
     });
 
     let isClosing = false;
@@ -565,10 +792,26 @@ async function runWebchatInteractive(agent, options) {
     let processingChain = Promise.resolve();
     const stdinIsTTY = Boolean(process.stdin?.isTTY);
     const handleControlData = (chunk) => {
-        handleWebchatControlChunk(chunk, {
-            agent,
+        const interrupted = handleWebchatControlChunk(chunk, {
+            agent: activeAgent,
             isProcessing,
             abortController: activeAbortController
+        });
+        if (interrupted) {
+            brokerClient.getPendingApproval().then((pending) => {
+                if (pending?.pending && pending.interactionId) {
+                    return approvalControlClient.resolvePendingApproval('deny', pending.interactionId);
+                }
+                return null;
+            }).catch(() => {});
+        }
+    };
+
+    const handleInteractionResponse = (response) => {
+        const decision = approvalDecisionFromInteractionOption(response.optionId);
+        if (!decision) return;
+        approvalControlClient.resolvePendingApproval(decision, response.id).catch((error) => {
+            activeAgent.logger?.error?.(`Failed to resolve WebChat interaction: ${error.message}`);
         });
     };
 
@@ -590,16 +833,29 @@ async function runWebchatInteractive(agent, options) {
             return;
         }
         if (message === 'exit' || message === 'quit' || message === ':q') {
-            process.stdout.write('Use /exit only in terminal REPL mode.\n');
+            void writeWebchatAnswer('Use /exit only in terminal REPL mode.\n');
             return;
         }
 
-        processingChain = processingChain.then(async () => {
+        processingChain = appendRecoveringTask(processingChain, async () => {
             isProcessing = true;
             activeAbortController = new AbortController();
             const isSlash = slashHandler.isSlashCommand(message);
+            const emitOutput = shouldEmitWebchatOutput(normalizedMessage, {
+                isSlashCommand: isSlash,
+            });
+            let commandTurn = null;
             try {
                 if (isSlash) {
+                    if (normalizedMessage.visible !== false) {
+                        commandTurn = sessionStore.beginCommand({
+                            text: normalizedMessage.rawText,
+                            attachments: normalizedMessage.attachments,
+                            references: normalizedMessage.references,
+                        });
+                        currentTurn = commandTurn;
+                        currentConversation = commandTurn.session;
+                    }
                     const slashOutput = await executeWebchatSlashCommand({
                         input: message,
                         slashHandler,
@@ -608,12 +864,34 @@ async function runWebchatInteractive(agent, options) {
                         context,
                         signal: activeAbortController.signal,
                     });
-                    if (slashOutput?.exit) {
-                        process.stdout.write(`${slashOutput.output || 'Exit is not supported in webchat.'}\n`);
-                    } else if (slashOutput?.output) {
-                        process.stdout.write(`${slashOutput.output}\n`);
+                    const output = slashOutput?.exit
+                        ? (slashOutput.output || 'Exit is not supported in webchat.')
+                        : (slashOutput?.output || '');
+                    if (slashOutput?.exit && emitOutput) {
+                        await writeWebchatAnswer(`${output}\n`);
+                    } else if (output && emitOutput) {
+                        await writeWebchatAnswer(`${output}\n`);
+                    }
+                    if (commandTurn) {
+                        const completed = sessionStore.completeCommand(
+                            commandTurn.session.sessionId,
+                            commandTurn.assistantMessageIndex,
+                            output,
+                        );
+                        if (currentConversation.sessionId === completed.sessionId) {
+                            currentConversation = completed;
+                            emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                        }
+                        if (currentTurn === commandTurn) currentTurn = null;
+                        commandTurn = null;
                     }
                 } else {
+                    currentTurn = sessionStore.beginTurn({
+                        text: normalizedMessage.rawText,
+                        attachments: normalizedMessage.attachments,
+                        references: normalizedMessage.references,
+                    });
+                    currentConversation = currentTurn.session;
                     const akuPrompt = await preparePromptForAKUMemory({
                         prompt: message,
                         normalizedMessage,
@@ -621,17 +899,28 @@ async function runWebchatInteractive(agent, options) {
                         workspaceRoot: workingDir,
                         context,
                         sessionState: akuSessionState,
-                        logger: agent.logger,
+                        logger: activeAgent.logger,
+                        sessionId: currentConversation.sessionId,
                     });
 
-                    const cachedProviderResult = await lookupCachedProviderResultForPrompt(context, {
-                        prompt: message,
-                        workingDir,
-                        logger: agent.logger,
-                    });
+                    const initialHistory = pendingConversationHistory;
+                    const cachedProviderResult = initialHistory.length === 0
+                        ? await lookupCachedProviderResultForPrompt(context, {
+                            prompt: message,
+                            workingDir,
+                            logger: activeAgent.logger,
+                        })
+                        : null;
                     if (cachedProviderResult?.hit) {
-                        process.stdout.write(`${cachedProviderResult.resultText}\n`);
+                        currentConversation = sessionStore.completeTurn(
+                            currentTurn.session.sessionId,
+                            currentTurn.assistantMessageIndex,
+                            cachedProviderResult.resultText,
+                        );
+                        await writeWebchatAnswer(`${cachedProviderResult.resultText}\n`);
                         historyManager.add(message);
+                        emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                        currentTurn = null;
                         return;
                     }
 
@@ -639,38 +928,95 @@ async function runWebchatInteractive(agent, options) {
                         context.providerLauncherResults = [];
                     }
                     const launcherResultStart = context.providerLauncherResults.length;
-                    let result = await agent.executePrompt(akuPrompt.prompt, {
+                    // The restored history is process-bootstrap state. Consume it
+                    // before execution so retries after cancellation do not resend it.
+                    pendingConversationHistory = [];
+                    let result = await activeAgent.executePrompt(akuPrompt.prompt, {
                         signal: activeAbortController.signal,
                         context,
-                        supervisor: agent.supervisor || null,
+                        supervisor: activeAgent.supervisor || null,
                         model: slashState.pinnedModel || slashState.activeTier,
                         systemPrompt: buildOrchestratorSystemPrompt(),
+                        ...(initialHistory.length > 0 ? { initialHistory } : {}),
                     });
-                    await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });
+                    await drainWorkspaceSkillsRefresh(activeAgent, { logger: activeAgent.logger });
                     result = formatExecutionResult(result, debug);
                     await persistProviderLauncherResults(context, {
                         prompt: message,
                         workingDir,
                         fromIndex: launcherResultStart,
-                        logger: agent.logger,
+                        logger: activeAgent.logger,
                     });
 
-                    process.stdout.write(`${result}\n`);
+                    currentConversation = sessionStore.completeTurn(
+                        currentTurn.session.sessionId,
+                        currentTurn.assistantMessageIndex,
+                        result,
+                    );
+                    await writeWebchatAnswer(`${result}\n`);
                     historyManager.add(message);
+                    emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                    currentTurn = null;
                 }
             } catch (error) {
-                if (activeAbortController?.signal?.aborted || error?.name === 'AbortError') {
-                    process.stdout.write('[cancelled]\n');
-                } else {
-                    process.stdout.write(`${formatWebchatError(error, {
+                const output = activeAbortController?.signal?.aborted || error?.name === 'AbortError'
+                    ? '[cancelled]'
+                    : formatWebchatError(error, {
                         publicBaseUrl: context?.webchatOrigin?.publicBaseUrl,
-                    })}\n`);
+                    });
+                const failedTurn = commandTurn || currentTurn;
+                if (failedTurn) {
+                    try {
+                        const completed = failedTurn.kind === 'command'
+                            ? sessionStore.completeCommand(
+                                failedTurn.session.sessionId,
+                                failedTurn.assistantMessageIndex,
+                                output,
+                            )
+                            : sessionStore.completeTurn(
+                                failedTurn.session.sessionId,
+                                failedTurn.assistantMessageIndex,
+                                output,
+                            );
+                        if (currentConversation.sessionId === completed.sessionId) {
+                            currentConversation = completed;
+                            emitWebchatSessionEnvelope(createCurrentSessionEnvelope(currentConversation));
+                        }
+                    } catch (_) {
+                        // Persistence failure is reported through the live error path below.
+                    }
+                    if (currentTurn === failedTurn) currentTurn = null;
+                    commandTurn = null;
+                }
+                if (emitOutput) {
+                    if (activeAbortController?.signal?.aborted || error?.name === 'AbortError') {
+                        await writeWebchatAnswer('[cancelled]\n');
+                    } else {
+                        await writeWebchatAnswer(`${output}\n`);
+                    }
                 }
             } finally {
-                await drainWorkspaceSkillsRefresh(agent, { logger: agent.logger });
-                isProcessing = false;
-                activeAbortController = null;
+                try {
+                    await runBoundedCleanup(
+                        () => drainWorkspaceSkillsRefresh(activeAgent, { logger: activeAgent.logger }),
+                        {
+                            onError: (error) => activeAgent.logger?.error?.(
+                                `Post-turn workspace skill refresh failed: ${error.message}`,
+                            ),
+                            onTimeout: (timeoutMs) => activeAgent.logger?.warn?.(
+                                `Post-turn workspace skill refresh exceeded ${timeoutMs}ms; continuing WebChat input processing.`,
+                            ),
+                        },
+                    );
+                } finally {
+                    isProcessing = false;
+                    activeAbortController = null;
+                }
             }
+        }, {
+            onPreviousError: (error) => activeAgent.logger?.error?.(
+                `Recovered WebChat prompt queue after an unhandled turn failure: ${error.message}`,
+            ),
         });
     };
 
@@ -718,6 +1064,17 @@ async function runWebchatInteractive(agent, options) {
                     if (segment.includes('\x1b') || segment.includes('\u001b')) {
                         continue;
                     }
+                    const interactionResponse = parseWebchatInteractionResponse(segment);
+                    if (interactionResponse) {
+                        handleInteractionResponse(interactionResponse);
+                        continue;
+                    }
+                    if (isWebchatMessageEnvelope(segment)) {
+                        flushPendingLines();
+                        pendingLines.push(segment);
+                        flushPendingLines();
+                        continue;
+                    }
                     pendingLines.push(segment);
                     scheduleFlush();
                 }
@@ -745,6 +1102,8 @@ async function runWebchatInteractive(agent, options) {
         });
         await processingChain;
     } finally {
+        activeWebchatConversationProgress = null;
+        workspaceFileIndex.stop();
         backgroundTaskManager.close();
         try {
             handleControlData.cleanup?.();
@@ -887,6 +1246,16 @@ async function executeWebchatSlashCommand({
     if (result.showRunTestsPicker) {
         return { output: 'Usage: /run-tests <skill-name|all>' };
     }
+    if (result.sessionList) {
+        emitWebchatSessionEnvelope(createSessionListEnvelope(result.sessionList));
+        return { output: '' };
+    }
+    if (result.sessionChanged) {
+        return { output: '' };
+    }
+    if (result.showSessionPicker) {
+        return { output: 'Usage: /session new or /session resume <session-id>.' };
+    }
     if (result.result) {
         return { output: result.result };
     }
@@ -947,6 +1316,7 @@ function emitWebchatProgress(tool, reason) {
     if (!text) {
         return;
     }
+    activeWebchatConversationProgress?.(text);
     const payload = {
         __webchatProgress: 1,
         type: 'tool_reason',
@@ -1006,32 +1376,17 @@ function createSilentOutputWriter() {
     };
 }
 
-class WebchatProgressSupervisor extends SecuritySupervisor {
-    async approve() {
-        return 'alwaysApprove';
-    }
-
-    getOutputWriter() {
-        return {
-            write: async (message) => {
-                if (!message || typeof message !== 'object' || message.type !== 'tool_reason') {
-                    return;
-                }
-                const reason = String(message.reason || '').trim();
-                if (!reason) {
-                    return;
-                }
-                const payload = {
-                    __webchatProgress: 1,
-                    type: 'tool_reason',
-                    tool: typeof message.tool === 'string' ? message.tool : '',
-                    reason,
-                    stepIndex: Number.isFinite(message.stepIndex) ? message.stepIndex : null,
-                };
-                process.stdout.write(`${JSON.stringify(payload)}\n`);
-            },
-        };
-    }
+function createWebchatProgressOutputWriter() {
+    return {
+        write: async (message) => {
+            if (!message || typeof message !== 'object' || message.type !== 'tool_reason') {
+                return;
+            }
+            const reason = String(message.reason || '').trim();
+            if (!reason) return;
+            emitWebchatProgress(message.tool, reason);
+        },
+    };
 }
 
 function printHelp() {
@@ -1052,7 +1407,8 @@ OPTIONS:
   --fast                 Use fast LLM mode (cheaper, quicker)
   --deep                 Use deep LLM mode (default, more capable)
   --no-markdown          Disable markdown rendering in output (use /raw to toggle)
-  --skip-permissions     Skip bash command permission prompts (use with caution)
+  --permissions <mode>   Initial Bash mode: ask-for-approval or full-access
+  --skip-permissions     Deprecated alias for --permissions full-access
   --ui <style>           UI style: claude-code (default), minimal
   --ui-minimal           Use minimal UI (no colors, simple prompts)
   --ui-claude-code       Use Claude Code style UI (boxed input, animations)
@@ -1330,8 +1686,13 @@ function sanitiseSkillName(value) {
 
 // Run if executed directly
 if (isRunDirectly()) {
-    main().catch((error) => {
-        console.error('Fatal error:', error.message);
-        process.exit(1);
-    });
+    if (process.env.ACHILLES_BROKER_CHILD !== '1') {
+        console.error('Fatal error: Start AchillesCLI through src/cli.mjs or the achilles-cli binary so the MainAgent is sandboxed.');
+        process.exitCode = 1;
+    } else {
+        main().catch((error) => {
+            console.error('Fatal error:', error.message);
+            process.exitCode = 1;
+        });
+    }
 }

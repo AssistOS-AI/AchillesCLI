@@ -6,9 +6,36 @@
 
 import readline from 'node:readline';
 import { LineEditor } from '../ui/LineEditor.mjs';
-import { showCommandSelector, showSkillSelector } from '../ui/CommandSelector.mjs';
+import {
+    listenForResize,
+    showCommandSelector,
+    showSkillSelector,
+} from '../ui/CommandSelector.mjs';
 import { SlashCommandHandler, SUB_OPTIONS } from './SlashCommandHandler.mjs';
 import { UIContext } from '../ui/UIContext.mjs';
+
+export function getSubOptionArgumentSource(command, subOption, subDef = {}) {
+    if (command === 'task' && ['view', 'continue', 'stop'].includes(subOption)) return 'tasks';
+    if (command === 'session' && subOption === 'resume') return 'sessions';
+    if (subDef.needsSkillArg) return 'skills';
+    if (subDef.args === 'required') return 'text';
+    return 'none';
+}
+
+export function buildCompletionSelectorItems(completions = []) {
+    return completions.map((completion) => ({
+        name: completion.label || completion.value,
+        description: completion.description || completion.value,
+        usage: completion.value,
+        value: completion.value,
+    }));
+}
+
+export function listenForEditorResize(stream, editor, shouldSkip = () => false) {
+    return listenForResize(() => {
+        if (!shouldSkip()) editor.redraw();
+    }, stream);
+}
 
 /**
  * InteractivePrompt class for handling user input with interactive features.
@@ -103,6 +130,12 @@ export class InteractivePrompt {
             // Initial prompt render
             editor.render();
 
+            const stopResizeListener = listenForEditorResize(
+                process.stdout,
+                editor,
+                () => showingSelector,
+            );
+
             process.stdin.setRawMode(true);
             process.stdin.resume();
             LineEditor.enableBracketedPaste();
@@ -115,6 +148,7 @@ export class InteractivePrompt {
                 LineEditor.disableBracketedPaste();
                 process.stdin.setRawMode(false);
                 process.stdin.removeListener('data', handleKey);
+                stopResizeListener();
             };
 
             // Track bracketed paste state
@@ -206,6 +240,7 @@ export class InteractivePrompt {
                                     description: subDef.description || opt,
                                     usage: subDef.usage || `/${selected.name.slice(1)} ${opt}`,
                                     skill: subDef.skill || null,
+                                    args: subDef.args || 'optional',
                                     needsSkillArg: subDef.needsSkillArg || false,
                                 };
                             });
@@ -216,8 +251,11 @@ export class InteractivePrompt {
                             });
 
                             if (selectedSub) {
-                                // Sub-option selected - check if it needs skill arg
-                                if (selectedSub.needsSkillArg) {
+                                const [command, subOption] = selectedSub.name.slice(1).split(/\s+/, 2);
+                                const subDef = self.slashHandler.getSubOptionDef(command, subOption) || selectedSub;
+                                const argumentSource = getSubOptionArgumentSource(command, subOption, subDef);
+
+                                if (argumentSource === 'skills') {
                                     process.stdout.write(`${selectedSub.name} `);
                                     const userSkills = self.getUserSkills();
                                     if (userSkills.length === 0) {
@@ -244,8 +282,53 @@ export class InteractivePrompt {
                                         process.stdin.setRawMode(true);
                                         process.stdin.on('data', handleKey);
                                     }
+                                } else if (argumentSource === 'tasks' || argumentSource === 'sessions') {
+                                    const completions = argumentSource === 'tasks'
+                                        ? self.slashHandler.getTaskCompletions?.(subOption) || []
+                                        : self.slashHandler.getSessionCompletions?.() || [];
+                                    const argumentItems = buildCompletionSelectorItems(completions);
+                                    if (argumentItems.length === 0) {
+                                        cleanup();
+                                        process.stdout.write('\n');
+                                        const noun = argumentSource === 'tasks' ? 'tasks' : 'sessions';
+                                        console.log(`${self.colors.yellow}No matching ${noun} found.${self.colors.reset}`);
+                                        resolve('');
+                                        return;
+                                    }
+                                    const selectedArgument = await showCommandSelector(argumentItems, {
+                                        prompt: `${selectedSub.name} `,
+                                        initialFilter: '',
+                                    });
+                                    if (selectedArgument) {
+                                        const commandWithArgument = `${selectedSub.name} ${selectedArgument.value}`;
+                                        if (command === 'task' && subOption === 'continue') {
+                                            await self._handleArgInputFlow(
+                                                commandWithArgument,
+                                                subDef,
+                                                resolve,
+                                                cleanup,
+                                            );
+                                        } else {
+                                            cleanup();
+                                            process.stdout.write(`${commandWithArgument}\n`);
+                                            resolve(commandWithArgument);
+                                        }
+                                    } else {
+                                        showingSelector = false;
+                                        editor.clear();
+                                        editor.boxDrawn = false;
+                                        editor.render();
+                                        process.stdin.setRawMode(true);
+                                        process.stdin.on('data', handleKey);
+                                    }
+                                } else if (argumentSource === 'text') {
+                                    await self._handleArgInputFlow(
+                                        selectedSub.name,
+                                        subDef,
+                                        resolve,
+                                        cleanup,
+                                    );
                                 } else {
-                                    // Sub-option doesn't need skill arg - complete command
                                     cleanup();
                                     process.stdout.write(`${selectedSub.name}\n`);
                                     resolve(selectedSub.name);
@@ -493,6 +576,27 @@ export class InteractivePrompt {
 
                 // Handle Tab - show skill selector if command needs skill arg, or prompt for text args
                 if (keyStr === '\t') {
+                    const taskMatch = editor.getBuffer().match(/^\/task\s+(view|continue|stop)(?:\s+(\S*))?$/);
+                    if (taskMatch && typeof self.slashHandler.getTaskCompletions === 'function') {
+                        const action = taskMatch[1];
+                        const taskItems = self.slashHandler.getTaskCompletions(action).map((task) => ({
+                            name: task.label,
+                            description: task.description,
+                            usage: task.value,
+                            taskId: task.value,
+                        }));
+                        if (taskItems.length > 0) {
+                            process.stdin.removeListener('data', handleKey);
+                            process.stdin.setRawMode(false);
+                            const selectedTask = await showCommandSelector(taskItems, {
+                                initialFilter: taskMatch[2] || '',
+                            });
+                            process.stdin.setRawMode(true);
+                            process.stdin.on('data', handleKey);
+                            if (selectedTask) rewriteLine(`/task ${action} ${selectedTask.taskId} `);
+                        }
+                        return;
+                    }
                     const cmdInfo = getCommandNeedingSkillArg();
                     if (cmdInfo) {
                         await showSkillSelectorForCommand(cmdInfo.command);

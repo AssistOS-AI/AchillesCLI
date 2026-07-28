@@ -43,10 +43,17 @@ Built-in skill responsibilities (`src/skills/`):
    - `test-code`
    - `execute-skill`
    - `skill-refiner`
+   - `launch-codex`
    - `launch-opencode`
 5. Test-generation helpers:
    - `write-tests`
    - `run-tests`
+6. Local execution:
+   - `bash` parses a command without a shell and delegates execution to the local executor inside MainAgent.
+   - The Bash skill contains no risk classifier, approval prompt, permission memory, or direct process launcher.
+   - The local executor is mandatory, inherits MainAgent's Bubblewrap namespace, starts the requested executable directly as a child process, and fails closed when unavailable.
+   - After authorization, the executor captures stdout and stderr without forwarding them to the AchillesCLI process streams. Bash returns the ordinary execution output or error only to the agentic session and does not expose one-time or reusable approval state.
+   - A pre-execution denial is resolved by the Supervisor before Bash is invoked. AchillesAgentLib records the exact tool name, exact parameters, and denial reason as the tool result and resumes the planner without calling this skill.
 
 Execution behavior:
 1. Slash commands target specific deterministic skill utilities.
@@ -60,6 +67,19 @@ Catalog and refresh invariants:
 4. Runtime refreshes reload already-registered roots; startup discovery is
    responsible for finding the active root set from built-ins, CLI flags,
    node_modules, and Ploinky repo `achilles-skills` roots.
+5. Permission policy is infrastructure owned by the external broker and Supervisor, never by skill code.
+
+## Decisions & Questions
+
+### Question #1: Why does the Bash skill contain no risk classifier or interactive permission logic?
+
+Response:
+Permission policy must remain authoritative for natural-language calls, direct slash execution, and future callers. Centralizing authorization in the trusted broker prevents a skill-local prompt or environment flag from bypassing approval. Workspace confinement is independently enforced because the local executor is already inside MainAgent's Bubblewrap namespace, while the skill remains responsible only for deterministic parsing and result formatting.
+
+### Question #2: Why does the Bash result omit approval state?
+
+Response:
+Approval is control-plane state used only to decide whether the handler may run. Once allowed, the handler follows the same result contract as any ordinary invocation, so the planner receives the execution output or error without approval-specific text or metadata.
 
 ## Conclusion
 AchillesCLI skills are the executable core of repository functionality and must remain discoverable, reloadable, and contract-driven across deterministic and orchestrated flows.

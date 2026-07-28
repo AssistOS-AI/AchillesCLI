@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { runBrokeredMainAgent } from './broker/AchillesBroker.mjs';
+import { normalizePermissionMode, PERMISSION_MODES } from './permissions/protocol.mjs';
+import { getPermissionMode } from './lib/achillesSettings.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function main() {
+    const argv = process.argv.slice(2);
+    const options = parseBrokerBootstrapOptions(argv);
+    const webchat = isWebchatRuntime();
+    fs.mkdirSync(options.workingDir, { recursive: true });
+    const exitCode = await runBrokeredMainAgent({
+        workspace: options.workingDir,
+        argv,
+        entryPath: path.join(__dirname, 'index.mjs'),
+        webchat,
+        clientManagedApprovals: !webchat && !options.singleShot,
+        permissionMode: options.permissionMode,
+        extraReadOnlyPaths: options.skillRoots,
+    });
+    process.exitCode = exitCode;
+}
+
+export function parseBrokerBootstrapOptions(args) {
+    let workingDir = process.cwd();
+    let requestedPermissionMode = null;
+    let singleShot = false;
+    const skillRoots = [];
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index];
+        if (arg === '--dir' || arg === '-d') {
+            workingDir = path.resolve(args[index + 1] || process.cwd());
+            index += 1;
+        } else if (arg.startsWith('--dir=')) {
+            workingDir = path.resolve(arg.slice('--dir='.length) || process.cwd());
+        } else if (arg === '--skill-root' || arg === '-r') {
+            const root = args[index + 1];
+            if (root && !root.startsWith('-')) {
+                skillRoots.push(path.resolve(root));
+                index += 1;
+            }
+        } else if (arg.startsWith('--skill-root=')) {
+            skillRoots.push(path.resolve(arg.slice('--skill-root='.length)));
+        } else if (arg === '--permissions') {
+            const requested = normalizePermissionMode(args[index + 1]);
+            if (!requested) throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
+            requestedPermissionMode = requested;
+            index += 1;
+        } else if (arg.startsWith('--permissions=')) {
+            const requested = normalizePermissionMode(arg.slice('--permissions='.length));
+            if (!requested) throw new Error('Use --permissions ask-for-approval or --permissions full-access.');
+            requestedPermissionMode = requested;
+        } else if (arg === '--skip-permissions') {
+            requestedPermissionMode = PERMISSION_MODES.FULL;
+        } else if (arg === '--ui' || arg === '--ui-style') {
+            index += 1;
+        } else if (!arg.startsWith('-')) {
+            singleShot = true;
+            break;
+        }
+    }
+    const permissionMode = requestedPermissionMode || getPermissionMode(workingDir);
+    return { workingDir, permissionMode, skillRoots, singleShot };
+}
+
+function isWebchatRuntime() {
+    return [
+        'SSO_USER',
+        'SSO_USER_ID',
+        'SSO_EMAIL',
+        'SSO_ROLES',
+        'SSO_SESSION_ID',
+    ].some((key) => String(process.env[key] || '').trim())
+        || process.argv.some((arg) => typeof arg === 'string' && arg.startsWith('--sso-'));
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+    main().catch((error) => {
+        console.error('Fatal error:', error.message);
+        process.exitCode = 1;
+    });
+}

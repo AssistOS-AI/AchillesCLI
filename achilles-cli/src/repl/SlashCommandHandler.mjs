@@ -171,6 +171,12 @@ export const COMMAND_DEFINITIONS = {
         needsSkillArg: false,
         argMatchMode: 'fragment',
     },
+    'permissions': {
+        usage: '/permissions [ask-for-approval|full-access]',
+        description: 'Show or change the Bash permission mode for this workspace',
+        args: 'optional',
+        needsSkillArg: false,
+    },
     'raw': {
         usage: '/raw',
         description: 'Toggle markdown rendering',
@@ -201,6 +207,20 @@ export const COMMAND_DEFINITIONS = {
         args: 'optional',
         needsSkillArg: false,
     },
+    'task': {
+        usage: '/task <view|continue|stop> <task-id> [prompt]',
+        description: 'View, continue, or stop a background task',
+        args: 'required',
+        needsSkillArg: false,
+        subOptions: ['view', 'continue', 'stop'],
+    },
+    'session': {
+        usage: '/session [new|resume <session-id>]',
+        description: 'Select or create an AchillesCLI conversation session',
+        args: 'optional',
+        needsSkillArg: false,
+        catalogSubOptions: ['new', 'resume'],
+    },
     'exit': {
         usage: '/exit',
         description: 'Exit the REPL',
@@ -220,6 +240,29 @@ export const COMMAND_DEFINITIONS = {
  * Each sub-option maps to a handler or skill execution.
  */
 export const SUB_OPTIONS = {
+    'task': {
+        'view': {
+            skill: null,
+            usage: '/task view <task-id>',
+            description: 'Show task metadata and its latest stored log lines',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'continue': {
+            skill: null,
+            usage: '/task continue <task-id> <prompt>',
+            description: 'Continue a terminal task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'stop': {
+            skill: null,
+            usage: '/task stop <task-id>',
+            description: 'Stop a queued or running task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+    },
     'list': {
         'skills': {
             skill: BUILT_IN_SKILLS.LIST,
@@ -268,6 +311,22 @@ export const SUB_OPTIONS = {
             usage: '/update repos',
             description: 'Pull all cloned repositories',
             args: 'optional',
+            needsSkillArg: false,
+        },
+    },
+    'session': {
+        'new': {
+            skill: null,
+            usage: '/session new',
+            description: 'Create and select a new conversation session',
+            args: 'optional',
+            needsSkillArg: false,
+        },
+        'resume': {
+            skill: null,
+            usage: '/session resume <session-id>',
+            description: 'Resume a saved conversation session',
+            args: 'required',
             needsSkillArg: false,
         },
     },
@@ -347,8 +406,30 @@ export class SlashCommandHandler {
      * @param {HistoryManager} [options.historyManager] - Command history manager
      * @param {Function} [options.getTaskSummary] - Read and format workspace task status
      * @param {Function} [options.loadModels] - Load selectable Soul Gateway models
+     * @param {Function} [options.getPermissions] - Read the current Bash permission mode
+     * @param {Function} [options.setPermissions] - Change the current Bash permission mode
+     * @param {Function} [options.getSessions] - List conversation sessions
+     * @param {Function} [options.createSession] - Create a conversation session
+     * @param {Function} [options.resumeSession] - Resume a conversation session
      */
-    constructor({ executeSkill, buildSkills, getUserSkills, getSkills, historyManager, getTaskSummary, loadModels }) {
+    constructor({
+        executeSkill,
+        buildSkills,
+        getUserSkills,
+        getSkills,
+        historyManager,
+        getTaskSummary,
+        loadModels,
+        getPermissions,
+        setPermissions,
+        getSessions,
+        createSession,
+        resumeSession,
+        viewTask,
+        continueTask,
+        stopTask,
+        getTaskCompletions,
+    }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
         this.getUserSkills = getUserSkills;
@@ -356,6 +437,15 @@ export class SlashCommandHandler {
         this.historyManager = historyManager;
         this.getTaskSummary = getTaskSummary;
         this.loadModels = loadModels || loadSoulGatewayModels;
+        this.getPermissions = getPermissions;
+        this.setPermissions = setPermissions;
+        this.getSessions = getSessions;
+        this.createSession = createSession;
+        this.resumeSession = resumeSession;
+        this.viewTask = viewTask;
+        this.continueTask = continueTask;
+        this.stopTask = stopTask;
+        this.getTaskCompletions = getTaskCompletions;
         this.availableModels = [];
     }
 
@@ -426,7 +516,30 @@ export class SlashCommandHandler {
      */
     getSubOptions(command) {
         const cmdDef = COMMAND_DEFINITIONS[command];
-        return cmdDef?.subOptions || null;
+        if (!cmdDef) return null;
+        const subOptions = [
+            ...(Array.isArray(cmdDef.subOptions) ? cmdDef.subOptions : []),
+            ...(Array.isArray(cmdDef.catalogSubOptions) ? cmdDef.catalogSubOptions : []),
+        ];
+        return subOptions.length > 0 ? subOptions : null;
+    }
+
+    /**
+     * Build picker/autocomplete entries for persisted conversation sessions.
+     * @returns {Array<{value: string, label: string, description: string}>}
+     */
+    getSessionCompletions() {
+        if (typeof this.getSessions !== 'function') return [];
+        const payload = this.getSessions();
+        return (payload?.sessions || []).map((session) => ({
+            value: session.sessionId,
+            label: session.preview || 'New session',
+            description: [
+                session.sessionId === payload.currentSessionId ? 'Current session' : '',
+                session.sessionId,
+                session.updatedAt,
+            ].filter(Boolean).join(' · '),
+        }));
     }
 
     /**
@@ -478,6 +591,25 @@ export class SlashCommandHandler {
             return this._handleModelCommand(args);
         }
 
+        if (command === 'permissions') {
+            if (typeof this.getPermissions !== 'function' || typeof this.setPermissions !== 'function') {
+                return { handled: true, error: 'Permission controls are unavailable in this session.' };
+            }
+            if (!args) {
+                return { handled: true, result: `Bash permissions: ${await this.getPermissions()}` };
+            }
+            const requested = args.trim().toLowerCase();
+            if (!['ask-for-approval', 'full-access'].includes(requested)) {
+                return { handled: true, error: 'Usage: /permissions [ask-for-approval|full-access]' };
+            }
+            try {
+                const mode = await this.setPermissions(requested);
+                return { handled: true, result: `Bash permissions set to ${mode}.` };
+            } catch (error) {
+                return { handled: true, error: error.message };
+            }
+        }
+
         if (command === 'quit' || command === 'exit' || command === 'q') {
             return { handled: true, exitRepl: true };
         }
@@ -499,6 +631,17 @@ export class SlashCommandHandler {
             } catch (error) {
                 return { handled: true, error: error.message };
             }
+        }
+
+        if (command === 'session') {
+            if (typeof this.getSessions !== 'function') {
+                return { handled: true, error: 'Conversation sessions are unavailable.' };
+            }
+            return {
+                handled: true,
+                showSessionPicker: true,
+                sessionList: this.getSessions(),
+            };
         }
 
         // Handle direct skill commands
@@ -537,7 +680,7 @@ export class SlashCommandHandler {
             const skillName = match?.[1];
             const skillInput = match?.[2]?.trim() || skillName;
             try {
-                const result = await this.executeSkill(skillName, skillInput, options);
+                const result = await this._executeSkillUntilResultOrTaskStart(skillName, skillInput, options);
                 return { handled: true, result: formatSlashResult(result) };
             } catch (error) {
                 return { handled: true, error: error.message };
@@ -587,6 +730,33 @@ export class SlashCommandHandler {
         return { handled: false, error: `Unknown command: /${command}` };
     }
 
+    async _executeSkillUntilResultOrTaskStart(skillName, input, options) {
+        const taskManager = options?.context?.backgroundTaskManager;
+        const waiter = taskManager?.createTaskStartWaiter?.();
+        if (!waiter?.promise || typeof waiter.cancel !== 'function') {
+            return this.executeSkill(skillName, input, options);
+        }
+
+        const execution = Promise.resolve().then(() => this.executeSkill(skillName, input, options));
+        const outcome = await Promise.race([
+            execution.then(
+                (value) => ({ type: 'result', value }),
+                (error) => ({ type: 'error', error }),
+            ),
+            waiter.promise.then((task) => ({ type: 'task', task })),
+        ]);
+        waiter.cancel();
+
+        if (outcome.type === 'task') {
+            // The observer owns the remote task lifecycle from this point. Keep
+            // the launcher promise observed, but do not serialize later input on it.
+            void execution.catch(() => {});
+            return 'Task started.';
+        }
+        if (outcome.type === 'error') throw outcome.error;
+        return outcome.value;
+    }
+
     /**
      * Execute a sub-option command (e.g., /list repos, /add repo).
      * @private
@@ -603,6 +773,48 @@ export class SlashCommandHandler {
                 handled: true,
                 error: `Usage: ${subDef.usage}\n  ${subDef.description}`,
             };
+        }
+
+        if (command === 'session' && subOption === 'new') {
+            if (typeof this.createSession !== 'function') {
+                return { handled: true, error: 'Conversation sessions are unavailable.' };
+            }
+            return { handled: true, sessionChanged: await this.createSession() };
+        }
+
+        if (command === 'session' && subOption === 'resume') {
+            if (typeof this.resumeSession !== 'function') {
+                return { handled: true, error: 'Conversation sessions are unavailable.' };
+            }
+            try {
+                return { handled: true, sessionChanged: await this.resumeSession(args.trim()) };
+            } catch (error) {
+                return { handled: true, error: error.message };
+            }
+        }
+
+        if (command === 'task' && subOption === 'view') {
+            if (typeof this.viewTask !== 'function') return { handled: true, error: 'Task management is unavailable.' };
+            try { return { handled: true, result: await this.viewTask(args.trim()) }; }
+            catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'stop') {
+            if (typeof this.stopTask !== 'function') return { handled: true, error: 'Task management is unavailable.' };
+            try {
+                const task = await this.stopTask(args.trim());
+                return { handled: true, result: `Stop requested for ${task.id}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'continue') {
+            if (typeof this.continueTask !== 'function') return { handled: true, error: 'Task management is unavailable.' };
+            const match = args.match(/^(task_[0-9a-f]{24})(?:\s+([\s\S]+))?$/);
+            if (!match?.[2]?.trim()) return { handled: true, error: 'Usage: /task continue <task-id> <prompt>' };
+            try {
+                const task = await this.continueTask(match[1], match[2].trim());
+                return { handled: true, result: `Continued ${task.id}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
         }
 
         // /update repos
@@ -843,6 +1055,22 @@ export class SlashCommandHandler {
 
         // Command-specific completions
         if (subOption) {
+            if (command === 'task' && typeof this.getTaskCompletions === 'function') {
+                const prefix = args.toLowerCase();
+                const matching = this.getTaskCompletions(subOption)
+                    .filter((task) => [task.value, task.label, task.description]
+                        .some((value) => String(value || '').toLowerCase().includes(prefix)))
+                    .map((task) => `/${command} ${subOption} ${task.value}`);
+                return [matching, line];
+            }
+            if (command === 'session' && subOption === 'resume') {
+                const prefix = args.toLowerCase();
+                const matching = this.getSessionCompletions()
+                    .filter((session) => [session.value, session.label, session.description]
+                        .some((value) => String(value || '').toLowerCase().includes(prefix)))
+                    .map((session) => `/${command} ${subOption} ${session.value}`);
+                return [matching, line];
+            }
             // /list skills - suggest skill names
             if (command === 'list' && subOption === 'skills') {
                 const skills = this.getUserSkills();

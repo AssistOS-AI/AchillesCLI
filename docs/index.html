@@ -24,9 +24,37 @@
 
   <h2>Architecture Scope</h2>
   <div class="card">
-    <strong>Runtime package:</strong> <code>achilles-cli/</code> (entrypoint, REPL, UI, schemas, skills)<br>
+    <strong>Runtime package:</strong> <code>achilles-cli/</code> (broker, sandboxed entrypoint, REPL, UI, schemas, skills)<br>
     <strong>Tests:</strong> <code>tests/</code> and <code>achilles-cli/tests/</code><br>
-    <strong>Specifications:</strong> <code>docs/specs/DS000-DS012</code>
+    <strong>Specifications:</strong> <code>docs/specs/DS000-DS013</code>
+  </div>
+
+  <h2>Workspace Sandbox and Bash Permissions</h2>
+  <div class="card">
+    <code>src/cli.mjs</code> stays outside Bubblewrap as the trusted broker and starts
+    <code>src/index.mjs</code>, MainAgent, and skill execution inside a filesystem sandbox scoped to the
+    selected workspace. Runtime code and dependencies are read-only, temporary storage is isolated, and
+    network access remains shared. The Bash skill only parses commands and delegates execution; it contains
+    no permission prompts or risk policy. <code>/permissions ask-for-approval</code> requires an explicit
+    <code>allow</code>, <code>deny</code>, or <code>always allow</code>. <code>/permissions full-access</code>
+    runs Bash automatically only inside the current workspace. Approvals never widen the filesystem sandbox,
+    and there is no outside retry in the current implementation.
+    The selected mode is stored per workspace under the <code>permissions</code> key in
+    <code>.achilles-cli/settings.json</code> and restored at startup. Missing or invalid values fall back to
+    <code>ask-for-approval</code>. The same settings object keeps the selected model and conversation
+    <code>currentSessionId</code>. It is unversioned and contains no <code>version</code> key;
+    reusable exact-command approvals remain session-local.
+    In WebChat, that decision appears in a dedicated three-choice selector while the original tool call remains suspended;
+    it is control traffic and is not stored as a user or assistant message.
+    The Broker authorizes Bash but never executes it. The local executor runs inside MainAgent's existing Bubblewrap
+    namespace and starts each command directly as a child process, without creating another Bubblewrap sandbox.
+    It captures stdout and stderr without writing them to the AchillesCLI process streams.
+    Bash returns the ordinary command output or execution error only to the agentic session, and the user sees the agent's final answer.
+    A denial skips the Bash handler and becomes a normal planner result containing the exact tool name, exact parameters,
+    and denial reason, allowing the same turn to finish without exposing approval protocol data.
+    Reusable approvals are session-local and bound to the exact tool name and params. Bubblewrap uses a private
+    <code>/proc</code> when the runtime permits it; nested unprivileged WebChat containers use an empty
+    <code>/proc</code> fallback rather than exposing the outer container's process filesystem.
   </div>
 
   <h2>Ecosystem Integration</h2>
@@ -56,18 +84,44 @@
     In webchat runtime mode, AchillesCLI emits structured progress metadata before loop-session tool calls.
     The metadata carries the planner reason for the selected tool and is intended for browser UI progress rendering,
     not for transcript or final-answer text.
-    The startup intro is skipped when <code>PLOINKY_WEBCHAT_HAS_HISTORY=1</code> and otherwise runs normally;
-    no WebChat session-id environment variable is required by AchillesCLI.
-    Asynchronous AgentServer tools are detached from the active WebChat reply: AchillesCLI acknowledges the start with
+    AchillesCLI loads its current workspace conversation at startup and skips the intro when that session has history.
+    The prior natural-language turns are supplied once as <code>initialHistory</code> on the first normal prompt;
+    slash commands do not consume that pending hydration. Commands visibly submitted in WebChat are retained as
+    presentation-only session records and excluded from model context, while silent UI control commands are not stored.
+    AchillesCLI publishes <code>__webchatSession</code> current, list, and selected snapshots so Ploinky can render
+    session UI without owning persistence. Runtime-state metadata carries the selected model only and has no
+    process-instance identifier. WebChat prompts use a recoverable serial queue. Errors from post-turn
+    workspace-skill refresh are logged without rejecting later messages, and a refresh that remains pending
+    for five seconds stops gating the next prompt.
+    AchillesCLI also publishes a hidden workspace-file snapshot at startup and added/removed deltas after periodic
+    five-second scans. It refreshes the index immediately before emitting a response so files created by the current
+    turn are visible to WebChat without waiting for the timer. Ploinky can use this volatile index to link only paths
+    that currently exist while the authenticated workspace-file route remains responsible for every actual read.
+    Asynchronous AgentServer tools are detached from the active reply in single-shot, terminal, and WebChat modes:
+    AchillesCLI acknowledges the start with
     the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,
-    follows the remote task through the router, and emits dedicated lifecycle and log envelopes. Ongoing tasks are
-    reattached from the workspace task journal if the WebChat runtime is recreated.
+    follows the remote task through the router, and persists lifecycle metadata and logs under
+    <code>.achilles-cli/tasks/</code>. Ongoing tasks are reattached whenever an AchillesCLI process is recreated;
+    WebChat mode additionally emits dedicated lifecycle and log envelopes.
     Resumable coding tasks forward a generic opaque continuation handle after completion. The provider session stays
-    private to its agent; WebChat starts later turns as new remote executions while keeping one stable local task id.
+    private to its agent; AchillesCLI starts later turns as new remote executions while keeping one stable local task id.
     Runtime errors include the first recognized AchillesCLI, AchillesAgentLib, or Ploinky source frame as
     a Markdown link through the authenticated workspace-file route. The underlying AchillesAgentLib message is
     preserved so missing model text, invalid planner output, provider status failures, and execution limits remain
     distinguishable. Unknown absolute stack paths and serialized provider response bodies remain hidden.
+  </div>
+
+  <h2>Conversation Sessions</h2>
+  <div class="card">
+    Durable conversations live under <code>.achilles-cli/sessions/</code>. The selected
+    <code>currentSessionId</code> is stored in <code>.achilles-cli/settings.json</code> beside model and permissions.
+    Terminal users can open the selector with <code>/session</code>, create a conversation with
+    <code>/session new</code>, and resume one with <code>/session resume &lt;session-id&gt;</code>.
+    WebChat autocomplete shows saved conversation names after <code>/session resume</code> while inserting the
+    corresponding session id, and its Sessions control refreshes the same list through <code>/session</code>.
+    Visible WebChat slash commands and their responses are restored after refresh without entering model history.
+    When such a command starts asynchronous work, each task reference is stored in the same ordered session so its
+    task item is restored together with the command; UI-originated session and task-control commands remain silent.
   </div>
 
   <h2>Repository Maintenance</h2>
@@ -80,10 +134,17 @@
   <h2>Task Inspection</h2>
   <div class="card">
     The deterministic <code>/tasks [count|all]</code> command is available in both the terminal REPL and WebChat.
-    It reads the current workspace task journal without changing task state. By default it lists the ten most recently
+    It reads the AchillesCLI-owned workspace task journal without changing task state. By default it lists the ten most recently
     updated tasks with their status, description preview, target agent, and update time. Terminal task states may include
     the final five log lines, bounded to 2 KiB per task; ongoing logs remain on the existing WebChat lifecycle surface.
-    Terminal use inspects persisted workspace tasks but does not detach new launcher calls.
+    <code>/task view &lt;task-id&gt;</code> reads the complete stored log,
+    <code>/task stop &lt;task-id&gt;</code> cancels the stored remote execution, and
+    <code>/task continue &lt;task-id&gt; &lt;prompt&gt;</code> resumes a compatible terminal task without changing its
+    local id. Terminal autocomplete shows task names and inserts ids after the selected action. WebChat uses these same
+    commands for its Tasks overlay and task page; it does not own task persistence or actions. UI-originated task
+    commands do not add acknowledgements or errors to the main chat. On continuation, AchillesCLI appends the submitted
+    prompt to the durable task log first with a visible <code>you&gt; </code> prefix, publishes that delta,
+    and then appends provider output in arrival order.
   </div>
 
   <h2>MCP Tool Exposure</h2>
@@ -97,6 +158,8 @@
     available skill names as argument completions for slash commands that operate on skills.
     If a skill descriptor contains <code>## Help</code>, that text is returned as the completion description
     so remote UIs can show invocation guidance beside the skill name.
+    The same catalog advertises <code>ask-for-approval</code> and <code>full-access</code> as the two
+    argument choices for <code>/permissions</code>, allowing WebChat to render the supported modes directly.
     If no tools are available, clients silently fall back to an empty command list.
   </div>
 
@@ -109,6 +172,10 @@
     search selector. The WebChat runtime publishes that explicit settings value through generic runtime-state
     metadata, allowing the browser to show it beside the agent name without storing model data in chat history.
     This badge is the configured model, not the effective Soul Gateway leaf used for an individual response.
+    AchillesCLI decorates AchillesAgentLib's standard invoker with the explicit
+    <code>soul_gateway</code> provider key and forwards the selected model identifier unchanged. The local model
+    catalog supports selection and metadata but is not an execution allowlist; Soul Gateway validates and routes
+    the current identifier, including agent-backed models introduced after the AchillesCLI process started.
     Running <code>/tier</code> removes the explicit saved model selection and clears the badge.
   </div>
 
@@ -118,35 +185,96 @@
     envelope, sanitized references, and selected-agent invocation token. Non-slash Copilot turns route
     through <code>copilot-router</code>, which may call deterministic launcher cskills such as
     <code>launch-open-interpreter</code>, <code>launch-web-search</code>, or
-    <code>launch-opencode</code>. Explicit <code>opencode</code> or
+    <code>launch-opencode</code>, or <code>launch-codex</code>. Explicit <code>opencode</code> or
     <code>opencodeAgent</code> requests route to <code>launch-opencode</code> before generic
-    execution launchers. Deprecated provider tokens such as
+    execution launchers; explicit <code>codex</code> or <code>codexAgent</code>
+    requests similarly route to <code>launch-codex</code>. Deprecated provider tokens such as
     <code>@open-interpreter</code> remain ordinary chat text. Explorer launch metadata may add generic
     parameters such as <code>forward-envelope=1</code> and <code>workspace-dir</code>, but provider tags,
     relay tool names, and provider agent ids stay out of WebChat launch URLs.
+    The AchillesCLI IDE plugin exposes <strong>Open Copilot here</strong> both in Explorer's
+    <strong>Tools</strong> menu for the currently displayed directory and in directory context menus for
+    selected child folders. At Explorer <code>/</code>, the Tools action targets the workspace root; it
+    does not expose or navigate to the workspace parent.
   </div>
 
-  <h2>OpenCode Agent Provider</h2>
+  <h2>Coding Agent Providers</h2>
   <div class="card">
     The <code>opencodeAgent</code> Ploinky agent exposes OpenAI-compatible
     <code>/v1/chat/completions</code> and <code>/v1/models</code> handlers through AgentServer.
     Chat completions execute OpenCode in the Ploinky-provided <code>WORKSPACE_PATH</code>,
     and model discovery returns the OpenCode provider/model catalog for Soul Gateway.
+    Every published model uses the single functional umbrella tag <code>coding-agent</code>;
+    tool support, vision, limits, and pricing remain structured model metadata.
     AchillesCLI does not include OpenCode, PI, Codex, GPTResearcher, or Search Agent in
     its manifest dependency graph, and those workers declare <code>startup: manual</code>.
     Their launchers check Marketplace runtime state, enable an installed target in explicit
     global mode only when needed, wait for readiness, and then invoke MCP;
     GPTResearcher starts Search Agent first.
-    The OpenCode and PI launchers accept only the plain task text and leave model
+    The OpenCode, PI, and Codex launchers accept only the plain task text and leave model
     selection entirely to their target agents.
-    PI runs with a persisted session id and directory; OpenCode task execution parses its
-    JSON event stream to capture the provider session id and uses <code>--session</code> when resumed.
-    Both agents keep provider session details in private persistent storage behind an opaque UUID handle,
-    expose a policy-checked <code>continue-task</code> tool, and request full log retention. Their structured
+    PI tasks run in JSON event-stream mode with a persisted session id and directory.
+    The wrapper parses that stream incrementally and forwards only readable assistant text
+    and de-duplicated textual tool output into the live task log. Lifecycle events, thinking
+    metadata, signatures, encrypted content, and usage data stay out of the visible stream;
+    the final assistant message supplies the task result. Its interactive CLI,
+    initial task runner, and continuation runner share PI's persistent default configuration
+    directory under the agent home, so OAuth logins and provider settings apply consistently.
+    PI and Codex install their packages and stable launchers under
+    <code>$HOME/.local</code>, allowing the same profiles to run in containers and Linux
+    host sandboxes without writing to read-only system paths. Their installers invoke npm
+    through an absolute CLI path selected for the container or mounted Bubblewrap Node
+    runtime. AgentServer tool and endpoint commands use <code>node</code> through the runtime
+    <code>PATH</code>, so containers resolve their bundled Node installation and Bubblewrap
+    resolves Ploinky's mounted Node distribution without assuming <code>/usr/local/bin</code>.
+    Ploinky maps that home to the
+    enabled instance's persistent data directory, so CLI installation and provider state
+    survive runtime recreation.
+    OpenCode and PI start every initial and continued task in an inner Bubblewrap namespace,
+    including when Ploinky itself is already using <code>lite-sandbox</code>. The wrapper
+    canonicalizes the requested project, makes the namespace root and runtime read-only,
+    and exposes only that <code>projectDir</code> as writable from the workspace; sibling
+    projects remain unmounted. Provider configuration and session state receive only their
+    required separate mounts, raw Ploinky master and agent secrets are removed from the task
+    environment, and networking stays shared for model API calls. Container
+    profiles permit nested namespaces, installers add Bubblewrap only when it is absent,
+    and readiness fails closed unless a real nested sandbox probe succeeds.
+    Codex initial and continuation tasks run with <code>workspace-write</code>
+    confinement rooted at the selected project directory and an approval policy of
+    <code>never</code>. This keeps ordinary workspace edits non-interactive while
+    filesystem operations outside the permitted roots fail instead of disabling the
+    Codex sandbox.
+    OpenCode tasks use the provider's
+    default formatted output and resolve the created session through a separate random-title lookup before
+    using <code>--session</code> when resumed. OpenCode relays provider stdout and stderr unchanged into
+    live task logs without synthetic tool-status messages. Before AgentServer starts, the agent's profile
+    installer installs the current OpenCode release and atomically writes the repository-owned
+    <code>$HOME/.config/opencode/opencode.json</code>. That config adds the OpenAI-compatible
+    <code>soul-gateway</code> provider and its <code>fast</code>, <code>deep</code>, and <code>plan</code>
+    models using Ploinky-injected router and agent-identity environment values; it stores no credential,
+    selects no default model, and leaves other providers available. Tasks run with <code>--auto</code>
+    so normal operations do not prompt, while the config explicitly denies
+    <code>external_directory</code>; this application-level policy complements the independent
+    task-local operating-system sandbox. OpenCode's
+    exported session data is inspected only off-stream to identify the last assistant
+    answer for final-result metadata, allowing WebChat to show intermediate output in
+    grey while keeping the raw visible stream unchanged.
+    OpenCode, PI, and Codex keep provider session details in private persistent storage behind an opaque UUID handle,
+    expose an internal policy-checked <code>continue-task</code> tool for verified AchillesCLI calls, and request full
+    log retention. Their initial and continued coding tasks have no elapsed-time limit and remain active until the
+    provider exits, the user cancels the task, execution fails, or the runtime is interrupted. WebChat sends the CLI
+    command and never invokes the provider tool directly. Their structured
     wrapper result exposes only answer text to ordinary MCP callers while preserving continuation metadata
-    on the asynchronous task.
-    This contract is specified in
-    <a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012</a>.
+    on the asynchronous task. Before resuming, each provider resolves its current model internally:
+    OpenCode reads its persistent recent-model state, while PI merges persistent global defaults with
+    project-local settings and also preserves the effective thinking level. The wrappers pass those choices
+    explicitly alongside the stored session identity; unavailable state falls back to native resume selection.
+    Codex parses its JSONL stream incrementally and forwards agent and completed command text without wrapper
+    prefixes while preserving stderr byte-for-byte. Its continuation stores only the thread id and original
+    project directory and invokes <code>codex exec resume</code> without a model override, so the currently
+    configured model is used for the new turn. These contracts are specified in
+    <a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012</a> and
+    <a href="./specsLoader.html?spec=DS013-codex-launcher-delegation.md">DS013</a>.
   </div>
 
   <h2>Specification Entry Points</h2>
@@ -165,6 +293,7 @@
     <li><a href="./specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 - Ecosystem Integration</a></li>
     <li><a href="./specsLoader.html?spec=DS011-aku-aware-copilot-memory.md">DS011 - AKU-Aware Copilot Memory</a></li>
     <li><a href="./specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012 - OpenCode Launcher Delegation</a></li>
+    <li><a href="./specsLoader.html?spec=DS013-codex-launcher-delegation.md">DS013 - Codex Launcher Delegation</a></li>
   </ul>
 </body>
 </html>

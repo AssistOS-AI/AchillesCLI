@@ -1,11 +1,14 @@
 {
     "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
+    "containerSecurity": {
+        "privileged": true
+    },
     "startup": "manual",
     "lite-sandbox": true,
     "about": "OpenCode CLI agent. Executes one-shot build tasks via opencode CLI to construct AKU from WAC data.",
     "profiles": {
         "default": {
-            "install": "curl -fsSL https://opencode.ai/install | bash"
+            "install": "sh /code/scripts/install-opencode.sh"
         }
     },
     "health": {
@@ -19,18 +22,18 @@
     },
     "endpoints": {
         "chatCompletions": {
-            "command": "/usr/local/bin/node",
+            "command": "node",
             "args": ["/code/openai-api/chat-completions.mjs"],
             "cwd": "/code",
             "supportsStream": false
         },
         "models": {
-            "command": "/usr/local/bin/node",
+            "command": "node",
             "args": ["/code/openai-api/models.mjs"],
             "cwd": "/code"
         }
     },
-    "cli": "/root/.opencode/bin/opencode",
+    "cli": "\"$HOME/.opencode/bin/opencode\"",
     "env": [
         "PLOINKY_WORKSPACE_ROOT",
         "OPENCODE_API_KEY",
