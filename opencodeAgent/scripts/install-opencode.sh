@@ -4,6 +4,8 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CONFIG_TEMPLATE="$SCRIPT_DIR/../opencode.json"
 
+"$SCRIPT_DIR/ensure-bubblewrap.sh"
+
 if [ -z "${HOME:-}" ]; then
     echo "install-opencode: HOME is required." >&2
     exit 1
@@ -39,7 +41,11 @@ fi
 
 CONFIG_DIR="$HOME/.config/opencode"
 CONFIG_PATH="$CONFIG_DIR/opencode.json"
-mkdir -p "$CONFIG_DIR"
+mkdir -p \
+    "$CONFIG_DIR" \
+    "$HOME/.cache/opencode" \
+    "$HOME/.local/share/opencode" \
+    "$HOME/.local/state/opencode"
 chmod 700 "$CONFIG_DIR"
 
 TEMP_PATH=$(mktemp "$CONFIG_DIR/.opencode.json.XXXXXX")

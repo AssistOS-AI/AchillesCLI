@@ -16,11 +16,16 @@ import { readRecentOpenCodeModel } from '../scripts/opencode-runner.mjs';
 const silentLogStream = { write() {} };
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
 const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
+const fakeBwrapPath = new URL('../../tests/helpers/fake-bwrap.sh', import.meta.url).pathname;
 
 function runTaskScript(scriptPath, input, env, { signalAfterMs = 0 } = {}) {
     return new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [scriptPath], {
-            env: { ...process.env, ...env },
+            env: {
+                ...process.env,
+                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
+                ...env,
+            },
             stdio: ['pipe', 'pipe', 'pipe'],
         });
         let stdout = '';
@@ -121,7 +126,8 @@ test('chat completions runs OpenCode in WORKSPACE_PATH with requested model', as
             OPENCODE_BIN: fakeBin,
             OPENCODE_ARGS_PATH: argsPath,
             WORKSPACE_PATH: workspaceDir,
-            PLOINKY_WORKSPACE_ROOT: wrongWorkspaceRoot,
+            PLOINKY_WORKSPACE_ROOT: workspaceDir,
+            PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
         },
         logStream: silentLogStream,
     });
@@ -160,6 +166,8 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
                 OPENCODE_TITLE_PATH: titlePath,
                 OPENCODE_PROJECT_DIR: projectDir,
                 PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+                PLOINKY_WORKSPACE_ROOT: projectDir,
+                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
             },
             stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -222,6 +230,7 @@ test('failed OpenCode task returns a continuation handle when its session was cr
         OPENCODE_TITLE_PATH: path.join(tmpDir, 'title.txt'),
         OPENCODE_PROJECT_DIR: projectDir,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
         FAKE_OPENCODE_FAIL: '1',
     });
 
@@ -253,6 +262,7 @@ test('cancelled OpenCode task saves the session before the wrapper exits', async
         OPENCODE_TITLE_PATH: path.join(tmpDir, 'title.txt'),
         OPENCODE_PROJECT_DIR: projectDir,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
         FAKE_OPENCODE_WAIT_MS: '1000',
     }, { signalAfterMs: 100 });
 
@@ -281,6 +291,7 @@ test('continue-task resumes the exact OpenCode session behind the opaque handle'
         OPENCODE_TITLE_PATH: titlePath,
         OPENCODE_PROJECT_DIR: projectDir,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
         XDG_STATE_HOME: stateRoot,
     };
 

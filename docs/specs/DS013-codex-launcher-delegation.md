@@ -33,12 +33,13 @@ asynchronous task response returns `Task started.` and is handed to the
 existing background-task observer.
 
 `codexAgent.execute-task` and `codexAgent.continue-task` are asynchronous
-five-minute MCP tools with full task-log retention. `execute-task` is tagged
-`internal` for AchillesCLI agent-to-agent delegation and declares
-`continue-task` as its continuation tool. `continue-task` is also tagged
-`internal`: AchillesCLI invokes later turns as the verified source agent in
-both terminal and WebChat modes, and the browser does not call the provider
-tool directly.
+MCP tools with full task-log retention and no elapsed-time limit. They remain
+active until Codex exits, the user cancels the task, execution fails, or the
+runtime is interrupted. `execute-task` is tagged `internal` for AchillesCLI
+agent-to-agent delegation and declares `continue-task` as its continuation
+tool. `continue-task` is also tagged `internal`: AchillesCLI invokes later
+turns as the verified source agent in both terminal and WebChat modes, and the
+browser does not call the provider tool directly.
 
 The default profile must install the Codex package and its stable launcher
 under `$HOME/.local`. The manifest and execution wrapper must resolve
@@ -50,7 +51,9 @@ home, provider authentication, configuration, threads, and the installed CLI
 remain available after runtime recreation. The installer must invoke npm
 through an absolute CLI path selected for the container or mounted Bubblewrap
 Node runtime; `NPM_CLI` remains available as an explicit test or operator
-override.
+override. The AgentServer MCP commands must invoke `node` through `PATH`, which
+resolves the compatible image binary in containers and Ploinky's mounted Node
+distribution in Bubblewrap.
 
 Initial execution runs:
 

@@ -143,7 +143,10 @@ Ploinky integration boundary:
     agent-private persistent storage, and returns the same handle. AchillesCLI
     invokes that tool as the verified source agent in both terminal and WebChat
     modes; the browser never invokes it directly. Initial and continued
-    executions opt into full task-log retention.
+    executions opt into full task-log retention. Their `execute-task` and
+    `continue-task` MCP definitions and provider runners must not impose an
+    elapsed-time limit: coding work remains active until the provider exits,
+    the user cancels it, execution fails, or the runtime is interrupted.
 22. Async `opencodeAgent`, `piAgent`, and `codexAgent` wrappers must treat
     `SIGTERM` as a controlled cancellation request. Each wrapper aborts its
     provider subprocess, waits for the runner to resolve the provider session
@@ -237,6 +240,9 @@ Provider launcher discovery:
    home writable and persistent. The installer must invoke npm through an
    absolute CLI path selected for the container or mounted Bubblewrap Node
    runtime, while an explicit `NPM_CLI` remains a test and operator override.
+   The PI MCP task commands must invoke `node` through `PATH` so the same
+   configuration resolves the image-provided Node binary in containers and
+   Ploinky's mounted Node distribution in Bubblewrap.
    `opencodeAgent` must run tasks in OpenCode's default
    formatted-output mode with `--auto`, must not use
    `--dangerously-skip-permissions`, and must pass the captured provider session
@@ -251,7 +257,26 @@ Provider launcher discovery:
    models, must set the permission catch-all to `allow`, must override
    `external_directory` to `deny`, and must not select a default model or
    restrict other providers. This is an OpenCode application policy rather
-   than an operating-system filesystem sandbox. For initial
+   than an operating-system filesystem sandbox by itself.
+   Both `opencodeAgent` and `piAgent` must additionally start every initial
+   and continued provider process inside a task-local Bubblewrap namespace.
+   The wrapper must canonicalize `projectDir`, require it to remain under
+   `PLOINKY_WORKSPACE_ROOT`, expose system/runtime files read-only, make the
+   namespace root read-only, and bind only the canonical `projectDir` writable
+   from the workspace. Provider-owned configuration and session directories
+   may be mounted separately with the minimum required access; the broader
+   workspace root and sibling projects must not be mounted. The task sandbox
+   shares the existing network namespace so provider API routing continues to
+   work, but unshares user, PID, IPC, and UTS namespaces. It must filter dynamic
+   loader and runtime injection variables, `PLOINKY_MASTER_KEY`, and the raw
+   `PLOINKY_AGENT_SECRET` before starting the provider, while preserving the
+   scoped provider credentials needed for API calls. It must fail closed when
+   Bubblewrap or nested namespace creation is unavailable.
+   The same contract applies when the Ploinky runtime itself is a container or
+   a `lite-sandbox` Bubblewrap process: container profiles must permit nested
+   namespaces, the installer must install `bubblewrap` only when `bwrap` is not
+   already available, and readiness must prove that a nested sandbox can
+   actually start before the agent becomes ready. For initial
    PI tasks, the provider owns model selection. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,
    read the effective `defaultProvider`, `defaultModel`, and valid
@@ -302,7 +327,9 @@ Provider launcher discovery:
    share one persistent installation location without writing to `/usr/local`.
    The installer must invoke npm through an absolute CLI path selected for the
    container or mounted Bubblewrap Node runtime, while preserving an explicit
-   `NPM_CLI` override for deterministic tests or operator control.
+   `NPM_CLI` override for deterministic tests or operator control. Codex MCP
+   task commands must invoke `node` through `PATH` rather than assuming a
+   container-only `/usr/local/bin/node` path.
 10. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent

@@ -29,12 +29,16 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-install-test-'));
     t.after(() => fs.rm(tempDir, { recursive: true, force: true }));
     const homeDir = path.join(tempDir, 'home');
+    const fakeBinDir = path.join(tempDir, 'bin');
     const npmCliPath = await writeFakeNpmCli(tempDir);
+    await fs.mkdir(fakeBinDir, { recursive: true });
+    await fs.writeFile(path.join(fakeBinDir, 'bwrap'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
 
     const result = spawnSync('sh', [installScript], {
         env: {
             ...process.env,
             HOME: homeDir,
+            PATH: `${fakeBinDir}:${process.env.PATH}`,
             NPM_CLI: npmCliPath,
             FAKE_PACKAGE_ENTRY: 'lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
         },
@@ -49,6 +53,8 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
 
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
     assert.equal(manifest.cli, '"$HOME/.local/bin/pi"');
+    assert.equal(manifest.containerSecurity?.privileged, true);
+    assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
 
     const script = await fs.readFile(installScript, 'utf8');
     assert.match(script, /\/opt\/ploinky-node\/lib\/node_modules\/npm\/bin\/npm-cli\.js/);

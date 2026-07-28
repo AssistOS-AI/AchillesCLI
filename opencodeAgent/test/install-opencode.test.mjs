@@ -26,6 +26,10 @@ INSTALLER
 `, { mode: 0o755 });
 }
 
+async function writeFakeBwrap(binDir) {
+    await fs.writeFile(path.join(binDir, 'bwrap'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+}
+
 test('installer writes the managed Soul Gateway config without changing provider state', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-install-test-'));
     const homeDir = path.join(tempDir, 'home');
@@ -39,6 +43,7 @@ test('installer writes the managed Soul Gateway config without changing provider
     await fs.mkdir(path.dirname(authPath), { recursive: true });
     await fs.mkdir(path.dirname(modelPath), { recursive: true });
     await writeFakeCurl(fakeBinDir);
+    await writeFakeBwrap(fakeBinDir);
     await fs.writeFile(path.join(configDir, 'opencode.json'), '{"old":true}\n');
     await fs.writeFile(authPath, '{"credential":"keep"}\n');
     await fs.writeFile(modelPath, '{"recent":[{"providerID":"openai","modelID":"existing"}]}\n');
@@ -76,6 +81,7 @@ test('installer leaves the persistent config untouched when OpenCode download fa
     await fs.mkdir(fakeBinDir, { recursive: true });
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(path.join(fakeBinDir, 'curl'), '#!/bin/sh\nexit 22\n', { mode: 0o755 });
+    await writeFakeBwrap(fakeBinDir);
     await fs.writeFile(configPath, '{"existing":true}\n');
 
     const result = spawnSync('sh', [installScript], {
@@ -109,5 +115,7 @@ test('config and manifest preserve runtime model selection and generated identit
     assert.deepEqual(Object.keys(provider.models).sort(), ['deep', 'fast', 'plan']);
     assert.equal(manifest.profiles.default.install, 'sh /code/scripts/install-opencode.sh');
     assert.equal(manifest.cli, '"$HOME/.opencode/bin/opencode"');
+    assert.equal(manifest.containerSecurity?.privileged, true);
+    assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
     assert.ok(!JSON.stringify(manifest).includes('PLOINKY_AGENT_API_KEY'));
 });

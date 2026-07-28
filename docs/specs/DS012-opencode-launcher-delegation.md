@@ -99,12 +99,14 @@ Callers that require the terminal result use the separate blocking `callTool`
 method instead of the launcher path.
 
 Both `execute-task` and `continue-task` are asynchronous, request full
-task-log retention, and use a five-minute execution timeout. `execute-task`
-advertises `continue-task` as its generic continuation capability. Every
-continuation creates a new AgentServer remote task, while AchillesCLI keeps
-the original local task id and increments its turn. A completed or failed task
-with a persisted handle remains continuable, as does a cancelled running task
-whose handle was persisted during controlled shutdown.
+task-log retention, and impose no elapsed-time limit. They remain active until
+OpenCode exits, the user cancels the task, execution fails, or the runtime is
+interrupted. `execute-task` advertises `continue-task` as its generic
+continuation capability. Every continuation creates a new AgentServer remote
+task, while AchillesCLI keeps the original local task id and increments its
+turn. A completed or failed task with a persisted handle remains continuable,
+as does a cancelled running task whose handle was persisted during controlled
+shutdown.
 
 Both tools are tagged `internal`. Initial and continued work therefore share
 the same router policy boundary: AchillesCLI signs the agent-to-agent request
@@ -143,6 +145,22 @@ runtime, readiness probe, task runner, models handler, and interactive CLI must
 resolve the OpenCode binary from the same effective `HOME` unless an explicit
 `OPENCODE_BIN` test or operator override is supplied.
 
+Every OpenCode task process, including session discovery, export, initial
+execution, continuation, and the chat-completions execution path, must run
+inside a task-local Bubblewrap namespace. The canonical `projectDir` is the
+only writable bind from the Ploinky workspace; the namespace root and provider
+runtime are read-only, while only the OpenCode configuration, cache, data, and
+state directories needed for normal operation are mounted separately writable.
+The wrapper must reject missing, external, or symlink-escaped project
+directories, share networking for provider calls, filter loader/runtime
+injection variables and raw Ploinky master/agent secrets, and fail closed if
+nested Bubblewrap cannot start. The scoped `PLOINKY_AGENT_API_KEY` remains
+available for the configured Soul Gateway provider.
+Container profiles must allow nested user/mount namespaces. The installer must
+reuse an existing `bwrap` binary in a Ploinky host sandbox, install Bubblewrap
+when it is absent in a container, and readiness must execute a nested sandbox
+probe rather than checking only for the binary.
+
 The installed OpenCode config must add an OpenAI-compatible provider named
 `soul-gateway`. Its base URL must be derived from `PLOINKY_ROUTER_URL`, and its
 API key must reference Ploinky's generated `PLOINKY_AGENT_API_KEY` through
@@ -164,6 +182,11 @@ Ploinky for the agent. It must not use `PLOINKY_WORKSPACE_ROOT` as the chat
 completion project directory. Streaming is not part of this contract; the
 manifest must leave streaming disabled so AgentServer rejects streaming
 requests before invoking the handler.
+
+The manifest endpoint commands and both MCP task commands must invoke `node`
+through the runtime `PATH`. They must not assume `/usr/local/bin/node`, because
+the container image and Ploinky's mounted Bubblewrap Node distribution expose
+the compatible executable through different absolute paths.
 
 The models handler must list OpenCode models through the OpenCode CLI and
 return an OpenAI-style `object: "list"` response. Each returned model id must
@@ -272,8 +295,17 @@ Response: Non-interactive tasks must proceed without approval prompts while
 preserving the configured denial. OpenCode auto mode approves only permission
 requests that are not explicitly denied, whereas
 `--dangerously-skip-permissions` bypasses the intended application-level
-policy. This is an OpenCode permission boundary rather than an operating-system
-filesystem sandbox.
+policy. This remains a useful application-level boundary, while the task-local
+Bubblewrap wrapper supplies the independent operating-system filesystem
+boundary.
+
+### Question #14: Why is Bubblewrap started again when Ploinky already uses a container or `lite-sandbox`?
+Response: The outer Ploinky boundary protects the host but can expose the whole
+selected workspace to one agent instance. The inner namespace has a different
+scope: it protects sibling projects from each individual task by making only
+that task's canonical `projectDir` writable. A startup probe verifies this
+nested namespace path for both outer runtime modes, and the agent remains
+unready rather than silently running without per-task confinement.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users
@@ -282,4 +314,5 @@ fixed tool dispatch, deterministic argument mapping, and plain text results.
 Completed task results additionally carry an opaque continuation capability.
 The same agent also provides an OpenAI-compatible provider surface for Soul
 Gateway, with model discovery delegated to OpenCode and execution constrained
-to the Ploinky-provided `WORKSPACE_PATH`.
+to the Ploinky-provided `WORKSPACE_PATH` plus the task-local Bubblewrap
+filesystem boundary.

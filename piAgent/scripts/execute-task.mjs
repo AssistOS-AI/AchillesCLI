@@ -12,8 +12,11 @@ import {
     sessionDirectory,
     writeContinuationRecord,
 } from './continuation-store.mjs';
+import {
+    buildTaskSandboxLaunch,
+    resolveSandboxProject,
+} from './task-sandbox.mjs';
 
-const PI_TIMEOUT_MS = 300000;
 const LOG_TAIL_LIMIT = 16 * 1024;
 const DEFAULT_PI_HOME = '/root';
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
@@ -207,15 +210,30 @@ function runPi({
             ...(thinking ? ['--thinking', thinking] : []),
             prompt,
         ];
-        const child = spawn(resolvePiBinary(env), args, {
-            cwd: projectDir,
-            env: {
-                ...process.env,
-                ...env,
-                HOME: '/root',
-                PI_OFFLINE: '1',
-                PI_SKIP_VERSION_CHECK: '1',
-            },
+        const piBinary = resolvePiBinary(env);
+        const childEnv = {
+            ...process.env,
+            ...env,
+            HOME: '/root',
+            PI_OFFLINE: '1',
+            PI_SKIP_VERSION_CHECK: '1',
+        };
+        const launch = buildTaskSandboxLaunch({
+            projectDir,
+            command: piBinary,
+            args,
+            env: childEnv,
+            readOnlyPaths: [
+                '/root/.local',
+            ].filter((candidate) => fs.existsSync(candidate)),
+            writablePaths: [
+                '/root/.pi/agent',
+                sessionDir,
+            ].filter((candidate) => fs.existsSync(candidate)),
+        });
+        const child = spawn(launch.command, launch.args, {
+            cwd: launch.cwd,
+            env: childEnv,
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         const abort = () => {
@@ -225,21 +243,12 @@ function runPi({
         else signal?.addEventListener?.('abort', abort, { once: true });
         let stdoutTail = '';
         let stderrTail = '';
-        let timedOut = false;
         const jsonEvents = createPiJsonEventParser({
             onText(text) {
                 stdoutTail = appendBoundedTail(stdoutTail, text);
                 logStream.write(text);
             },
         });
-        const timeout = setTimeout(() => {
-            timedOut = true;
-            logStream.write(`PI task timed out after ${PI_TIMEOUT_MS / 1000}s; sending SIGTERM\n`);
-            try {
-                child.kill('SIGTERM');
-            } catch {
-            }
-        }, PI_TIMEOUT_MS);
 
         child.stdout.on('data', (chunk) => {
             jsonEvents.push(chunk);
@@ -249,18 +258,15 @@ function runPi({
             logStream.write(chunk);
         });
         child.on('error', (error) => {
-            clearTimeout(timeout);
             signal?.removeEventListener?.('abort', abort);
             reject(error);
         });
         child.on('close', (code, closeSignal) => {
-            clearTimeout(timeout);
             signal?.removeEventListener?.('abort', abort);
             jsonEvents.finish();
             resolve({
                 code,
                 signal: closeSignal,
-                timedOut,
                 durationMs: Date.now() - startedAt,
                 stdoutTail,
                 stderrTail,
@@ -271,9 +277,7 @@ function runPi({
 }
 
 function summarizeFailure(result) {
-    return result.timedOut
-        ? `PI task timed out after ${PI_TIMEOUT_MS / 1000}s`
-        : `PI task failed with exit code ${result.code ?? 'unknown'}${result.signal ? ` signal ${result.signal}` : ''}`;
+    return `PI task failed with exit code ${result.code ?? 'unknown'}${result.signal ? ` signal ${result.signal}` : ''}`;
 }
 
 function summarizeOutput(result, { preferStderr = false } = {}) {
@@ -329,7 +333,15 @@ export async function executeTask({
         ? sessionId.trim()
         : createContinuationHandle();
     const resolvedSessionDir = suppliedSessionDir || sessionDirectory(handle);
-    const resolvedProjectDir = path.resolve(projectDir.trim());
+    let resolvedProjectDir;
+    try {
+        resolvedProjectDir = resolveSandboxProject(projectDir.trim(), process.env);
+    } catch (error) {
+        return {
+            ok: false,
+            error: `PI task sandbox rejected projectDir: ${error?.message || error}`,
+        };
+    }
     writeContinuationRecord(handle, { projectDir: resolvedProjectDir });
     try {
         const result = await runPi({
@@ -343,7 +355,7 @@ export async function executeTask({
             logStream,
             signal,
         });
-        if (result.timedOut || result.code !== 0) {
+        if (result.code !== 0) {
             return {
                 ok: false,
                 error: summarizeFailure(result),

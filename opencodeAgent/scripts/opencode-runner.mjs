@@ -1,10 +1,9 @@
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-
-export const OPENCODE_TIMEOUT_MS = 300000;
-
+import { buildTaskSandboxLaunch } from './task-sandbox.mjs';
 const DEFAULT_OPENCODE_HOME = '/root';
 const LOG_TAIL_LIMIT = 16 * 1024;
 const SEMANTIC_FAILURE_PATTERNS = [
@@ -20,6 +19,44 @@ export function resolveOpenCodeBin(env = process.env) {
 }
 
 export const DEFAULT_OPENCODE_BIN = resolveOpenCodeBin();
+
+function existingPaths(candidates) {
+    return candidates.filter((candidate) => candidate && fsSync.existsSync(candidate));
+}
+
+function spawnSandboxedOpenCode({
+    opencodeBin,
+    args,
+    projectDir,
+    env,
+    stdio = ['ignore', 'pipe', 'pipe'],
+}) {
+    const childEnv = {
+        ...process.env,
+        ...env,
+        HOME: '/root',
+    };
+    const launch = buildTaskSandboxLaunch({
+        projectDir,
+        command: opencodeBin,
+        args,
+        env: childEnv,
+        readOnlyPaths: existingPaths([
+            '/root/.opencode',
+        ]),
+        writablePaths: existingPaths([
+            '/root/.config/opencode',
+            '/root/.cache/opencode',
+            '/root/.local/share/opencode',
+            '/root/.local/state/opencode',
+        ]),
+    });
+    return spawn(launch.command, launch.args, {
+        cwd: launch.cwd,
+        env: childEnv,
+        stdio,
+    });
+}
 
 export function createContainerLogStream() {
     return {
@@ -75,21 +112,18 @@ export async function readRecentOpenCodeModel(env = process.env) {
 
 function listOpenCodeSessions({ opencodeBin, projectDir, env }) {
     return new Promise((resolve, reject) => {
-        const child = spawn(opencodeBin, [
-            'session',
-            'list',
-            '--format',
-            'json',
-            '--max-count',
-            '1000',
-        ], {
-            cwd: projectDir,
-            env: {
-                ...process.env,
-                ...env,
-                HOME: '/root',
-            },
-            stdio: ['ignore', 'pipe', 'pipe'],
+        const child = spawnSandboxedOpenCode({
+            opencodeBin,
+            args: [
+                'session',
+                'list',
+                '--format',
+                'json',
+                '--max-count',
+                '1000',
+            ],
+            projectDir,
+            env,
         });
         const stdout = [];
         const stderr = [];
@@ -124,14 +158,11 @@ async function findSessionId({ opencodeBin, projectDir, env, title }) {
 
 function exportSession({ opencodeBin, projectDir, env, sessionId }) {
     return new Promise((resolve, reject) => {
-        const child = spawn(opencodeBin, ['export', sessionId], {
-            cwd: projectDir,
-            env: {
-                ...process.env,
-                ...env,
-                HOME: '/root',
-            },
-            stdio: ['ignore', 'pipe', 'pipe'],
+        const child = spawnSandboxedOpenCode({
+            opencodeBin,
+            args: ['export', sessionId],
+            projectDir,
+            env,
         });
         const stdout = [];
         const stderr = [];
@@ -206,14 +237,11 @@ export function runOpenCode({
         }
         args.push(prompt);
 
-        const child = spawn(opencodeBin, args, {
-            cwd: projectDir,
-            env: {
-                ...process.env,
-                ...env,
-                HOME: '/root',
-            },
-            stdio: ['ignore', 'pipe', 'pipe'],
+        const child = spawnSandboxedOpenCode({
+            opencodeBin,
+            args,
+            projectDir,
+            env,
         });
         const abort = () => {
             try { child.kill('SIGTERM'); } catch (_) { }
@@ -223,15 +251,6 @@ export function runOpenCode({
 
         let stdoutTail = '';
         let stderrTail = '';
-        let timedOut = false;
-        const timeout = setTimeout(() => {
-            timedOut = true;
-            logLine(logStream, `OpenCode task timed out after ${OPENCODE_TIMEOUT_MS / 1000}s; sending SIGTERM`);
-            try {
-                child.kill('SIGTERM');
-            } catch {
-            }
-        }, OPENCODE_TIMEOUT_MS);
 
         child.stdout.on('data', (chunk) => {
             const text = chunk.toString('utf8');
@@ -246,13 +265,11 @@ export function runOpenCode({
         });
 
         child.on('error', (error) => {
-            clearTimeout(timeout);
             signal?.removeEventListener?.('abort', abort);
             reject(error);
         });
 
         child.on('close', async (code, closeSignal) => {
-            clearTimeout(timeout);
             signal?.removeEventListener?.('abort', abort);
             let resolvedSessionId = sessionId;
             if (sessionTitle) {
@@ -284,7 +301,6 @@ export function runOpenCode({
             resolve({
                 code,
                 signal: closeSignal,
-                timedOut,
                 durationMs: Date.now() - startedAt,
                 stdoutTail,
                 stderrTail,
@@ -301,9 +317,7 @@ export function detectSemanticFailure(result) {
 }
 
 export function summarizeFailure(result) {
-    return result.timedOut
-        ? `OpenCode task timed out after ${OPENCODE_TIMEOUT_MS / 1000}s`
-        : `OpenCode task failed with exit code ${result.code ?? 'unknown'}${result.signal ? ` signal ${result.signal}` : ''}`;
+    return `OpenCode task failed with exit code ${result.code ?? 'unknown'}${result.signal ? ` signal ${result.signal}` : ''}`;
 }
 
 export function summarizeOutput(result, { preferStderr = false } = {}) {
@@ -326,7 +340,7 @@ export async function executeOpenCodeTask({
     signal,
 }) {
     const resolvedProjectDir = path.resolve(projectDir);
-    const effectiveProjectDir = resolvedProjectDir;
+    let effectiveProjectDir = resolvedProjectDir;
     const resolvedModel = typeof model === 'string' ? model.trim() : '';
     const resolvedVariant = typeof variant === 'string' ? variant.trim() : '';
     const taskPrompt = String(prompt || '').trim();
@@ -343,6 +357,17 @@ export async function executeOpenCodeTask({
                 model: resolvedModel,
             };
         }
+    }
+    try {
+        effectiveProjectDir = await fs.realpath(resolvedProjectDir);
+    } catch (error) {
+        return {
+            ok: false,
+            error: `Failed to resolve project directory: ${error.message}`,
+            projectDir: resolvedProjectDir,
+            effectiveProjectDir,
+            model: resolvedModel,
+        };
     }
 
     try {

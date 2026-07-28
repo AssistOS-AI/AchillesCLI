@@ -224,9 +224,21 @@
     <code>$HOME/.local</code>, allowing the same profiles to run in containers and Linux
     host sandboxes without writing to read-only system paths. Their installers invoke npm
     through an absolute CLI path selected for the container or mounted Bubblewrap Node
-    runtime. Ploinky maps that home to the
+    runtime. AgentServer tool and endpoint commands use <code>node</code> through the runtime
+    <code>PATH</code>, so containers resolve their bundled Node installation and Bubblewrap
+    resolves Ploinky's mounted Node distribution without assuming <code>/usr/local/bin</code>.
+    Ploinky maps that home to the
     enabled instance's persistent data directory, so CLI installation and provider state
     survive runtime recreation.
+    OpenCode and PI start every initial and continued task in an inner Bubblewrap namespace,
+    including when Ploinky itself is already using <code>lite-sandbox</code>. The wrapper
+    canonicalizes the requested project, makes the namespace root and runtime read-only,
+    and exposes only that <code>projectDir</code> as writable from the workspace; sibling
+    projects remain unmounted. Provider configuration and session state receive only their
+    required separate mounts, raw Ploinky master and agent secrets are removed from the task
+    environment, and networking stays shared for model API calls. Container
+    profiles permit nested namespaces, installers add Bubblewrap only when it is absent,
+    and readiness fails closed unless a real nested sandbox probe succeeds.
     Codex initial and continuation tasks run with <code>workspace-write</code>
     confinement rooted at the selected project directory and an approval policy of
     <code>never</code>. This keeps ordinary workspace edits non-interactive while
@@ -242,14 +254,16 @@
     models using Ploinky-injected router and agent-identity environment values; it stores no credential,
     selects no default model, and leaves other providers available. Tasks run with <code>--auto</code>
     so normal operations do not prompt, while the config explicitly denies
-    <code>external_directory</code>; this is an OpenCode tool-policy boundary, not an operating-system
-    filesystem sandbox. OpenCode's
+    <code>external_directory</code>; this application-level policy complements the independent
+    task-local operating-system sandbox. OpenCode's
     exported session data is inspected only off-stream to identify the last assistant
     answer for final-result metadata, allowing WebChat to show intermediate output in
     grey while keeping the raw visible stream unchanged.
     OpenCode, PI, and Codex keep provider session details in private persistent storage behind an opaque UUID handle,
     expose an internal policy-checked <code>continue-task</code> tool for verified AchillesCLI calls, and request full
-    log retention. WebChat sends the CLI command and never invokes the provider tool directly. Their structured
+    log retention. Their initial and continued coding tasks have no elapsed-time limit and remain active until the
+    provider exits, the user cancels the task, execution fails, or the runtime is interrupted. WebChat sends the CLI
+    command and never invokes the provider tool directly. Their structured
     wrapper result exposes only answer text to ordinary MCP callers while preserving continuation metadata
     on the asynchronous task. Before resuming, each provider resolves its current model internally:
     OpenCode reads its persistent recent-model state, while PI merges persistent global defaults with

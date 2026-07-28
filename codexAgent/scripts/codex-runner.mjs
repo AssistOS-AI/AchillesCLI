@@ -4,7 +4,6 @@ import { spawn } from 'node:child_process';
 
 export const DEFAULT_CODEX_HOME = '/root';
 export const DEFAULT_CODEX_BIN = '/root/.local/bin/codex';
-export const CODEX_TIMEOUT_MS = 300000;
 
 const LOG_TAIL_LIMIT = 16 * 1024;
 
@@ -124,7 +123,6 @@ export function runCodex({
         let resolvedThreadId = threadId;
         let outputText = '';
         let visibleTextTail = '';
-        let timedOut = false;
 
         function consumeLine(rawLine, complete = true) {
             const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
@@ -146,14 +144,6 @@ export function runCodex({
             }
         }
 
-        const timeout = setTimeout(() => {
-            timedOut = true;
-            try {
-                child.kill('SIGTERM');
-            } catch {
-            }
-        }, CODEX_TIMEOUT_MS);
-
         child.stdout.on('data', (chunk) => {
             const text = chunk.toString('utf8');
             stdoutTail = appendBoundedTail(stdoutTail, text);
@@ -170,18 +160,15 @@ export function runCodex({
             logStream.write(chunk);
         });
         child.on('error', (error) => {
-            clearTimeout(timeout);
             signal?.removeEventListener?.('abort', abort);
             reject(error);
         });
         child.on('close', (code, closeSignal) => {
-            clearTimeout(timeout);
             signal?.removeEventListener?.('abort', abort);
             if (jsonBuffer) consumeLine(jsonBuffer, false);
             resolve({
                 code,
                 signal: closeSignal,
-                timedOut,
                 durationMs: Date.now() - startedAt,
                 stdoutTail,
                 stderrTail,
@@ -194,9 +181,7 @@ export function runCodex({
 }
 
 export function summarizeFailure(result) {
-    return result.timedOut
-        ? `Codex task timed out after ${CODEX_TIMEOUT_MS / 1000}s`
-        : `Codex task failed with exit code ${result.code ?? 'unknown'}${result.signal ? ` signal ${result.signal}` : ''}`;
+    return `Codex task failed with exit code ${result.code ?? 'unknown'}${result.signal ? ` signal ${result.signal}` : ''}`;
 }
 
 export async function executeCodexTask({
@@ -226,7 +211,7 @@ export async function executeCodexTask({
         const outputText = result.outputText
             || (result.stderrTail || '').trim()
             || (result.visibleTextTail || '').trim();
-        if (result.timedOut || result.code !== 0) {
+        if (result.code !== 0) {
             return {
                 ok: false,
                 error: summarizeFailure(result),

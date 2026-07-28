@@ -12,11 +12,16 @@ import {
 
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
 const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
+const fakeBwrapPath = new URL('../../tests/helpers/fake-bwrap.sh', import.meta.url).pathname;
 
 function runTaskScript(scriptPath, input, env, { signalAfterMs = 0 } = {}) {
     return new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [scriptPath], {
-            env: { ...process.env, ...env },
+            env: {
+                ...process.env,
+                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
+                ...env,
+            },
             stdio: ['pipe', 'pipe', 'pipe'],
         });
         let stdout = '';
@@ -44,7 +49,7 @@ if (process.env.PI_ENV_PATH) {
         agentDir: process.env.PI_CODING_AGENT_DIR || null,
     }));
 }
-const emit = (event) => process.stdout.write(JSON.stringify(event) + '\\n');
+const emit = (event) => fs.writeSync(1, JSON.stringify(event) + '\\n');
 emit({ type: 'session', id: 'ignored-session-metadata' });
 emit({ type: 'message_start', message: { role: 'assistant', content: [] } });
 emit({
@@ -82,7 +87,7 @@ emit({
     }],
 });
 if (process.env.FAKE_PI_FAIL === '1') {
-    process.stderr.write('insufficient credits');
+    fs.writeSync(2, 'insufficient credits');
     process.exitCode = 1;
 }
 `, 'utf8');
@@ -178,6 +183,8 @@ test('PI wrapper creates a resumable session and returns a continuation handle',
                 PI_CODING_AGENT_DIR: '/root/.pi/agent',
                 PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
                 PLOINKY_PI_SESSION_DIR: sessionRoot,
+                PLOINKY_WORKSPACE_ROOT: projectDir,
+                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
             },
             stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -229,6 +236,7 @@ test('failed PI task returns and persists its continuation handle', async () => 
         PI_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
         FAKE_PI_FAIL: '1',
     });
 
@@ -259,6 +267,7 @@ test('cancelled PI task returns its preallocated continuation handle', async () 
         PI_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_PI_SESSION_DIR: path.join(temporaryDirectory, 'sessions'),
+        PLOINKY_WORKSPACE_ROOT: projectDir,
         FAKE_PI_WAIT_MS: '1000',
     }, { signalAfterMs: 100 });
 
@@ -324,6 +333,7 @@ test('PI continuation reuses the exact session id and session directory', async 
         PI_ARGS_PATH: argsPath,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
         HOME: home,
     };
     const initial = await runTaskScript(executeTaskPath, {

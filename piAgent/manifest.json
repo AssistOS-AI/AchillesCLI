@@ -1,11 +1,23 @@
 {
     "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
+    "containerSecurity": {
+        "privileged": true
+    },
     "startup": "manual",
     "lite-sandbox": true,
     "about": "PI coding agent. Executes delegated prompt tasks through the `pi` binary and returns bounded command output.",
     "profiles": {
         "default": {
             "install": "sh /code/scripts/install-pi.sh"
+        }
+    },
+    "health": {
+        "readiness": {
+            "script": "readiness.sh",
+            "interval": 1,
+            "timeout": 5,
+            "failureThreshold": 60,
+            "successThreshold": 1
         }
     },
     "cli": "\"$HOME/.local/bin/pi\"",

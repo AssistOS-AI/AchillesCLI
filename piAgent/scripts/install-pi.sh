@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+"$SCRIPT_DIR/ensure-bubblewrap.sh"
+
 if [ -z "${HOME:-}" ]; then
     echo "install-pi: HOME is required." >&2
     exit 1
@@ -10,7 +13,11 @@ INSTALL_PREFIX="$HOME/.local"
 PACKAGE_ENTRY="$INSTALL_PREFIX/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 BIN_PATH="$INSTALL_PREFIX/bin/pi"
 
-mkdir -p "$INSTALL_PREFIX/bin"
+mkdir -p \
+    "$INSTALL_PREFIX/bin" \
+    "$HOME/.pi/agent" \
+    "$HOME/.ploinky/pi-sessions" \
+    "$HOME/.ploinky/task-sessions"
 if [ -z "${NPM_CLI:-}" ]; then
     for candidate in \
         /opt/ploinky-node/lib/node_modules/npm/bin/npm-cli.js \
