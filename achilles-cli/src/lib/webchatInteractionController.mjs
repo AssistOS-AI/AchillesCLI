@@ -8,6 +8,27 @@ function interactionId() {
     return `task_control_${randomUUID().replaceAll('-', '_')}`;
 }
 
+function publicChallenge(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.type === 'device_code') {
+        return {
+            type: 'device_code',
+            verificationUri: String(raw.verificationUri || '').slice(0, 4000),
+            userCode: String(raw.userCode || '').slice(0, 100),
+            instructions: String(raw.instructions || '').slice(0, 2000),
+            ...(Number.isFinite(Number(raw.expiresInSeconds)) ? { expiresInSeconds: Number(raw.expiresInSeconds) } : {}),
+        };
+    }
+    if (raw.type === 'manual_oauth_code') {
+        return {
+            type: 'manual_oauth_code',
+            url: String(raw.url || '').slice(0, 4000),
+            instructions: String(raw.instructions || '').slice(0, 2000),
+        };
+    }
+    return null;
+}
+
 export function createWebchatInteractionController({ stdout = process.stdout, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     let pending = null;
 
@@ -52,7 +73,9 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
         searchable = false,
         targetTaskId = '',
         targetTabId = '',
+        challenge = null,
     }, requestOptions = {}) {
+        const normalizedChallenge = publicChallenge(challenge);
         const normalized = (Array.isArray(options) ? options : []).map((option, index) => ({
             id: `choice_${index}`,
             label: String(option?.label || option?.value || ''),
@@ -71,6 +94,7 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
             searchable: searchable === true,
             ...(targetTaskId ? { targetTaskId } : {}),
             ...(targetTabId ? { targetTabId } : {}),
+            ...(normalizedChallenge ? { challenge: normalizedChallenge } : {}),
         }, {
             ...requestOptions,
             values: new Map(normalized.map((option) => [option.id, option.value])),
@@ -86,7 +110,9 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
         maxLength = 4000,
         targetTaskId = '',
         targetTabId = '',
+        challenge = null,
     }, requestOptions = {}) {
+        const normalizedChallenge = publicChallenge(challenge);
         return request({
             kind: 'input',
             title,
@@ -100,6 +126,7 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
             },
             ...(targetTaskId ? { targetTaskId } : {}),
             ...(targetTabId ? { targetTabId } : {}),
+            ...(normalizedChallenge ? { challenge: normalizedChallenge } : {}),
         }, requestOptions);
     }
 

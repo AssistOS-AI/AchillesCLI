@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createTaskControlCommands } from '../src/lib/taskControlCommands.mjs';
+import {
+    createTaskControlCommands,
+    normalizeLoginCatalog,
+    normalizeLoginChallenge,
+} from '../src/lib/taskControlCommands.mjs';
 import { createWebchatInteractionController } from '../src/lib/webchatInteractionController.mjs';
 
 const TASK_ID = 'task_111111111111111111111111';
@@ -80,7 +84,7 @@ test('/task login owns provider and secret prompting in AchillesCLI', async () =
                 providers: [{
                     key: 'openai',
                     label: 'OpenAI',
-                    methods: [{ key: 'api_key', label: 'API key', secret: true }],
+                    methods: [{ key: 'api_key', kind: 'api_key', label: 'API key', secret: true }],
                 }],
             };
         }
@@ -97,6 +101,85 @@ test('/task login owns provider and secret prompting in AchillesCLI', async () =
     assert.deepEqual(calls.filter(([kind]) => kind === 'input'), [['input', 'secret']]);
     const start = calls.find(([kind, input]) => kind === 'control' && input.operation === 'login_start')[1];
     assert.equal(start.apiKey, 'secret-value');
+});
+
+test('/task login renders a structured device-code challenge in the originating task tab', async () => {
+    const requests = [];
+    const calls = [];
+    const interactions = {
+        async select(request) {
+            requests.push(request);
+            if (request.title === 'Connect provider') return 'openai';
+            if (request.title === 'Connect OpenAI') return 'device_code';
+            return 'check';
+        },
+        async input() { throw new Error('unexpected input'); },
+    };
+    const control = async (input) => {
+        calls.push(input);
+        if (input.operation === 'login_describe') {
+            return {
+                providers: [{
+                    key: 'openai',
+                    label: 'OpenAI',
+                    methods: [{ key: 'device_code', kind: 'device_code', label: 'Device code' }],
+                }],
+            };
+        }
+        if (input.operation === 'login_start') {
+            return {
+                status: 'running',
+                flowId: 'flow_123',
+                challenge: {
+                    type: 'device_code',
+                    verificationUri: 'https://example.com/device',
+                    userCode: 'ABCD-EFGH',
+                    expiresInSeconds: 900,
+                },
+            };
+        }
+        return { status: 'completed', flowId: 'flow_123', provider: 'openai' };
+    };
+    const commands = createTaskControlCommands({
+        workingDir: '/work',
+        interactions,
+        controlTaskSessionImpl: control,
+    });
+
+    const result = await commands.login(TASK_ID, '', '', { context: { sourceTabId: 'tab_login' } });
+    assert.equal(result.status, 'completed');
+    const challenge = requests.find((request) => request.title === 'Complete provider authentication');
+    assert.deepEqual(challenge.challenge, {
+        type: 'device_code',
+        verificationUri: 'https://example.com/device',
+        userCode: 'ABCD-EFGH',
+        expiresInSeconds: 900,
+    });
+    assert.equal(challenge.targetTaskId, TASK_ID);
+    assert.equal(challenge.targetTabId, 'tab_login');
+    assert.deepEqual(calls.map((entry) => entry.operation), [
+        'login_describe', 'login_start', 'login_status',
+    ]);
+});
+
+test('AchillesCLI drops unknown login methods and rejects local callback challenges', () => {
+    assert.deepEqual(normalizeLoginCatalog({
+        providers: [{
+            key: 'openai',
+            methods: [
+                { key: 'device', kind: 'device_code', label: 'Device code' },
+                { key: 'browser', kind: 'local_callback', label: 'Browser callback' },
+            ],
+        }],
+    })[0].methods.map((method) => method.key), ['device']);
+    assert.throws(() => normalizeLoginChallenge({
+        type: 'auth_url',
+        url: 'http://localhost:1455/auth/callback',
+    }), /unsupported_container_login_challenge/);
+    assert.throws(() => normalizeLoginChallenge({
+        type: 'manual_oauth_code',
+        url: 'https://localhost:1455/auth/callback',
+    }), /unsupported_container_login_challenge/);
 });
 
 test('generic interaction controller maps opaque option ids back to Achilles values', async () => {

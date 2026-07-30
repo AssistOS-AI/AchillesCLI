@@ -74,12 +74,27 @@ function unseenText(previous, next) {
     return next;
 }
 
+function extractAssistantError(message) {
+    if (!message || message.role !== 'assistant' || message.stopReason !== 'error') return '';
+    const diagnostics = Array.isArray(message.diagnostics) ? message.diagnostics : [];
+    const candidates = [
+        message.errorMessage,
+        message.error?.message,
+        ...diagnostics.map((diagnostic) => diagnostic?.errorMessage),
+        ...diagnostics.map((diagnostic) => diagnostic?.error?.message),
+    ];
+    return candidates
+        .find((candidate) => typeof candidate === 'string' && candidate.trim())
+        ?.trim() || 'PI assistant stopped with an error.';
+}
+
 export function createPiJsonEventParser({ onText = () => {} } = {}) {
     const decoder = new StringDecoder('utf8');
     const toolOutput = new Map();
     let buffered = '';
     let currentAssistantText = '';
     let finalAssistantText = '';
+    let assistantError = '';
 
     const emit = (text) => {
         if (typeof text === 'string' && text) onText(text);
@@ -110,6 +125,7 @@ export function createPiJsonEventParser({ onText = () => {} } = {}) {
             const completeText = extractTextContent(event.message.content);
             emit(unseenText(currentAssistantText, completeText));
             if (completeText) finalAssistantText = completeText;
+            assistantError ||= extractAssistantError(event.message);
             currentAssistantText = '';
             return;
         }
@@ -151,6 +167,9 @@ export function createPiJsonEventParser({ onText = () => {} } = {}) {
         },
         getFinalOutputText() {
             return finalAssistantText;
+        },
+        getErrorMessage() {
+            return assistantError;
         },
     };
 }
@@ -271,6 +290,7 @@ function runPi({
                 stdoutTail,
                 stderrTail,
                 finalOutputText: jsonEvents.getFinalOutputText(),
+                assistantError: jsonEvents.getErrorMessage(),
             });
         });
     });
@@ -355,10 +375,10 @@ export async function executeTask({
             logStream,
             signal,
         });
-        if (result.code !== 0) {
+        if (result.assistantError || result.code !== 0) {
             return {
                 ok: false,
-                error: summarizeFailure(result),
+                error: result.assistantError || summarizeFailure(result),
                 outputText: summarizeOutput(result, { preferStderr: true }),
                 continuation: continuationDescriptor(handle),
             };

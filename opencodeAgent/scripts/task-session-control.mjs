@@ -10,6 +10,7 @@ import {
 } from './login-flow-store.mjs';
 import { readContinuationRecord } from './continuation-store.mjs';
 import { openCodeJson, startOpenCodeControlServer } from './opencode-control-server.mjs';
+import { providerCatalog } from './login-methods.mjs';
 
 async function readInput() {
     let raw = '';
@@ -17,19 +18,6 @@ async function readInput() {
     const payload = JSON.parse(raw || '{}');
     if (payload?.tool && payload.tool !== 'task-session-control') throw new Error('unexpected_tool');
     return payload?.input && typeof payload.input === 'object' ? payload.input : payload;
-}
-
-function providerCatalog(methodsByProvider) {
-    return Object.entries(methodsByProvider || {}).map(([provider, methods]) => ({
-        key: provider,
-        label: provider,
-        methods: methods.map((method, index) => ({
-            key: method.type === 'api' ? `api_key:${index}` : `oauth:${index}`,
-            label: String(method.label || (method.type === 'api' ? 'API key' : 'Browser / OAuth')),
-            secret: method.type === 'api',
-            prompts: Array.isArray(method.prompts) ? method.prompts : [],
-        })),
-    })).filter((provider) => provider.methods.length);
 }
 
 function providerInputs(raw) {
@@ -82,7 +70,7 @@ async function main() {
             provider: provider.key,
             method: method.key,
             workerPath,
-            workerArgs: [provider.key, index, Buffer.from(JSON.stringify(inputs)).toString('base64url')],
+            workerArgs: [provider.key, index, method.kind, Buffer.from(JSON.stringify(inputs)).toString('base64url')],
         }),
     });
 }

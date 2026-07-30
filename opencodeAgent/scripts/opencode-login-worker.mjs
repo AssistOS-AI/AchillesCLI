@@ -4,9 +4,10 @@ import {
     updateLoginFlow,
     waitForLoginResponse,
 } from './login-flow-store.mjs';
+import { authorizationChallenge } from './login-methods.mjs';
 import { openCodeJson, startOpenCodeControlServer } from './opencode-control-server.mjs';
 
-const [flowId, provider, methodIndexRaw, inputsRaw = ''] = process.argv.slice(2);
+const [flowId, provider, methodIndexRaw, declaredKind, inputsRaw = ''] = process.argv.slice(2);
 const methodIndex = Number.parseInt(methodIndexRaw, 10);
 let inputs = {};
 try { inputs = JSON.parse(Buffer.from(inputsRaw, 'base64url').toString('utf8')); } catch (_) { }
@@ -25,11 +26,7 @@ async function main() {
     });
     updateLoginFlow(flowId, {
         status: authorization.method === 'code' ? 'waiting' : 'running',
-        challenge: {
-            type: 'auth_url',
-            url: String(authorization.url || ''),
-            instructions: String(authorization.instructions || ''),
-        },
+        challenge: authorizationChallenge(authorization, declaredKind),
         ...(authorization.method === 'code' ? {
             prompt: { type: 'manual_code', message: authorization.instructions || 'Paste the authorization code.' },
         } : {}),
@@ -42,12 +39,17 @@ async function main() {
         });
     } else {
         const deadline = Date.now() + 15 * 60 * 1000;
+        let connected = false;
         while (Date.now() < deadline && !cancellation.signal.aborted) {
             const status = await openCodeJson(server, '/provider');
-            if (Array.isArray(status?.connected) && status.connected.includes(provider)) break;
+            if (Array.isArray(status?.connected) && status.connected.includes(provider)) {
+                connected = true;
+                break;
+            }
             await new Promise((resolve) => setTimeout(resolve, 1000));
         }
         if (cancellation.signal.aborted) throw new Error('login_cancelled');
+        if (!connected) throw new Error('provider_login_timed_out');
     }
     updateLoginFlow(flowId, { status: 'completed', prompt: null, challenge: null });
 }

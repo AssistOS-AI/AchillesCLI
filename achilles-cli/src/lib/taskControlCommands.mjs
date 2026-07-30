@@ -2,6 +2,14 @@ import { controlTaskSession } from './taskSessionControl.mjs';
 
 const TASK_ID_RE = /^task_[0-9a-f]{24}$/;
 const TERMINAL_LOGIN_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+const LOGIN_METHOD_KINDS = new Set([
+    'api_key',
+    'access_token',
+    'credential_form',
+    'device_code',
+    'manual_oauth_code',
+]);
+const LOGIN_FLOW_STATUSES = new Set(['running', 'waiting', ...TERMINAL_LOGIN_STATUSES]);
 
 function assertTaskId(taskId) {
     const value = String(taskId || '').trim();
@@ -14,6 +22,110 @@ function findByKey(values, key, errorCode) {
     const found = values.find((entry) => entry?.key === normalized);
     if (!found) throw new Error(errorCode);
     return found;
+}
+
+function compactText(value, limit) {
+    return String(value || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit);
+}
+
+function httpUrl(value) {
+    const candidate = String(value || '').trim();
+    if (!candidate) return '';
+    try {
+        const parsed = new URL(candidate);
+        const host = parsed.hostname.toLowerCase();
+        const loopback = host === 'localhost' || host.endsWith('.localhost')
+            || host === '::1' || host === '[::1]' || host === '0.0.0.0' || /^127(?:\.|$)/.test(host);
+        return parsed.protocol === 'https:' && !loopback ? parsed.toString() : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function normalizeMethodPrompt(raw) {
+    const key = String(raw?.key || '').trim();
+    if (!/^[A-Za-z0-9_.-]{1,100}$/.test(key)) return null;
+    const options = Array.isArray(raw.options) ? raw.options.slice(0, 100).map((entry) => {
+        const value = String(entry?.value ?? entry?.id ?? '').trim().slice(0, 1000);
+        const label = compactText(entry?.label || value, 200);
+        if (!value || !label) return null;
+        return { value, label, description: compactText(entry?.description || entry?.hint, 500) };
+    }).filter(Boolean) : [];
+    const whenKey = String(raw?.when?.key || '').trim();
+    const when = /^[A-Za-z0-9_.-]{1,100}$/.test(whenKey)
+        && (raw.when.op === 'eq' || raw.when.op === 'neq')
+        ? { key: whenKey, op: raw.when.op, value: String(raw.when.value ?? '').slice(0, 1000) }
+        : null;
+    return {
+        key,
+        message: compactText(raw.message || `Enter ${key}.`, 500),
+        placeholder: compactText(raw.placeholder, 300),
+        secret: raw.secret === true || raw.type === 'secret',
+        ...(options.length ? { options } : {}),
+        ...(when ? { when } : {}),
+    };
+}
+
+export function normalizeLoginCatalog(raw) {
+    const providers = Array.isArray(raw?.providers) ? raw.providers : [];
+    return providers.slice(0, 200).map((provider) => {
+        const key = String(provider?.key || '').trim();
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/.test(key)) return null;
+        const methods = (Array.isArray(provider.methods) ? provider.methods : []).slice(0, 50).map((method) => {
+            const methodKey = String(method?.key || '').trim();
+            const kind = String(method?.kind || '').trim();
+            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(methodKey)
+                || !LOGIN_METHOD_KINDS.has(kind)) return null;
+            const prompts = (Array.isArray(method.prompts) ? method.prompts : [])
+                .map(normalizeMethodPrompt)
+                .filter(Boolean);
+            return {
+                key: methodKey,
+                kind,
+                label: compactText(method.label || methodKey, 200),
+                secret: method.secret === true,
+                ...(prompts.length ? { prompts } : {}),
+            };
+        }).filter(Boolean);
+        if (!methods.length) return null;
+        return { key, label: compactText(provider.label || key, 200), methods };
+    }).filter(Boolean);
+}
+
+export function normalizeLoginChallenge(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const type = String(raw.type || '');
+    if (type === 'device_code') {
+        const verificationUri = httpUrl(raw.verificationUri || raw.url);
+        const userCode = compactText(raw.userCode, 100);
+        const instructions = compactText(raw.instructions || raw.message, 2000);
+        if (!verificationUri || (!userCode && !instructions)) throw new Error('unsupported_container_login_challenge');
+        return {
+            type,
+            verificationUri,
+            ...(userCode ? { userCode } : {}),
+            ...(instructions ? { instructions } : {}),
+            ...(Number.isFinite(Number(raw.expiresInSeconds)) ? { expiresInSeconds: Number(raw.expiresInSeconds) } : {}),
+            ...(Number.isFinite(Number(raw.intervalSeconds)) ? { intervalSeconds: Number(raw.intervalSeconds) } : {}),
+        };
+    }
+    if (type === 'manual_oauth_code') {
+        const url = httpUrl(raw.url);
+        const instructions = compactText(raw.instructions || raw.message, 2000);
+        if (!url) throw new Error('unsupported_container_login_challenge');
+        return { type, url, ...(instructions ? { instructions } : {}) };
+    }
+    throw new Error('unsupported_container_login_challenge');
+}
+
+function normalizeLoginFlow(raw) {
+    if (!raw || typeof raw !== 'object' || !LOGIN_FLOW_STATUSES.has(raw.status)) {
+        throw new Error('invalid_provider_login_flow');
+    }
+    return {
+        ...raw,
+        ...(raw.challenge ? { challenge: normalizeLoginChallenge(raw.challenge) } : {}),
+    };
 }
 
 function challengeDetail(flow) {
@@ -73,8 +185,9 @@ export function createTaskControlCommands({
     }
 
     async function chooseProvider(taskId, requestedProvider, signal, ui) {
-        const catalog = await call(taskId, 'login_describe');
-        const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
+        const rawCatalog = await call(taskId, 'login_describe');
+        const providers = normalizeLoginCatalog(rawCatalog);
+        const catalog = { ...rawCatalog, providers };
         if (!providers.length) throw new Error('task_login_catalog_empty');
         if (requestedProvider) return { catalog, provider: findByKey(providers, requestedProvider, 'task_login_provider_unavailable') };
         const key = await ui.select({
@@ -136,7 +249,16 @@ export function createTaskControlCommands({
     }
 
     async function followFlow(taskId, initialFlow, signal, ui) {
-        let flow = initialFlow;
+        const acceptFlow = async (raw) => {
+            try {
+                return normalizeLoginFlow(raw);
+            } catch (error) {
+                const flowId = String(raw?.flowId || '').trim();
+                if (flowId) await call(taskId, 'login_cancel', { flowId }).catch(() => {});
+                throw error;
+            }
+        };
+        let flow = await acceptFlow(initialFlow);
         while (!TERMINAL_LOGIN_STATUSES.has(flow?.status)) {
             if (flow?.status === 'waiting' && flow.prompt) {
                 const prompt = flow.prompt;
@@ -145,6 +267,8 @@ export function createTaskControlCommands({
                     ? await ui.select({
                         title: 'Provider authentication',
                         message: prompt.message || 'Choose a response.',
+                        detail: challengeDetail(flow),
+                        challenge: flow.challenge || null,
                         options: options.map((entry) => ({
                             value: String(entry.value ?? entry.id ?? ''),
                             label: String(entry.label || entry.value || entry.id || ''),
@@ -156,11 +280,13 @@ export function createTaskControlCommands({
                         message: prompt.message || 'Authentication input required.',
                         placeholder: prompt.placeholder || '',
                         type: prompt.type === 'secret' ? 'secret' : 'text',
+                        detail: challengeDetail(flow),
+                        challenge: flow.challenge || null,
                     }, { signal });
-                flow = await call(taskId, 'login_respond', {
+                flow = await acceptFlow(await call(taskId, 'login_respond', {
                     flowId: flow.flowId,
                     ...(prompt.type === 'secret' ? { secretResponse: response } : { response }),
-                });
+                }));
                 continue;
             }
             if (flow?.challenge) {
@@ -168,6 +294,7 @@ export function createTaskControlCommands({
                     title: 'Complete provider authentication',
                     message: 'Finish the provider flow, then check its status.',
                     detail: challengeDetail(flow),
+                    challenge: flow.challenge,
                     options: [
                         { value: 'check', label: 'Check status' },
                         { value: 'cancel', label: 'Cancel', tone: 'danger' },
@@ -177,7 +304,7 @@ export function createTaskControlCommands({
             } else {
                 await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
             }
-            flow = await call(taskId, 'login_status', { flowId: flow.flowId });
+            flow = await acceptFlow(await call(taskId, 'login_status', { flowId: flow.flowId }));
         }
         return flow;
     }
@@ -202,4 +329,9 @@ export function createTaskControlCommands({
     return { model, login };
 }
 
-export const __testables = { challengeDetail, promptIsEnabled };
+export const __testables = {
+    LOGIN_METHOD_KINDS,
+    challengeDetail,
+    normalizeLoginFlow,
+    promptIsEnabled,
+};

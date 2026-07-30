@@ -15,10 +15,9 @@ const PROVIDERS = [{
     key: 'openai',
     label: 'OpenAI / ChatGPT',
     methods: [
-        { key: 'api_key', label: 'OpenAI API key', secret: true },
-        { key: 'access_token', label: 'Codex access token', secret: true },
-        { key: 'device_code', label: 'Browser (headless device code)' },
-        { key: 'browser', label: 'Browser (local callback)' },
+        { key: 'api_key', kind: 'api_key', label: 'OpenAI API key', secret: true },
+        { key: 'access_token', kind: 'access_token', label: 'Codex access token', secret: true },
+        { key: 'device_code', kind: 'device_code', label: 'Browser (device code)' },
     ],
 }];
 
@@ -29,6 +28,8 @@ async function readInput() {
     if (payload?.tool && payload.tool !== 'task-session-control') throw new Error('unexpected_tool');
     return payload?.input && typeof payload.input === 'object' ? payload.input : payload;
 }
+
+export const __testables = { PROVIDERS };
 
 function secretLogin(flag, value, failureMessage) {
     return new Promise((resolve, reject) => {
