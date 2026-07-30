@@ -363,4 +363,17 @@ test('PI continuation reuses the exact session id and session directory', async 
     assert.equal(args[args.indexOf('--model') + 1], 'gpt-5.4-mini');
     assert.equal(args[args.indexOf('--thinking') + 1], 'high');
     assert.equal(args.at(-1), 'Continue same PI session');
+
+    const overridden = await runTaskScript(continueTaskPath, {
+        handle: firstPayload.continuation.handle,
+        prompt: 'Continue with selected PI model',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+    }, env);
+    assert.equal(overridden.code, 0, overridden.stderr);
+    const overrideArgs = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.equal(overrideArgs[overrideArgs.indexOf('--provider') + 1], 'anthropic');
+    assert.equal(overrideArgs[overrideArgs.indexOf('--model') + 1], 'claude-sonnet-4-5');
+    assert.equal(overrideArgs.includes('--thinking'), false);
+    assert.equal(overrideArgs.at(-1), 'Continue with selected PI model');
 });

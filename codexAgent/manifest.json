@@ -3,6 +3,13 @@
     "startup": "manual",
     "lite-sandbox": true,
     "about": "Codex CLI agent. Installs the official OpenAI Codex CLI, exposes it as a direct Ploinky CLI command, and provides resumable asynchronous MCP task execution.",
+    "endpoints": {
+        "models": {
+            "command": "node",
+            "args": ["/code/openai-api/models.mjs"],
+            "cwd": "/code"
+        }
+    },
     "profiles": {
         "default": {
             "install": "sh /code/scripts/install-codex.sh"

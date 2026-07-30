@@ -22,7 +22,7 @@ test('CLI command catalog exposes task and session submenus', async () => {
     const session = commands.find((command) => command.name === '/session');
 
     assert.equal(task.hasSubOptions, true);
-    assert.deepEqual(task.subOptions, ['view', 'continue', 'stop']);
+    assert.deepEqual(task.subOptions, ['view', 'continue', 'stop', 'model', 'login']);
     assert.equal(session.hasSubOptions, true);
     assert.deepEqual(session.subOptions, ['new', 'resume']);
 
@@ -36,6 +36,8 @@ test('every hierarchical CLI command selects the appropriate next input', () => 
         'task view': 'tasks',
         'task continue': 'tasks',
         'task stop': 'tasks',
+        'task model': 'tasks',
+        'task login': 'tasks',
         'list skills': 'none',
         'list repos': 'none',
         'add repo': 'text',

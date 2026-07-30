@@ -235,6 +235,8 @@ export async function loadAutocompleteCatalog(options = {}) {
             view: buildTaskActionCompletions(options.dir, 'view'),
             continue: buildTaskActionCompletions(options.dir, 'continue'),
             stop: buildTaskActionCompletions(options.dir, 'stop'),
+            model: buildTaskActionCompletions(options.dir, 'model'),
+            login: buildTaskActionCompletions(options.dir, 'login'),
         },
     });
 }

@@ -208,11 +208,11 @@ export const COMMAND_DEFINITIONS = {
         needsSkillArg: false,
     },
     'task': {
-        usage: '/task <view|continue|stop> <task-id> [prompt]',
-        description: 'View, continue, or stop a background task',
+        usage: '/task <view|continue|stop|model|login> <task-id> [arguments]',
+        description: 'View, continue, stop, or configure a background task',
         args: 'required',
         needsSkillArg: false,
-        subOptions: ['view', 'continue', 'stop'],
+        subOptions: ['view', 'continue', 'stop', 'model', 'login'],
     },
     'session': {
         usage: '/session [new|resume <session-id>]',
@@ -259,6 +259,20 @@ export const SUB_OPTIONS = {
             skill: null,
             usage: '/task stop <task-id>',
             description: 'Stop a queued or running task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'model': {
+            skill: null,
+            usage: '/task model <task-id> [model-key]',
+            description: 'Choose or set the execution model for a continuable task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'login': {
+            skill: null,
+            usage: '/task login <task-id> [provider] [method]',
+            description: 'Connect a provider in the task agent',
             args: 'required',
             needsSkillArg: false,
         },
@@ -428,6 +442,8 @@ export class SlashCommandHandler {
         viewTask,
         continueTask,
         stopTask,
+        modelTask,
+        loginTask,
         getTaskCompletions,
     }) {
         this.executeSkill = executeSkill;
@@ -445,6 +461,8 @@ export class SlashCommandHandler {
         this.viewTask = viewTask;
         this.continueTask = continueTask;
         this.stopTask = stopTask;
+        this.modelTask = modelTask;
+        this.loginTask = loginTask;
         this.getTaskCompletions = getTaskCompletions;
         this.availableModels = [];
     }
@@ -814,6 +832,29 @@ export class SlashCommandHandler {
             try {
                 const task = await this.continueTask(match[1], match[2].trim());
                 return { handled: true, result: `Continued ${task.id}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'model') {
+            if (typeof this.modelTask !== 'function') return { handled: true, error: 'Task model control is unavailable.' };
+            const match = args.match(/^(task_[0-9a-f]{24})(?:\s+(\S+))?$/);
+            if (!match) return { handled: true, error: 'Usage: /task model <task-id> [model-key]' };
+            try {
+                const result = await this.modelTask(match[1], match[2] || '', options);
+                if (result?.type === 'task-model-catalog') {
+                    return { handled: true, result: `Loaded ${result.models?.length || 0} task models.` };
+                }
+                return { handled: true, result: `Task model set to ${result.model?.label || result.model?.key || result.model?.model}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'login') {
+            if (typeof this.loginTask !== 'function') return { handled: true, error: 'Task provider login is unavailable.' };
+            const match = args.match(/^(task_[0-9a-f]{24})(?:\s+(\S+))?(?:\s+(\S+))?$/);
+            if (!match) return { handled: true, error: 'Usage: /task login <task-id> [provider] [method]' };
+            try {
+                const result = await this.loginTask(match[1], match[2] || '', match[3] || '', options);
+                return { handled: true, result: `Provider connected${result.provider ? `: ${result.provider}` : ''}.` };
             } catch (error) { return { handled: true, error: error.message }; }
         }
 

@@ -9,6 +9,7 @@ const MAX_TASK_LIMIT = 100;
 const LOG_TAIL_LINES = 5;
 const LOG_TAIL_BYTES = 2 * 1024;
 const MAX_LOG_BYTES = 1024 * 1024;
+const MAX_FINAL_OUTPUT_RANGES = 1000;
 const JOURNAL_NAME = 'agent_tasks';
 const LOG_DIRECTORY_NAME = 'task_logs';
 const CONTINUATION_HANDLE_RE = /^[A-Za-z0-9_-]{16,200}$/;
@@ -114,6 +115,63 @@ function normalizeContinuation(raw, fallbackTargetAgent = '') {
     };
 }
 
+function normalizeTaskModel(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const key = String(raw.key || raw.id || '').trim().slice(0, 300);
+    const model = String(raw.model || '').trim().slice(0, 300);
+    const provider = String(raw.provider || '').trim().slice(0, 160);
+    const label = String(raw.label || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (!key || !model) return null;
+    return {
+        key,
+        model,
+        ...(provider ? { provider } : {}),
+        ...(label ? { label } : {}),
+    };
+}
+
+function normalizeExecution(raw) {
+    const model = normalizeTaskModel(raw?.model);
+    return model ? { model } : null;
+}
+
+function normalizeFinalOutputRange(raw, fallbackTurn = 1) {
+    if (!raw || typeof raw !== 'object') return null;
+    const turn = Number.isSafeInteger(raw.turn) && raw.turn > 0
+        ? raw.turn
+        : fallbackTurn;
+    if (!Number.isSafeInteger(turn) || turn < 1) return null;
+    if (!Number.isSafeInteger(raw.offset) || raw.offset < 0) return null;
+    if (!Number.isSafeInteger(raw.length) || raw.length < 1) return null;
+    return { turn, offset: raw.offset, length: raw.length };
+}
+
+function mergeFinalOutputRanges(...collections) {
+    const byTurn = new Map();
+    for (const collection of collections) {
+        if (!Array.isArray(collection)) continue;
+        for (const raw of collection.slice(-MAX_FINAL_OUTPUT_RANGES)) {
+            const range = normalizeFinalOutputRange(raw);
+            if (range) byTurn.set(range.turn, range);
+        }
+    }
+    return [...byTurn.values()]
+        .sort((left, right) => left.turn - right.turn || left.offset - right.offset)
+        .slice(-MAX_FINAL_OUTPUT_RANGES);
+}
+
+function normalizeFinalOutputRanges(raw) {
+    const declared = Array.isArray(raw?.finalOutputRanges)
+        ? raw.finalOutputRanges
+        : [];
+    const legacy = normalizeFinalOutputRange({
+        turn: raw?.turn,
+        offset: raw?.finalOutputOffset,
+        length: raw?.finalOutputLength,
+    });
+    return mergeFinalOutputRanges(declared, legacy ? [legacy] : []);
+}
+
 function normalizeTask(raw) {
     if (!raw || typeof raw !== 'object' || !TASK_ID_RE.test(String(raw.id || ''))) {
         return null;
@@ -124,6 +182,8 @@ function normalizeTask(raw) {
     const now = new Date().toISOString();
     const createdAt = validTimestamp(raw.createdAt) || now;
     const continuation = normalizeContinuation(raw.continuation, raw.targetAgent);
+    const finalOutputRanges = normalizeFinalOutputRanges(raw);
+    const execution = normalizeExecution(raw.execution);
     return {
         version: 1,
         id: String(raw.id),
@@ -144,8 +204,10 @@ function normalizeTask(raw) {
         finalOutputLength: Number.isSafeInteger(raw.finalOutputLength) && raw.finalOutputLength > 0
             ? raw.finalOutputLength
             : 0,
+        ...(finalOutputRanges.length ? { finalOutputRanges } : {}),
         ...(raw.logRetention === 'full' ? { logRetention: 'full' } : {}),
         ...(continuation ? { continuation } : {}),
+        ...(execution ? { execution } : {}),
         ...(Number.isInteger(raw.pid) && raw.pid > 0 ? { pid: raw.pid } : {}),
     };
 }
@@ -168,9 +230,14 @@ export function readWorkspaceTasks(workingDir) {
                 && task.turn <= existing.turn) {
                 continue;
             }
+            const finalOutputRanges = mergeFinalOutputRanges(
+                existing?.finalOutputRanges,
+                task.finalOutputRanges,
+            );
             tasks.set(task.id, {
                 ...existing,
                 ...task,
+                ...(finalOutputRanges.length ? { finalOutputRanges } : {}),
                 ...(existing?.continuation?.handle && !task.continuation?.handle
                     ? { continuation: existing.continuation }
                     : {}),
@@ -294,9 +361,14 @@ export function ingestTaskEvent(workingDir, envelope) {
         && incoming.remoteTaskId !== existing.remoteTaskId;
     const invalidRegression = existing && TERMINAL_STATUSES.has(existing.status)
         && incoming.status === 'ongoing' && incoming.turn <= existing.turn;
+    const finalOutputRanges = mergeFinalOutputRanges(
+        existing?.finalOutputRanges,
+        incoming.finalOutputRanges,
+    );
     let task = staleTurn || staleSource || invalidRegression ? existing : {
         ...existing,
         ...incoming,
+        ...(finalOutputRanges.length ? { finalOutputRanges } : {}),
         ...(existing?.continuation?.handle && !incoming.continuation?.handle
             ? { continuation: existing.continuation }
             : {}),
@@ -306,7 +378,20 @@ export function ingestTaskEvent(workingDir, envelope) {
         : { appended: '', nextOffset: null };
     if (!staleTurn && !staleSource && !invalidRegression && TERMINAL_STATUSES.has(task.status)) {
         const finalOutput = locateFinalOutput(logDirectory, task.id, envelope?.finalOutput);
-        task = { ...task, finalOutputOffset: finalOutput.offset, finalOutputLength: finalOutput.length };
+        const nextRanges = mergeFinalOutputRanges(
+            task.finalOutputRanges,
+            finalOutput.offset === null ? [] : [{
+                turn: task.turn,
+                offset: finalOutput.offset,
+                length: finalOutput.length,
+            }],
+        );
+        task = {
+            ...task,
+            finalOutputOffset: finalOutput.offset,
+            finalOutputLength: finalOutput.length,
+            ...(nextRanges.length ? { finalOutputRanges: nextRanges } : {}),
+        };
     }
     const metadataChanged = !existing || JSON.stringify(existing) !== JSON.stringify(task);
     if (metadataChanged) appendMetadata(journalPath, task);
@@ -320,6 +405,32 @@ export function ingestTaskEvent(workingDir, envelope) {
 export function getTask(workingDir, taskId) {
     if (!TASK_ID_RE.test(String(taskId || ''))) throw new Error('invalid_task_id');
     return readWorkspaceTasks(workingDir).find((task) => task.id === taskId) || null;
+}
+
+export function setTaskModel(workingDir, taskId, modelSelection) {
+    const { journalPath, logDirectory } = ensureTaskStorage(workingDir);
+    const existing = getTask(workingDir, taskId);
+    if (!existing) throw new Error('task_not_found');
+    if (!TERMINAL_STATUSES.has(existing.status)) throw new Error('task_not_terminal');
+    if (!existing.continuation?.handle) throw new Error('task_not_continuable');
+    const model = normalizeTaskModel(modelSelection);
+    if (!model) throw new Error('invalid_task_model');
+    const updated = {
+        ...existing,
+        execution: { model },
+        updatedAt: new Date().toISOString(),
+    };
+    appendMetadata(journalPath, updated);
+    const displayName = stripTerminalControls(model.label || model.key || model.model)
+        .replace(/\s+/g, ' ')
+        .trim();
+    const existingLog = readTaskLog(workingDir, taskId).text;
+    const separator = existingLog && !existingLog.endsWith('\n') ? '\n' : '';
+    const logAppend = `${separator}switched model to: ${displayName}\n`;
+    const { logPath } = taskPaths(logDirectory, taskId);
+    appendTaskLog(logPath, logAppend, { retainFull: true });
+    const logOffset = fs.readFileSync(logPath, 'utf8').length;
+    return { ...updated, logAppend, logOffset };
 }
 
 export function readTaskLog(workingDir, taskId, offset = 0) {
@@ -361,7 +472,7 @@ export function beginTaskContinuation(workingDir, taskId, { remoteTaskId, messag
     const prompt = stripTerminalControls(message).trim().split(/\r?\n/)
         .map((line) => `you> ${line}`)
         .join('\n');
-    appendTaskLog(logPath, `\n[Continuation ${next.turn}]\n${prompt}\n\n`, { retainFull: true });
+    appendTaskLog(logPath, `\n${prompt}\n\n`, { retainFull: true });
     atomicWriteJson(cursorPath, { tail: '', seq: null, sourceId: nextRemoteTaskId, truncated: false });
     return next;
 }
@@ -503,7 +614,7 @@ export function formatWorkspaceTaskDetail(workingDir, taskId) {
 export function buildTaskCompletions(workingDir, action = 'view') {
     const tasks = readWorkspaceTasks(workingDir).filter((task) => {
         if (action === 'stop') return task.status === 'ongoing';
-        if (action === 'continue') {
+        if (action === 'continue' || action === 'model' || action === 'login') {
             return TERMINAL_STATUSES.has(task.status) && Boolean(task.continuation?.handle);
         }
         return true;
@@ -520,12 +631,17 @@ export const __testables = {
     LOG_TAIL_LINES,
     MAX_TASK_LIMIT,
     MAX_LOG_BYTES,
+    MAX_FINAL_OUTPUT_RANGES,
     TERMINAL_STATUSES,
     capUtf8Tail,
     ensureTaskStorage,
     ingestLog,
     locateFinalOutput,
+    mergeFinalOutputRanges,
     normalizeContinuation,
+    normalizeExecution,
+    normalizeTaskModel,
+    normalizeFinalOutputRanges,
     normalizeTask,
     overlapDelta,
     parseTaskLimit,

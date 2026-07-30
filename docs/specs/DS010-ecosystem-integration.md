@@ -126,7 +126,7 @@ Ploinky integration boundary:
     textual acknowledgements and errors from the main WebChat transcript.
 18. The AchillesCLI manifest enables `proxies/soul-gateway` as a blocking dependency before model discovery. Model listing uses the router-mediated `/services/soul-gateway/v1/models` route and the existing generated Ploinky agent credential; it does not add a public HTTP service, delegation, or MCP execution tool.
 19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
-20. The AchillesCLI background-task observer must persist and forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also use the textual MCP result as separate presentation metadata, never as appended log content. AchillesCLI uses that text only to locate the already emitted final-answer range in its persisted raw log, stores the range offsets instead of duplicating the text, and lets WebChat render intermediate and final output distinctly.
+20. The AchillesCLI background-task observer must persist and forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also use the textual MCP result as separate presentation metadata, never as appended log content. AchillesCLI uses that text only to locate the already emitted final-answer range in its persisted raw log and stores a bounded ordered `finalOutputRanges` entry for each retained completed turn instead of duplicating the text. Continuation preserves all earlier retained entries. Materialization must reconstruct the range list from legacy append-only journal records that contain only `finalOutputOffset` and `finalOutputLength`, so existing task logs require no rewrite. WebChat can then render intermediate output and every retained final answer distinctly.
 21. Async `opencodeAgent`, `piAgent`, and `codexAgent` executions must publish a generic
     continuation capability and an opaque versioned handle once their provider
     session exists, including when a later provider error makes the task fail.
@@ -134,9 +134,12 @@ Ploinky integration boundary:
     envelopes without interpreting provider session ids or storage paths.
     AchillesCLI owns the stable local task id and turn progression; a
     continuation creates a new remote AgentServer task but remains the same
-    workspace task. Before forwarding provider output, AchillesCLI appends the
-    submitted continuation prompt to the same durable task log and emits the
-    exact appended text plus the resulting offset for an already open task view.
+    workspace task. It must retain final-output ranges from all completed turns
+    while the next turn is active. Before forwarding provider output,
+    AchillesCLI appends the submitted continuation prompt to the same durable
+    task log as `you> <prompt>` without a synthetic continuation-turn label and
+    emits the exact appended text plus the resulting offset for an already open
+    task view.
     The provider agents expose a separate internal
     `continue-task` MCP tool that accepts only the opaque handle and new prompt,
     restores the original project directory and provider session from

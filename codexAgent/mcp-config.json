@@ -51,7 +51,32 @@
                     "description": "New user message to execute in the existing Codex thread.",
                     "optional": false
                 },
+                "model": {
+                    "type": "string",
+                    "description": "Optional task-specific Codex model override.",
+                    "optional": true
+                },
                 "additionalProperties": false
+            }
+        },
+        {
+            "name": "task-session-control",
+            "title": "Control Codex Task Session",
+            "description": "Run typed OpenAI and ChatGPT authentication operations for a Codex task session.",
+            "command": "node",
+            "args": ["/code/scripts/task-session-control.mjs"],
+            "cwd": "/code",
+            "tags": ["internal"],
+            "inputSchema": {
+                "operation": { "type": "string", "optional": false },
+                "handle": { "type": "string", "optional": false },
+                "provider": { "type": "string", "optional": true },
+                "method": { "type": "string", "optional": true },
+                "flowId": { "type": "string", "optional": true },
+                "response": { "type": "string", "optional": true },
+                "apiKey": { "type": "string", "optional": true },
+                "inputs": { "type": "object", "additionalProperties": true, "optional": true },
+                "secretResponse": { "type": "string", "optional": true }
             }
         }
     ]

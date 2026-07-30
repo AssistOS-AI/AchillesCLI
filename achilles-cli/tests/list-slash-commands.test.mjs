@@ -142,7 +142,7 @@ test('task action completions display task names and insert opaque task ids', as
         taskCompletions: { view: [completion], continue: [], stop: [completion] },
     });
     const task = catalog.commands.find((command) => command.name === '/task');
-    assert.deepEqual(task.subCommands.map((sub) => sub.name), ['view', 'continue', 'stop']);
+    assert.deepEqual(task.subCommands.map((sub) => sub.name), ['view', 'continue', 'stop', 'model', 'login']);
     assert.deepEqual(task.subCommands.find((sub) => sub.name === 'view').argCompletions, [completion]);
     assert.deepEqual(task.subCommands.find((sub) => sub.name === 'stop').argCompletions, [completion]);
 });

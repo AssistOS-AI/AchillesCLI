@@ -82,6 +82,7 @@ export function normalizeWebchatMessage(raw) {
             invocationToken: '',
             origin: {},
             visible: true,
+            sourceTabId: '',
         };
     }
     try {
@@ -95,6 +96,7 @@ export function normalizeWebchatMessage(raw) {
                 invocationToken: '',
                 origin: {},
                 visible: true,
+                sourceTabId: '',
             };
         }
         const messageText = typeof parsed.text === 'string' ? parsed.text : '';
@@ -103,6 +105,10 @@ export function normalizeWebchatMessage(raw) {
         const origin = normalizeWebchatOrigin(parsed.origin);
         const invocationToken = typeof parsed.invocation?.token === 'string'
             ? parsed.invocation.token
+            : '';
+        const sourceTabId = typeof parsed.sourceTabId === 'string'
+            && /^[A-Za-z0-9_-]{1,128}$/.test(parsed.sourceTabId)
+            ? parsed.sourceTabId
             : '';
         const attachmentLines = attachments
             .filter((entry) => entry && typeof entry === 'object')
@@ -133,6 +139,7 @@ export function normalizeWebchatMessage(raw) {
             invocationToken,
             origin,
             visible: parsed.presentation?.visible !== false,
+            sourceTabId,
         };
     } catch {
         return {
@@ -143,6 +150,7 @@ export function normalizeWebchatMessage(raw) {
             invocationToken: '',
             origin: {},
             visible: true,
+            sourceTabId: '',
         };
     }
 }

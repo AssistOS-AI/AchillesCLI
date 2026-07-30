@@ -77,6 +77,7 @@ export function buildCodexArgs({ prompt, model = '', threadId = '' }) {
             'resume',
             '--json',
             '--skip-git-repo-check',
+            ...(model ? ['--model', model] : []),
             threadId,
             prompt,
         ];

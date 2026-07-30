@@ -29,12 +29,14 @@ async function main() {
     const input = parseInput(await readStdin());
     const handle = String(input?.handle || '').trim();
     const prompt = String(input?.prompt || '').trim();
+    const model = String(input?.model || '').trim();
     if (!handle || !prompt) throw new Error('handle and prompt are required');
     const record = readContinuationRecord(handle);
     const result = await executeCodexTask({
         prompt,
         projectDir: record.projectDir,
         threadId: record.threadId,
+        model,
         signal: cancellation.signal,
     });
     if (!result.ok) {
