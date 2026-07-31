@@ -19,6 +19,7 @@ import {
     buildSandboxArgs,
     collectMainAgentRuntimeMounts,
     findBubblewrap,
+    resolveGeneratedRouterDescriptorMount,
 } from './sandbox.mjs';
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -261,6 +262,7 @@ export async function runBrokeredMainAgent({
         throw new Error('AchillesCLI requires bubblewrap (bwrap). Run the agent install hook before starting it.');
     }
     assertCurrentProcfs();
+    const generatedRouterDescriptor = resolveGeneratedRouterDescriptorMount();
     const broker = new AchillesBroker({
         workspace,
         webchat,
@@ -276,7 +278,10 @@ export async function runBrokeredMainAgent({
     };
     const runtimeMounts = collectMainAgentRuntimeMounts({
         entryPath,
-        extraPaths: extraReadOnlyPaths,
+        extraPaths: [
+            ...extraReadOnlyPaths,
+            ...(generatedRouterDescriptor ? [generatedRouterDescriptor] : []),
+        ],
     }).filter((mountPath) => !isInside(mountPath, broker.workspace));
     const sandboxArgs = buildSandboxArgs({
         workspace: broker.workspace,

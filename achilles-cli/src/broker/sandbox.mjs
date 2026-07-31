@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const MAX_CAPTURE_BYTES = 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30000;
+const MAX_GENERATED_ROUTER_DESCRIPTOR_BYTES = 64 * 1024;
+const GENERATED_ROUTER_DESCRIPTOR_PATH = '/run/ploinky/router-descriptor.json';
+const GENERATED_ROUTER_DESCRIPTOR_SOURCE = 'PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_DESCRIPTOR_FILE';
 const privateProcSupport = new Map();
 
 export function findBubblewrap() {
@@ -154,6 +157,50 @@ export function collectMainAgentRuntimeMounts({ entryPath = process.argv[1], ext
     }
 
     return uniqueVisiblePaths([...paths]);
+}
+
+export function resolveGeneratedRouterDescriptorMount({
+    env = process.env,
+    fsApi = fs,
+    expectedUid = typeof process.geteuid === 'function' ? process.geteuid() : null,
+    expectedGid = typeof process.getegid === 'function' ? process.getegid() : null,
+} = {}) {
+    const descriptorFile = Object.hasOwn(env, 'PLOINKY_ROUTER_DESCRIPTOR_FILE')
+        ? String(env.PLOINKY_ROUTER_DESCRIPTOR_FILE || '')
+        : '';
+    const source = Object.hasOwn(env, GENERATED_ROUTER_DESCRIPTOR_SOURCE)
+        ? String(env[GENERATED_ROUTER_DESCRIPTOR_SOURCE] || '')
+        : '';
+    if (!descriptorFile && !source) return null;
+    if (descriptorFile !== GENERATED_ROUTER_DESCRIPTOR_PATH || source !== 'generated') {
+        throw new Error('AchillesCLI refuses an untrusted generated-local Router descriptor mount.');
+    }
+
+    let descriptorStat;
+    try {
+        descriptorStat = fsApi.lstatSync(GENERATED_ROUTER_DESCRIPTOR_PATH);
+    } catch (error) {
+        throw new Error('AchillesCLI generated-local Router descriptor is unavailable.', { cause: error });
+    }
+    if (!descriptorStat.isFile()
+        || descriptorStat.isSymbolicLink()
+        || (descriptorStat.mode & 0o777) !== 0o600
+        || descriptorStat.size <= 0
+        || descriptorStat.size > MAX_GENERATED_ROUTER_DESCRIPTOR_BYTES
+        || (expectedUid !== null && descriptorStat.uid !== expectedUid)
+        || (expectedGid !== null && descriptorStat.gid !== expectedGid)) {
+        throw new Error('AchillesCLI generated-local Router descriptor has an unsafe filesystem identity.');
+    }
+    let realDescriptor;
+    try {
+        realDescriptor = fsApi.realpathSync(GENERATED_ROUTER_DESCRIPTOR_PATH);
+    } catch (error) {
+        throw new Error('AchillesCLI generated-local Router descriptor cannot be resolved.', { cause: error });
+    }
+    if (realDescriptor !== GENERATED_ROUTER_DESCRIPTOR_PATH) {
+        throw new Error('AchillesCLI generated-local Router descriptor escaped its fixed runtime path.');
+    }
+    return GENERATED_ROUTER_DESCRIPTOR_PATH;
 }
 
 export async function executeProcess({

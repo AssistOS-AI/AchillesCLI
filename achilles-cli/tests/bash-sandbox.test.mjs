@@ -12,6 +12,7 @@ import {
     canMountPrivateProc,
     findBubblewrap,
     inspectCurrentProcfs,
+    resolveGeneratedRouterDescriptorMount,
 } from '../src/broker/sandbox.mjs';
 import { BrokerClient } from '../src/permissions/BrokerClient.mjs';
 import { createBashExecutor } from '../src/permissions/LocalBashExecutor.mjs';
@@ -101,6 +102,183 @@ test('sandbox uses an empty proc directory when nested proc mounts are unavailab
 
 test('private proc capability probe returns a boolean', () => {
     assert.equal(typeof canMountPrivateProc(bwrap), 'boolean');
+});
+
+test('generated-local descriptor is exposed to the MainAgent sandbox only from the fixed runtime mount', () => {
+    const descriptorPath = '/run/ploinky/router-descriptor.json';
+    const fsApi = {
+        lstatSync: (target) => {
+            assert.equal(target, descriptorPath);
+            return {
+                isFile: () => true,
+                isSymbolicLink: () => false,
+                mode: 0o100600,
+                size: 1024,
+                uid: 1000,
+                gid: 1000,
+            };
+        },
+        realpathSync: (target) => target,
+    };
+    const descriptorMount = resolveGeneratedRouterDescriptorMount({
+        env: {
+            PLOINKY_ROUTER_DESCRIPTOR_FILE: descriptorPath,
+            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_DESCRIPTOR_FILE: 'generated',
+        },
+        fsApi,
+        expectedUid: 1000,
+        expectedGid: 1000,
+    });
+    assert.equal(descriptorMount, descriptorPath);
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-router-descriptor-'));
+    const workspace = path.join(root, 'workspace');
+    const runtimeFile = path.join(root, 'runtime-descriptor.json');
+    fs.mkdirSync(workspace);
+    fs.writeFileSync(runtimeFile, '{}\n', { mode: 0o600 });
+    try {
+        const resolvedRuntimeFile = fs.realpathSync(runtimeFile);
+        const args = buildSandboxArgs({
+            workspace,
+            command: '/usr/bin/true',
+            extraReadOnlyPaths: [runtimeFile],
+            privateProc: false,
+        });
+        const bindIndex = args.findIndex((entry, index) => (
+            entry === '--ro-bind'
+            && args[index + 1] === resolvedRuntimeFile
+            && args[index + 2] === resolvedRuntimeFile
+        ));
+        assert.notEqual(bindIndex, -1);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('generated-local descriptor mount rejects forged provenance and unsafe filesystem identity', () => {
+    const descriptorPath = '/run/ploinky/router-descriptor.json';
+    const safeStat = {
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        mode: 0o100600,
+        size: 1024,
+        uid: 1000,
+        gid: 1000,
+    };
+    const generatedEnv = {
+        PLOINKY_ROUTER_DESCRIPTOR_FILE: descriptorPath,
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_DESCRIPTOR_FILE: 'generated',
+    };
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: { ...generatedEnv, PLOINKY_ROUTER_DESCRIPTOR_FILE: '/tmp/forged.json' },
+        }),
+        /untrusted generated-local Router descriptor mount/,
+    );
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: { ...generatedEnv, PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_DESCRIPTOR_FILE: 'explicit' },
+        }),
+        /untrusted generated-local Router descriptor mount/,
+    );
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: generatedEnv,
+            fsApi: {
+                lstatSync: () => ({ ...safeStat, mode: 0o100644 }),
+                realpathSync: (target) => target,
+            },
+            expectedUid: 1000,
+            expectedGid: 1000,
+        }),
+        /unsafe filesystem identity/,
+    );
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: generatedEnv,
+            fsApi: {
+                lstatSync: () => ({ ...safeStat, uid: 1001 }),
+                realpathSync: (target) => target,
+            },
+            expectedUid: 1000,
+            expectedGid: 1000,
+        }),
+        /unsafe filesystem identity/,
+    );
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: generatedEnv,
+            fsApi: {
+                lstatSync: () => safeStat,
+                realpathSync: () => '/tmp/replaced.json',
+            },
+            expectedUid: 1000,
+            expectedGid: 1000,
+        }),
+        /escaped its fixed runtime path/,
+    );
+});
+
+test('generated-local descriptor mount fails closed for incomplete or unavailable runtime state', () => {
+    const descriptorPath = '/run/ploinky/router-descriptor.json';
+    const generatedEnv = {
+        PLOINKY_ROUTER_DESCRIPTOR_FILE: descriptorPath,
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_DESCRIPTOR_FILE: 'generated',
+    };
+    const safeStat = {
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        mode: 0o100600,
+        size: 1024,
+        uid: 1000,
+        gid: 1000,
+    };
+    assert.equal(resolveGeneratedRouterDescriptorMount({ env: {} }), null);
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: { PLOINKY_ROUTER_DESCRIPTOR_FILE: descriptorPath },
+        }),
+        /untrusted generated-local Router descriptor mount/,
+    );
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: generatedEnv,
+            fsApi: { lstatSync: () => { throw new Error('missing'); } },
+        }),
+        /descriptor is unavailable/,
+    );
+    for (const unsafeStat of [
+        { ...safeStat, isFile: () => false },
+        { ...safeStat, isSymbolicLink: () => true },
+        { ...safeStat, size: 0 },
+        { ...safeStat, size: (64 * 1024) + 1 },
+        { ...safeStat, gid: 1001 },
+    ]) {
+        assert.throws(
+            () => resolveGeneratedRouterDescriptorMount({
+                env: generatedEnv,
+                fsApi: {
+                    lstatSync: () => unsafeStat,
+                    realpathSync: (target) => target,
+                },
+                expectedUid: 1000,
+                expectedGid: 1000,
+            }),
+            /unsafe filesystem identity/,
+        );
+    }
+    assert.throws(
+        () => resolveGeneratedRouterDescriptorMount({
+            env: generatedEnv,
+            fsApi: {
+                lstatSync: () => safeStat,
+                realpathSync: () => { throw new Error('unresolvable'); },
+            },
+            expectedUid: 1000,
+            expectedGid: 1000,
+        }),
+        /descriptor cannot be resolved/,
+    );
 });
 
 test('procfs invariant accepts the current PID namespace view', () => {

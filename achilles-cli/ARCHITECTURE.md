@@ -244,6 +244,7 @@ WebChat is a presentation adapter for this contract. Its Tasks button sends `/ta
 11. Închiderea sesiunii invalidează memoria `always-allow` și oprește procesele copil.
 12. Outputul brut al comenzilor nu este scris pe stdout/stderr-ul AchillesCLI. Este capturat de executor, returnat skillului prin Broker și introdus numai în contextul sesiunii agentice.
 13. Brokerul rămâne cât mai mic, nu încarcă skilluri sau logică de planificare și nu expune o rută de execuție Bash.
+14. Descriptorul Router generat de runtime poate intra în sandbox numai din calea fixă `/run/ploinky/router-descriptor.json`, cu proveniență `generated`, identitate de fișier `0600` deținută de utilizatorul și grupul curent și mount read-only. O cale, proveniență sau identitate diferită este refuzată înainte de pornirea `MainAgent`.
 
 ## Limita acestei propuneri
 

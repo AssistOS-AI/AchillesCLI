@@ -81,7 +81,12 @@ MainAgent must reach configured LLM services and router-mediated agents during n
 Response:
 Bubblewrap must probe whether the current runtime permits mounting a private proc filesystem. Native host execution uses a private `/proc` when supported. A nested unprivileged container that rejects the proc mount must receive an empty `/proc` directory instead; it must never bind the outer container's `/proc`, because that would expose process-root paths across the filesystem boundary. The agent container's pre-sandbox `/proc` must itself represent the agent PID namespace, because Bubblewrap resolves its namespace child through that proc filesystem before it constructs the sandbox root.
 
-### Question #4: Why does AchillesCLI restore sessions instead of relying on WebChat process identity?
+### Question #4: Why is one runtime descriptor visible inside the filesystem sandbox?
+
+Response:
+A generated-local launch gives the outer agent container a signed Router descriptor at the fixed `/run/ploinky/router-descriptor.json` path. MainAgent needs that descriptor to validate its Router authority, but Bubblewrap starts from an empty filesystem. The Broker may therefore add exactly that file as a read-only mount only when the locator has generated provenance and the fixed path is a bounded `0600` regular non-symlink owned by the current numeric user and group. It must reject arbitrary descriptor paths, explicit provenance, ownership changes, and real-path replacement before creating MainAgent's sandbox. No other `/run` state becomes visible.
+
+### Question #5: Why does AchillesCLI restore sessions instead of relying on WebChat process identity?
 
 Response:
 AchillesCLI can run with no browser at all, so a WebChat runtime or PID cannot be the durable conversation owner. Loading `currentSessionId` and its session file during every process startup gives single-shot, terminal, and browser launches the same behavior and lets AchillesCLI hydrate a freshly created MainAgent exactly once.
