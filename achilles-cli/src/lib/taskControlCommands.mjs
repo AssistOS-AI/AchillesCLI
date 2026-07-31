@@ -151,6 +151,7 @@ export function createTaskControlCommands({
     interactions,
     controlTaskSessionImpl = controlTaskSession,
     setTaskModelImpl,
+    onLoginCompleted,
     pollIntervalMs = 500,
 } = {}) {
     if (!workingDir) throw new Error('workingDir is required');
@@ -162,16 +163,18 @@ export function createTaskControlCommands({
         operation,
         ...args,
     }, setTaskModelImpl ? { setTaskModelImpl } : {});
-    const scopedInteractions = (taskId, targetTabId = '') => ({
+    const scopedInteractions = (taskId, targetTabId = '', targetPageInstanceId = '') => ({
         select: (request, options) => interactions.select({
             ...request,
             targetTaskId: assertTaskId(taskId),
             ...(targetTabId ? { targetTabId } : {}),
+            ...(targetPageInstanceId ? { targetPageInstanceId } : {}),
         }, options),
         input: (request, options) => interactions.input({
             ...request,
             targetTaskId: assertTaskId(taskId),
             ...(targetTabId ? { targetTabId } : {}),
+            ...(targetPageInstanceId ? { targetPageInstanceId } : {}),
         }, options),
     });
 
@@ -258,6 +261,53 @@ export function createTaskControlCommands({
                 throw error;
             }
         };
+        const monitorChallenge = async (initialChallengeFlow) => {
+            let currentFlow = initialChallengeFlow;
+            const promptController = new AbortController();
+            const forwardAbort = () => promptController.abort();
+            if (signal?.aborted) throw new Error('interaction_cancelled');
+            signal?.addEventListener?.('abort', forwardAbort, { once: true });
+            const selection = ui.select({
+                title: 'Complete provider authentication',
+                message: 'Finish the provider flow. This menu closes automatically when authentication succeeds.',
+                detail: challengeDetail(currentFlow),
+                challenge: currentFlow.challenge,
+                options: [
+                    { value: 'cancel', label: 'Cancel', tone: 'danger' },
+                ],
+            }, { signal: promptController.signal }).then(
+                (action) => ({ type: 'action', action }),
+                (error) => ({ type: 'interaction-error', error }),
+            );
+            try {
+                while (!TERMINAL_LOGIN_STATUSES.has(currentFlow?.status)) {
+                    const next = await Promise.race([
+                        selection,
+                        new Promise((resolve) => setTimeout(
+                            () => resolve({ type: 'poll' }),
+                            pollIntervalMs,
+                        )),
+                    ]);
+                    if (next.type === 'interaction-error') throw next.error;
+                    if (next.type === 'action') {
+                        if (next.action !== 'cancel') throw new Error('invalid_provider_login_action');
+                        return acceptFlow(await call(taskId, 'login_cancel', { flowId: currentFlow.flowId }));
+                    }
+                    const previousChallenge = JSON.stringify(currentFlow.challenge || null);
+                    currentFlow = await acceptFlow(await call(taskId, 'login_status', {
+                        flowId: currentFlow.flowId,
+                    }));
+                    if (JSON.stringify(currentFlow.challenge || null) !== previousChallenge) {
+                        return currentFlow;
+                    }
+                }
+                return currentFlow;
+            } finally {
+                signal?.removeEventListener?.('abort', forwardAbort);
+                promptController.abort();
+                await selection;
+            }
+        };
         let flow = await acceptFlow(initialFlow);
         while (!TERMINAL_LOGIN_STATUSES.has(flow?.status)) {
             if (flow?.status === 'waiting' && flow.prompt) {
@@ -290,17 +340,8 @@ export function createTaskControlCommands({
                 continue;
             }
             if (flow?.challenge) {
-                const action = await ui.select({
-                    title: 'Complete provider authentication',
-                    message: 'Finish the provider flow, then check its status.',
-                    detail: challengeDetail(flow),
-                    challenge: flow.challenge,
-                    options: [
-                        { value: 'check', label: 'Check status' },
-                        { value: 'cancel', label: 'Cancel', tone: 'danger' },
-                    ],
-                }, { signal });
-                if (action === 'cancel') return call(taskId, 'login_cancel', { flowId: flow.flowId });
+                flow = await monitorChallenge(flow);
+                continue;
             } else {
                 await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
             }
@@ -310,7 +351,7 @@ export function createTaskControlCommands({
     }
 
     async function login(taskId, providerKey = '', methodKey = '', { signal, context } = {}) {
-        const ui = scopedInteractions(taskId, context?.sourceTabId);
+        const ui = scopedInteractions(taskId, context?.sourceTabId, context?.sourcePageInstanceId);
         const { provider } = await chooseProvider(taskId, providerKey, signal, ui);
         const method = await chooseMethod(provider, methodKey, signal, ui);
         const credentials = await collectInputs(provider, method, signal, ui);
@@ -320,9 +361,20 @@ export function createTaskControlCommands({
             inputs: credentials.inputs,
             ...(credentials.apiKey ? { apiKey: credentials.apiKey } : {}),
         });
-        const completed = await followFlow(taskId, flow, signal, ui);
+        let completed;
+        try {
+            completed = await followFlow(taskId, flow, signal, ui);
+        } catch (error) {
+            if (error?.message === 'interaction_cancelled' && flow?.flowId) {
+                await call(taskId, 'login_cancel', { flowId: flow.flowId }).catch(() => {});
+            }
+            throw error;
+        }
         if (completed?.status === 'failed') throw new Error(completed.error || 'provider_login_failed');
         if (completed?.status === 'cancelled') throw new Error('provider_login_cancelled');
+        if (completed?.status === 'completed' && typeof onLoginCompleted === 'function') {
+            await onLoginCompleted(taskId, completed);
+        }
         return completed;
     }
 

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {
+    appendTaskLogEntry as persistTaskLogEntry,
     beginTaskContinuation,
     getTask,
     ingestTaskEvent,
@@ -449,6 +450,17 @@ export async function createWebchatBackgroundTaskManager({
             publish({
                 event: 'control',
                 action: 'model',
+                task: updated,
+                logAppend: updated.logAppend,
+                logOffset: updated.logOffset,
+            }, { persist: false });
+            return updated;
+        },
+        appendTaskLog(taskId, message, action = 'control') {
+            const updated = persistTaskLogEntry(workingDir, taskId, message);
+            publish({
+                event: 'control',
+                action,
                 task: updated,
                 logAppend: updated.logAppend,
                 logOffset: updated.logOffset,

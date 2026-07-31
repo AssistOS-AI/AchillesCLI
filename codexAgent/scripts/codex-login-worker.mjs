@@ -2,6 +2,7 @@
 
 import { spawn } from 'node:child_process';
 import { updateLoginFlow } from './login-flow-store.mjs';
+import { parseCodexDeviceLoginOutput, stripAnsi } from './codex-login-output.mjs';
 import { resolveCodexBinary } from './codex-runner.mjs';
 
 const [flowId, method] = process.argv.slice(2);
@@ -15,8 +16,7 @@ let output = '';
 
 function publish(chunk) {
     output = `${output}${chunk}`.slice(-8000);
-    const url = output.match(/https?:\/\/[^\s]+/)?.[0]?.replace(/[),.;]+$/, '') || '';
-    const code = output.match(/\b(?:one-time\s+)?code[:\s]+([A-Z0-9-]{4,})/i)?.[1] || '';
+    const { cleaned, url, code } = parseCodexDeviceLoginOutput(output);
     updateLoginFlow(flowId, {
         status: 'running',
         ...(url ? { challenge: {
@@ -24,7 +24,7 @@ function publish(chunk) {
             url,
             verificationUri: url,
             ...(code ? { userCode: code } : {}),
-            message: output.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').trim().slice(-2000),
+            message: cleaned.trim().slice(-2000),
         } } : {}),
     });
 }
@@ -38,6 +38,6 @@ child.on('error', (error) => {
 child.on('close', (code) => {
     updateLoginFlow(flowId, {
         status: code === 0 ? 'completed' : 'failed',
-        ...(code === 0 ? { challenge: null } : { error: output.trim().slice(-500) || `Codex login failed (${code}).` }),
+        ...(code === 0 ? { challenge: null } : { error: stripAnsi(output).trim().slice(-500) || `Codex login failed (${code}).` }),
     });
 });

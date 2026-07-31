@@ -699,6 +699,11 @@ async function runWebchatInteractive(agent, options) {
         workingDir,
         interactions: taskInteractionController,
         setTaskModelImpl: (_dir, taskId, selection) => backgroundTaskManager.setTaskModel(taskId, selection),
+        onLoginCompleted: (taskId) => backgroundTaskManager.appendTaskLog(
+            taskId,
+            'Authentication successful',
+            'login',
+        ),
     });
     activeWebchatConversationProgress = (reason) => {
         if (!currentTurn) return;
@@ -836,7 +841,14 @@ async function runWebchatInteractive(agent, options) {
     };
 
     const handleInteractionResponse = (response) => {
+        if (response.cancelled && taskInteractionController.cancel(response.id)) return;
         if (taskInteractionController.resolve(response)) return;
+        if (response.cancelled) {
+            approvalControlClient.resolvePendingApproval('deny', response.id).catch((error) => {
+                activeAgent.logger?.error?.(`Failed to cancel WebChat interaction: ${error.message}`);
+            });
+            return;
+        }
         const decision = approvalDecisionFromInteractionOption(response.optionId);
         if (!decision) return;
         approvalControlClient.resolvePendingApproval(decision, response.id).catch((error) => {
@@ -1307,6 +1319,7 @@ function updateWebchatContextForMessage(context, normalizedMessage, { workingDir
     const materialized = materializeWebchatContext(normalizedMessage, { workingDir });
     context.invocationToken = String(normalizedMessage?.invocationToken || '').trim();
     context.sourceTabId = String(normalizedMessage?.sourceTabId || '').trim();
+    context.sourcePageInstanceId = String(normalizedMessage?.sourcePageInstanceId || '').trim();
     context.webchatAttachments = Array.isArray(normalizedMessage?.attachments) ? normalizedMessage.attachments : [];
     context.webchatReferences = Array.isArray(normalizedMessage?.references) ? normalizedMessage.references : [];
     context.webchatResources = materialized.resources;

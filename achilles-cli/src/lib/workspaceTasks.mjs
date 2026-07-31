@@ -433,6 +433,21 @@ export function setTaskModel(workingDir, taskId, modelSelection) {
     return { ...updated, logAppend, logOffset };
 }
 
+export function appendTaskLogEntry(workingDir, taskId, message) {
+    const { logDirectory } = ensureTaskStorage(workingDir);
+    const existing = getTask(workingDir, taskId);
+    if (!existing) throw new Error('task_not_found');
+    const text = stripTerminalControls(message).replace(/\s+/g, ' ').trim().slice(0, 500);
+    if (!text) throw new Error('task_log_message_required');
+    const existingLog = readTaskLog(workingDir, taskId).text;
+    const separator = existingLog && !existingLog.endsWith('\n') ? '\n' : '';
+    const logAppend = `${separator}${text}\n`;
+    const { logPath } = taskPaths(logDirectory, taskId);
+    appendTaskLog(logPath, logAppend, { retainFull: true });
+    const logOffset = fs.readFileSync(logPath, 'utf8').length;
+    return { ...existing, logAppend, logOffset };
+}
+
 export function readTaskLog(workingDir, taskId, offset = 0) {
     const storage = resolveTaskStorage(workingDir, { includeLogs: true });
     if (!storage?.logDirectory) return { text: '', nextOffset: 0, reset: false };

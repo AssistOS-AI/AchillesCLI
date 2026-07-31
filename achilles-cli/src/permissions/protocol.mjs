@@ -101,14 +101,17 @@ export function parseWebchatInteractionResponse(raw) {
         const id = typeof parsed.id === 'string' ? parsed.id.trim() : '';
         const optionId = typeof parsed.optionId === 'string' ? parsed.optionId.trim() : '';
         const response = typeof parsed.response === 'string' ? parsed.response : null;
+        const cancelled = parsed.cancelled === true;
         if (!INTERACTION_ID_RE.test(id)
             || (optionId && !INTERACTION_OPTION_RE.test(optionId))
             || (response !== null && response.length > 65536)
-            || (!optionId && response === null)) {
+            || (cancelled && (optionId || response !== null))
+            || (!cancelled && !optionId && response === null)) {
             return null;
         }
         return {
             id,
+            ...(cancelled ? { cancelled: true } : {}),
             ...(optionId ? { optionId } : {}),
             ...(response !== null ? { response } : {}),
         };

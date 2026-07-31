@@ -73,6 +73,7 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
         searchable = false,
         targetTaskId = '',
         targetTabId = '',
+        targetPageInstanceId = '',
         challenge = null,
     }, requestOptions = {}) {
         const normalizedChallenge = publicChallenge(challenge);
@@ -94,6 +95,7 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
             searchable: searchable === true,
             ...(targetTaskId ? { targetTaskId } : {}),
             ...(targetTabId ? { targetTabId } : {}),
+            ...(targetPageInstanceId ? { targetPageInstanceId } : {}),
             ...(normalizedChallenge ? { challenge: normalizedChallenge } : {}),
         }, {
             ...requestOptions,
@@ -110,6 +112,7 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
         maxLength = 4000,
         targetTaskId = '',
         targetTabId = '',
+        targetPageInstanceId = '',
         challenge = null,
     }, requestOptions = {}) {
         const normalizedChallenge = publicChallenge(challenge);
@@ -126,6 +129,7 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
             },
             ...(targetTaskId ? { targetTaskId } : {}),
             ...(targetTabId ? { targetTabId } : {}),
+            ...(targetPageInstanceId ? { targetPageInstanceId } : {}),
             ...(normalizedChallenge ? { challenge: normalizedChallenge } : {}),
         }, requestOptions);
     }
@@ -149,6 +153,12 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
         return true;
     }
 
+    function cancel(id) {
+        if (!pending || id !== pending.id) return false;
+        closePending('cancelled', new Error('interaction_cancelled'));
+        return true;
+    }
+
     function dispose() {
         closePending('cancelled', new Error('interaction_controller_closed'));
     }
@@ -157,6 +167,7 @@ export function createWebchatInteractionController({ stdout = process.stdout, ti
         select,
         input,
         resolve,
+        cancel,
         dispose,
         get pendingId() { return pending?.id || null; },
     };

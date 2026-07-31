@@ -110,6 +110,12 @@ test('WebChat approval protocol orders always approve first and parses control r
         id: interaction.id,
         optionId: 'always-allow',
     })), { id: interaction.id, optionId: 'always-allow' });
+    assert.deepEqual(parseWebchatInteractionResponse(JSON.stringify({
+        __webchatInteractionResponse: 1,
+        version: 1,
+        id: interaction.id,
+        cancelled: true,
+    })), { id: interaction.id, cancelled: true });
 });
 
 test('Broker socket returns async responses after the client half-closes its request', async () => {

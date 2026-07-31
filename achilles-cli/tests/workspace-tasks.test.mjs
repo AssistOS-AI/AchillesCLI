@@ -8,6 +8,7 @@ import { SlashCommandHandler } from '../src/repl/SlashCommandHandler.mjs';
 import { getQuickReference, showHelp } from '../src/ui/HelpSystem.mjs';
 import {
     __testables,
+    appendTaskLogEntry,
     beginTaskContinuation,
     buildTaskCompletions,
     formatWorkspaceTaskDetail,
@@ -158,6 +159,28 @@ test('task model override is appended to the task journal and survives continuat
         assert.equal(updated.logOffset, updated.logAppend.length);
         assert.equal(readTaskLog(fixture.workspace, FINISHED_ID).text, updated.logAppend);
         assert.deepEqual(getTask(fixture.workspace, FINISHED_ID).execution, updated.execution);
+    } finally {
+        fs.rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+});
+
+test('task control messages are appended to persistent task logs', () => {
+    const fixture = makeWorkspace('task-control-log');
+    try {
+        writeJournal(fixture.history, [JSON.stringify({
+            id: FINISHED_ID,
+            targetAgent: 'codexAgent',
+            remoteTaskId: 'remote-1',
+            status: 'finished',
+        })]);
+        const updated = appendTaskLogEntry(
+            fixture.workspace,
+            FINISHED_ID,
+            'Authentication successful',
+        );
+        assert.equal(updated.logAppend, 'Authentication successful\n');
+        assert.equal(updated.logOffset, updated.logAppend.length);
+        assert.equal(readTaskLog(fixture.workspace, FINISHED_ID).text, updated.logAppend);
     } finally {
         fs.rmSync(fixture.workspace, { recursive: true, force: true });
     }

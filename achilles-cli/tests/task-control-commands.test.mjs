@@ -74,6 +74,7 @@ test('/task login owns provider and secret prompting in AchillesCLI', async () =
             calls.push(['input', request.type]);
             assert.equal(request.targetTaskId, TASK_ID);
             assert.equal(request.targetTabId, 'tab_login');
+            assert.equal(request.targetPageInstanceId, 'page_login');
             return 'secret-value';
         },
     };
@@ -96,7 +97,9 @@ test('/task login owns provider and secret prompting in AchillesCLI', async () =
         controlTaskSessionImpl: control,
     });
 
-    const result = await commands.login(TASK_ID, '', '', { context: { sourceTabId: 'tab_login' } });
+    const result = await commands.login(TASK_ID, '', '', {
+        context: { sourceTabId: 'tab_login', sourcePageInstanceId: 'page_login' },
+    });
     assert.equal(result.status, 'completed');
     assert.deepEqual(calls.filter(([kind]) => kind === 'input'), [['input', 'secret']]);
     const start = calls.find(([kind, input]) => kind === 'control' && input.operation === 'login_start')[1];
@@ -106,12 +109,19 @@ test('/task login owns provider and secret prompting in AchillesCLI', async () =
 test('/task login renders a structured device-code challenge in the originating task tab', async () => {
     const requests = [];
     const calls = [];
+    const completed = [];
+    let challengeAborted = false;
     const interactions = {
-        async select(request) {
+        async select(request, { signal } = {}) {
             requests.push(request);
             if (request.title === 'Connect provider') return 'openai';
             if (request.title === 'Connect OpenAI') return 'device_code';
-            return 'check';
+            return new Promise((resolve, reject) => {
+                signal?.addEventListener('abort', () => {
+                    challengeAborted = true;
+                    reject(new Error('interaction_cancelled'));
+                }, { once: true });
+            });
         },
         async input() { throw new Error('unexpected input'); },
     };
@@ -144,9 +154,13 @@ test('/task login renders a structured device-code challenge in the originating 
         workingDir: '/work',
         interactions,
         controlTaskSessionImpl: control,
+        onLoginCompleted: (taskId, flow) => completed.push({ taskId, flow }),
+        pollIntervalMs: 1,
     });
 
-    const result = await commands.login(TASK_ID, '', '', { context: { sourceTabId: 'tab_login' } });
+    const result = await commands.login(TASK_ID, '', '', {
+        context: { sourceTabId: 'tab_login', sourcePageInstanceId: 'page_login' },
+    });
     assert.equal(result.status, 'completed');
     const challenge = requests.find((request) => request.title === 'Complete provider authentication');
     assert.deepEqual(challenge.challenge, {
@@ -157,9 +171,108 @@ test('/task login renders a structured device-code challenge in the originating 
     });
     assert.equal(challenge.targetTaskId, TASK_ID);
     assert.equal(challenge.targetTabId, 'tab_login');
+    assert.equal(challenge.targetPageInstanceId, 'page_login');
+    assert.deepEqual(challenge.options, [
+        { value: 'cancel', label: 'Cancel', tone: 'danger' },
+    ]);
+    assert.match(challenge.message, /closes automatically/i);
+    assert.equal(challengeAborted, true);
     assert.deepEqual(calls.map((entry) => entry.operation), [
         'login_describe', 'login_start', 'login_status',
     ]);
+    assert.deepEqual(completed, [{
+        taskId: TASK_ID,
+        flow: { status: 'completed', flowId: 'flow_123', provider: 'openai' },
+    }]);
+});
+
+test('aborting a task interaction emits the resolution that closes its WebChat menu', async () => {
+    const writes = [];
+    const abortController = new AbortController();
+    const controller = createWebchatInteractionController({
+        stdout: { write: (value) => writes.push(JSON.parse(value)) },
+        timeoutMs: 1000,
+    });
+    const pending = controller.select({
+        title: 'Complete provider authentication',
+        options: [{ value: 'cancel', label: 'Cancel' }],
+        targetTaskId: TASK_ID,
+        targetTabId: 'tab_login',
+    }, { signal: abortController.signal });
+    const request = writes[0];
+
+    abortController.abort();
+    await assert.rejects(pending, /interaction_cancelled/);
+    assert.equal(writes[1].__webchatInteractionResolved, 1);
+    assert.equal(writes[1].id, request.id);
+    assert.equal(writes[1].status, 'cancelled');
+    controller.dispose();
+});
+
+test('browser cancellation rejects the pending task interaction', async () => {
+    const writes = [];
+    const controller = createWebchatInteractionController({
+        stdout: { write: (value) => writes.push(JSON.parse(value)) },
+        timeoutMs: 1000,
+    });
+    const pending = controller.input({
+        title: 'Enter API key',
+        targetTaskId: TASK_ID,
+        targetTabId: 'tab_login',
+        targetPageInstanceId: 'page_login',
+    });
+    const request = writes[0];
+
+    assert.equal(controller.cancel(request.id), true);
+    await assert.rejects(pending, /interaction_cancelled/);
+    assert.equal(writes[1].status, 'cancelled');
+    assert.equal(controller.cancel(request.id), false);
+});
+
+test('cancelling a browser interaction also cancels an active provider flow', async () => {
+    const operations = [];
+    const commands = createTaskControlCommands({
+        workingDir: '/work',
+        interactions: {
+            async select(request) {
+                assert.equal(request.targetPageInstanceId, 'page_login');
+                throw new Error('interaction_cancelled');
+            },
+            async input() { throw new Error('unexpected input'); },
+        },
+        controlTaskSessionImpl: async (input) => {
+            operations.push(input.operation);
+            if (input.operation === 'login_describe') {
+                return {
+                    providers: [{
+                        key: 'openai',
+                        methods: [{ key: 'device', kind: 'device_code', label: 'Device code' }],
+                    }],
+                };
+            }
+            if (input.operation === 'login_start') {
+                return {
+                    status: 'running',
+                    flowId: 'flow_refresh',
+                    challenge: {
+                        type: 'device_code',
+                        verificationUri: 'https://example.com/device',
+                        userCode: 'ABCD-EFGH',
+                    },
+                };
+            }
+            if (input.operation === 'login_cancel') {
+                return { status: 'cancelled', flowId: input.flowId };
+            }
+            throw new Error(`unexpected operation: ${input.operation}`);
+        },
+        pollIntervalMs: 1,
+    });
+
+    await assert.rejects(commands.login(TASK_ID, 'openai', 'device', {
+        context: { sourceTabId: 'tab_login', sourcePageInstanceId: 'page_login' },
+    }), /interaction_cancelled/);
+    assert.deepEqual(operations, ['login_describe', 'login_start', 'login_cancel']);
 });
 
 test('AchillesCLI drops unknown login methods and rejects local callback challenges', () => {

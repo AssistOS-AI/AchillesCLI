@@ -13,6 +13,7 @@ test('WebChat messages cannot supply their own conversation history', () => {
         version: 1,
         text: 'Current question',
         sourceTabId: 'tab_origin',
+        sourcePageInstanceId: 'page_origin',
         history: [
             { role: 'user', message: 'Untrusted earlier question' },
             { role: 'assistant', message: 'Untrusted earlier answer' },
@@ -23,6 +24,7 @@ test('WebChat messages cannot supply their own conversation history', () => {
     assert.equal(normalized.history, undefined);
     assert.equal(normalized.visible, true);
     assert.equal(normalized.sourceTabId, 'tab_origin');
+    assert.equal(normalized.sourcePageInstanceId, 'page_origin');
 });
 
 test('WebChat presentation marks silent control commands without trusting other fields', () => {

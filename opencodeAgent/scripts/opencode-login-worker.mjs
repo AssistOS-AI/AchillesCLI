@@ -5,6 +5,7 @@ import {
     waitForLoginResponse,
 } from './login-flow-store.mjs';
 import { authorizationChallenge } from './login-methods.mjs';
+import { beginOpenCodeOAuthAuthorization } from './opencode-auth.mjs';
 import { openCodeJson, startOpenCodeControlServer } from './opencode-control-server.mjs';
 
 const [flowId, provider, methodIndexRaw, declaredKind, inputsRaw = ''] = process.argv.slice(2);
@@ -20,9 +21,10 @@ process.on('SIGTERM', () => {
 
 async function main() {
     server = await startOpenCodeControlServer();
-    const authorization = await openCodeJson(server, `/provider/${encodeURIComponent(provider)}/oauth/authorize`, {
-        method: 'POST',
-        body: JSON.stringify({ method: methodIndex, inputs }),
+    const authorization = await beginOpenCodeOAuthAuthorization(server, {
+        provider,
+        methodIndex,
+        inputs,
     });
     updateLoginFlow(flowId, {
         status: authorization.method === 'code' ? 'waiting' : 'running',
