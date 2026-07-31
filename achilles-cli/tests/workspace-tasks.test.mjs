@@ -8,6 +8,7 @@ import { SlashCommandHandler } from '../src/repl/SlashCommandHandler.mjs';
 import { getQuickReference, showHelp } from '../src/ui/HelpSystem.mjs';
 import {
     __testables,
+    appendTaskLogEntry,
     beginTaskContinuation,
     buildTaskCompletions,
     formatWorkspaceTaskDetail,
@@ -17,6 +18,7 @@ import {
     readTaskLog,
     readOngoingTasks,
     readWorkspaceTasks,
+    setTaskModel,
 } from '../src/lib/workspaceTasks.mjs';
 
 const FINISHED_ID = 'task_111111111111111111111111';
@@ -78,6 +80,107 @@ test('workspace task reader materializes latest safe state in update order', () 
         assert.deepEqual(tasks.map((task) => task.id), [ONGOING_ID, FINISHED_ID]);
         assert.equal(tasks[1].status, 'finished');
         assert.deepEqual(readOngoingTasks(fixture.workspace).map((task) => task.id), [ONGOING_ID]);
+    } finally {
+        fs.rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+});
+
+test('workspace task reader accumulates legacy final-output ranges across continuations', () => {
+    const fixture = makeWorkspace('legacy-final-ranges');
+    try {
+        writeJournal(fixture.history, [
+            JSON.stringify({
+                id: FINISHED_ID,
+                targetAgent: 'opencodeAgent',
+                remoteTaskId: 'remote-1',
+                status: 'finished',
+                turn: 1,
+                finalOutputOffset: 20,
+                finalOutputLength: 12,
+            }),
+            JSON.stringify({
+                id: FINISHED_ID,
+                targetAgent: 'opencodeAgent',
+                remoteTaskId: 'remote-2',
+                status: 'ongoing',
+                turn: 2,
+                finalOutputOffset: null,
+                finalOutputLength: 0,
+            }),
+            JSON.stringify({
+                id: FINISHED_ID,
+                targetAgent: 'opencodeAgent',
+                remoteTaskId: 'remote-2',
+                status: 'finished',
+                turn: 2,
+                finalOutputOffset: 80,
+                finalOutputLength: 14,
+            }),
+        ]);
+
+        assert.deepEqual(getTask(fixture.workspace, FINISHED_ID).finalOutputRanges, [
+            { turn: 1, offset: 20, length: 12 },
+            { turn: 2, offset: 80, length: 14 },
+        ]);
+    } finally {
+        fs.rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+});
+
+test('task model override is appended to the task journal and survives continuation state', () => {
+    const fixture = makeWorkspace('task-model');
+    try {
+        writeJournal(fixture.history, [JSON.stringify({
+            id: FINISHED_ID,
+            targetAgent: 'piAgent',
+            remoteTaskId: 'remote-1',
+            toolName: 'execute-task',
+            status: 'finished',
+            continuation: {
+                version: 1,
+                targetAgent: 'piAgent',
+                toolName: 'continue-task',
+                handle: 'opaque-task-handle',
+            },
+        })]);
+        const updated = setTaskModel(fixture.workspace, FINISHED_ID, {
+            key: 'openai/gpt-test',
+            provider: 'openai',
+            model: 'gpt-test',
+            label: 'GPT Test',
+        });
+        assert.deepEqual(updated.execution.model, {
+            key: 'openai/gpt-test',
+            provider: 'openai',
+            model: 'gpt-test',
+            label: 'GPT Test',
+        });
+        assert.equal(updated.logAppend, 'switched model to: GPT Test\n');
+        assert.equal(updated.logOffset, updated.logAppend.length);
+        assert.equal(readTaskLog(fixture.workspace, FINISHED_ID).text, updated.logAppend);
+        assert.deepEqual(getTask(fixture.workspace, FINISHED_ID).execution, updated.execution);
+    } finally {
+        fs.rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+});
+
+test('task control messages are appended to persistent task logs', () => {
+    const fixture = makeWorkspace('task-control-log');
+    try {
+        writeJournal(fixture.history, [JSON.stringify({
+            id: FINISHED_ID,
+            targetAgent: 'codexAgent',
+            remoteTaskId: 'remote-1',
+            status: 'finished',
+        })]);
+        const updated = appendTaskLogEntry(
+            fixture.workspace,
+            FINISHED_ID,
+            'Authentication successful',
+        );
+        assert.equal(updated.logAppend, 'Authentication successful\n');
+        assert.equal(updated.logOffset, updated.logAppend.length);
+        assert.equal(readTaskLog(fixture.workspace, FINISHED_ID).text, updated.logAppend);
     } finally {
         fs.rmSync(fixture.workspace, { recursive: true, force: true });
     }
@@ -345,7 +448,7 @@ test('/exec still waits for ordinary synchronous skill results', async () => {
     assert.equal(cancelCount, 1);
 });
 
-test('slash handler delegates task view, stop, and continuation actions', async () => {
+test('slash handler delegates task view, stop, continuation, model, and login actions', async () => {
     const calls = [];
     const taskId = 'task_1234567890abcdef12345678';
     const handler = new SlashCommandHandler({
@@ -355,6 +458,8 @@ test('slash handler delegates task view, stop, and continuation actions', async 
         viewTask: async (id) => { calls.push(['view', id]); return 'task detail'; },
         stopTask: async (id) => { calls.push(['stop', id]); return { id }; },
         continueTask: async (id, prompt) => { calls.push(['continue', id, prompt]); return { id }; },
+        modelTask: async (id, model) => { calls.push(['model', id, model]); return { id, model: { label: 'GPT Test' } }; },
+        loginTask: async (id, provider, method) => { calls.push(['login', id, provider, method]); return { id, provider }; },
     });
 
     assert.deepEqual(
@@ -369,10 +474,20 @@ test('slash handler delegates task view, stop, and continuation actions', async 
         await handler.executeSlashCommand('task', `continue ${taskId} finish the tests`),
         { handled: true, result: `Continued ${taskId}.` },
     );
+    assert.deepEqual(
+        await handler.executeSlashCommand('task', `model ${taskId} openai/gpt-test`),
+        { handled: true, result: 'Task model set to GPT Test.' },
+    );
+    assert.deepEqual(
+        await handler.executeSlashCommand('task', `login ${taskId} openai api_key`),
+        { handled: true, result: 'Provider connected: openai.' },
+    );
     assert.deepEqual(calls, [
         ['view', taskId],
         ['stop', taskId],
         ['continue', taskId, 'finish the tests'],
+        ['model', taskId, 'openai/gpt-test'],
+        ['login', taskId, 'openai', 'api_key'],
     ]);
 });
 

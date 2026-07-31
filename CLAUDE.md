@@ -12,11 +12,12 @@ Achilles CLI is the interactive and single-shot skill management CLI used by the
 
 ## Scope
 
-- Skill CRUD for `cskill.md`, `oskill.md`, `mskill.md`, `tskill.md`, `dcgskill.md`, and Anthropic-style `SKILL.md`.
+- Skill CRUD and execution for the descriptor families registered by AchillesAgentLib.
 - Schema validation against `achilles-cli/src/schemas/`.
 - Code generation from skill definitions to executable `.mjs`.
 - Iterative refinement until tests pass.
 - Interactive REPL with history and slash commands.
+- Persistent per-workspace enable/disable controls for registered workspace skills.
 
 ## Critical components
 

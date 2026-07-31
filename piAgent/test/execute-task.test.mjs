@@ -51,6 +51,23 @@ if (process.env.PI_ENV_PATH) {
 }
 const emit = (event) => fs.writeSync(1, JSON.stringify(event) + '\\n');
 emit({ type: 'session', id: 'ignored-session-metadata' });
+if (process.env.FAKE_PI_ASSISTANT_ERROR === '1') {
+    emit({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    emit({
+        type: 'message_end',
+        message: {
+            role: 'assistant',
+            content: [],
+            stopReason: 'error',
+            errorMessage: 'Your authentication token has been invalidated. Please try signing in again.',
+            diagnostics: [{
+                type: 'provider_transport_failure',
+                error: { message: 'WebSocket error', stack: 'hidden provider stack' },
+            }],
+        },
+    });
+    process.exit(0);
+}
 emit({ type: 'message_start', message: { role: 'assistant', content: [] } });
 emit({
     type: 'message_update',
@@ -163,6 +180,30 @@ test('PI JSON parser emits readable live text without lifecycle metadata or dupl
     assert.doesNotMatch(visible, /hidden|session|thinking|signature/i);
 });
 
+test('PI JSON parser captures assistant errors without leaking diagnostics into live output', () => {
+    let visible = '';
+    const parser = createPiJsonEventParser({
+        onText(text) {
+            visible += text;
+        },
+    });
+    parser.push(Buffer.from(`${JSON.stringify({
+        type: 'message_end',
+        message: {
+            role: 'assistant',
+            content: [],
+            stopReason: 'error',
+            errorMessage: 'Authentication failed.',
+            diagnostics: [{ error: { message: 'transport failed', stack: 'hidden stack' } }],
+        },
+    })}\n`));
+    parser.finish();
+
+    assert.equal(visible, '');
+    assert.equal(parser.getFinalOutputText(), '');
+    assert.equal(parser.getErrorMessage(), 'Authentication failed.');
+});
+
 test('PI wrapper creates a resumable session and returns a continuation handle', async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-test-'));
     const projectDir = path.join(temporaryDirectory, 'project');
@@ -250,6 +291,36 @@ test('failed PI task returns and persists its continuation handle', async () => 
     ));
     assert.equal(record.sessionId, payload.continuation.handle);
     assert.equal(record.projectDir, projectDir);
+});
+
+test('PI assistant error fails the task even when the PI process exits successfully', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-assistant-error-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Use invalid authentication',
+        projectDir,
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: path.join(temporaryDirectory, 'sessions'),
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        FAKE_PI_ASSISTANT_ERROR: '1',
+    });
+
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.outputText, '');
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    assert.equal(
+        result.stderr,
+        'Your authentication token has been invalidated. Please try signing in again.\n',
+    );
+    assert.doesNotMatch(result.stderr, /WebSocket|hidden provider stack/);
 });
 
 test('cancelled PI task returns its preallocated continuation handle', async () => {
@@ -363,4 +434,17 @@ test('PI continuation reuses the exact session id and session directory', async 
     assert.equal(args[args.indexOf('--model') + 1], 'gpt-5.4-mini');
     assert.equal(args[args.indexOf('--thinking') + 1], 'high');
     assert.equal(args.at(-1), 'Continue same PI session');
+
+    const overridden = await runTaskScript(continueTaskPath, {
+        handle: firstPayload.continuation.handle,
+        prompt: 'Continue with selected PI model',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+    }, env);
+    assert.equal(overridden.code, 0, overridden.stderr);
+    const overrideArgs = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.equal(overrideArgs[overrideArgs.indexOf('--provider') + 1], 'anthropic');
+    assert.equal(overrideArgs[overrideArgs.indexOf('--model') + 1], 'claude-sonnet-4-5');
+    assert.equal(overrideArgs.includes('--thinking'), false);
+    assert.equal(overrideArgs.at(-1), 'Continue with selected PI model');
 });

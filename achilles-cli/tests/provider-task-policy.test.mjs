@@ -21,6 +21,11 @@ for (const agent of ['opencodeAgent', 'piAgent', 'codexAgent']) {
             path.join(repositoryRoot, agent, taskRunnerByAgent[agent]),
             'utf8',
         );
+        const controlSource = fs.readFileSync(
+            path.join(repositoryRoot, agent, 'scripts/task-session-control.mjs'),
+            'utf8',
+        );
+        const loginStore = path.join(repositoryRoot, agent, 'scripts/login-flow-store.mjs');
 
         assert.deepEqual(tools.get('execute-task')?.tags, ['internal']);
         assert.equal(tools.get('execute-task')?.command, 'node');
@@ -30,8 +35,15 @@ for (const agent of ['opencodeAgent', 'piAgent', 'codexAgent']) {
         assert.equal(tools.get('continue-task')?.command, 'node');
         assert.equal(tools.get('continue-task')?.async, true);
         assert.equal(Object.hasOwn(tools.get('continue-task'), 'timeoutMs'), false);
+        assert.deepEqual(tools.get('task-session-control')?.tags, ['internal']);
+        assert.equal(tools.get('task-session-control')?.command, 'node');
+        assert.notEqual(tools.get('task-session-control')?.async, true);
+        assert.equal(Object.hasOwn(tools.get('task-session-control'), 'timeoutMs'), false);
         assert.doesNotMatch(runnerSource, /setTimeout\s*\(/);
         assert.doesNotMatch(runnerSource, /task timed out/i);
+        assert.equal(fs.existsSync(loginStore), true);
+        assert.match(controlSource, /from '\.\/login-flow-store\.mjs'/);
+        assert.doesNotMatch(controlSource, /\/Agent\/lib\/loginFlowStore/);
     });
 }
 

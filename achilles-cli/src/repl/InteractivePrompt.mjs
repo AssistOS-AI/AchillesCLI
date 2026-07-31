@@ -15,7 +15,7 @@ import { SlashCommandHandler, SUB_OPTIONS } from './SlashCommandHandler.mjs';
 import { UIContext } from '../ui/UIContext.mjs';
 
 export function getSubOptionArgumentSource(command, subOption, subDef = {}) {
-    if (command === 'task' && ['view', 'continue', 'stop'].includes(subOption)) return 'tasks';
+    if (command === 'task' && ['view', 'continue', 'stop', 'model', 'login'].includes(subOption)) return 'tasks';
     if (command === 'session' && subOption === 'resume') return 'sessions';
     if (subDef.needsSkillArg) return 'skills';
     if (subDef.args === 'required') return 'text';
@@ -576,7 +576,7 @@ export class InteractivePrompt {
 
                 // Handle Tab - show skill selector if command needs skill arg, or prompt for text args
                 if (keyStr === '\t') {
-                    const taskMatch = editor.getBuffer().match(/^\/task\s+(view|continue|stop)(?:\s+(\S*))?$/);
+                    const taskMatch = editor.getBuffer().match(/^\/task\s+(view|continue|stop|model|login)(?:\s+(\S*))?$/);
                     if (taskMatch && typeof self.slashHandler.getTaskCompletions === 'function') {
                         const action = taskMatch[1];
                         const taskItems = self.slashHandler.getTaskCompletions(action).map((task) => ({

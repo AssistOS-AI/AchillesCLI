@@ -19,6 +19,7 @@ const WEBCHAT_INTERACTION_FLAG = '__webchatInteraction';
 const WEBCHAT_INTERACTION_RESOLVED_FLAG = '__webchatInteractionResolved';
 const WEBCHAT_INTERACTION_RESPONSE_FLAG = '__webchatInteractionResponse';
 const INTERACTION_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+const INTERACTION_OPTION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export function normalizePermissionMode(value) {
     const normalized = String(value || '').trim().toLowerCase();
@@ -99,10 +100,21 @@ export function parseWebchatInteractionResponse(raw) {
         }
         const id = typeof parsed.id === 'string' ? parsed.id.trim() : '';
         const optionId = typeof parsed.optionId === 'string' ? parsed.optionId.trim() : '';
-        if (!INTERACTION_ID_RE.test(id) || !approvalDecisionFromInteractionOption(optionId)) {
+        const response = typeof parsed.response === 'string' ? parsed.response : null;
+        const cancelled = parsed.cancelled === true;
+        if (!INTERACTION_ID_RE.test(id)
+            || (optionId && !INTERACTION_OPTION_RE.test(optionId))
+            || (response !== null && response.length > 65536)
+            || (cancelled && (optionId || response !== null))
+            || (!cancelled && !optionId && response === null)) {
             return null;
         }
-        return { id, optionId };
+        return {
+            id,
+            ...(cancelled ? { cancelled: true } : {}),
+            ...(optionId ? { optionId } : {}),
+            ...(response !== null ? { response } : {}),
+        };
     } catch {
         return null;
     }

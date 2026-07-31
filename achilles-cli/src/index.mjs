@@ -43,6 +43,8 @@ import { buildAKUPlanningPacket } from './lib/akuMemory/akuPlanningPacket.mjs';
 import { formatAKUContextForPrompt, appendAKUContextToPrompt } from './lib/akuMemory/akuContextFormatter.mjs';
 import { createAKUSessionState } from './lib/akuMemory/akuSessionState.mjs';
 import { createWebchatBackgroundTaskManager } from './lib/webchatBackgroundTasks.mjs';
+import { createTaskControlCommands } from './lib/taskControlCommands.mjs';
+import { createWebchatInteractionController } from './lib/webchatInteractionController.mjs';
 import {
     clearWebchatRuntimeModel,
     emitWebchatRuntimeState,
@@ -54,6 +56,14 @@ import {
     formatWorkspaceTaskSummary,
 } from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
+import {
+    applyPersistedWorkspaceSkillState,
+    createWebchatSkillsEnvelope,
+    createWorkspaceSkillsSnapshot,
+    emitWebchatSkillsEnvelope,
+    setWorkspaceDirectoryEnabled,
+    setWorkspaceSkillEnabled,
+} from './lib/workspaceSkillsState.mjs';
 import {
     buildConversationInitialHistory,
     ConversationSessionStore,
@@ -301,6 +311,7 @@ async function main() {
             logger,
         });
         registerSkillRoots(configuredAgent, allSkillRoots, logger);
+        applyPersistedWorkspaceSkillState(configuredAgent, workingDir);
         installWorkspaceSkillRefreshHook(configuredAgent);
         if (typeof configuredAgent.llmAgent?.setInputReader === 'function') {
             configuredAgent.llmAgent.setInputReader(inputReader);
@@ -700,6 +711,17 @@ async function runWebchatInteractive(agent, options) {
         },
     });
     context.backgroundTaskManager = backgroundTaskManager;
+    const taskInteractionController = createWebchatInteractionController({ stdout: process.stdout });
+    const taskControlCommands = createTaskControlCommands({
+        workingDir,
+        interactions: taskInteractionController,
+        setTaskModelImpl: (_dir, taskId, selection) => backgroundTaskManager.setTaskModel(taskId, selection),
+        onLoginCompleted: (taskId) => backgroundTaskManager.appendTaskLog(
+            taskId,
+            'Authentication successful',
+            'login',
+        ),
+    });
     activeWebchatConversationProgress = (reason) => {
         if (!currentTurn) return;
         try {
@@ -783,7 +805,35 @@ async function runWebchatInteractive(agent, options) {
                 throw error;
             }
         },
+        modelTask: async (taskId, modelKey, commandOptions) => {
+            try {
+                const result = await taskControlCommands.model(taskId, modelKey, commandOptions);
+                if (result?.type === 'task-model-catalog') {
+                    backgroundTaskManager.setTaskModelCatalog(taskId, result.models);
+                }
+                return result;
+            }
+            catch (error) {
+                backgroundTaskManager.reportActionError('model', taskId, error);
+                throw error;
+            }
+        },
+        loginTask: async (taskId, provider, method, commandOptions) => {
+            try { return await taskControlCommands.login(taskId, provider, method, commandOptions); }
+            catch (error) {
+                backgroundTaskManager.reportActionError('login', taskId, error);
+                throw error;
+            }
+        },
         getTaskCompletions: (action) => buildTaskCompletions(workingDir, action),
+        getSkillState: () => createWorkspaceSkillsSnapshot(activeAgent, workingDir),
+        setSkillEnabled: (name, enabled) => setWorkspaceSkillEnabled(activeAgent, workingDir, name, enabled),
+        setSkillsDirectoryEnabled: (directory, enabled) => setWorkspaceDirectoryEnabled(
+            activeAgent,
+            workingDir,
+            directory,
+            enabled,
+        ),
         getPermissions,
         setPermissions,
         getSessions: () => sessionStore.listSessions(),
@@ -816,6 +866,14 @@ async function runWebchatInteractive(agent, options) {
     };
 
     const handleInteractionResponse = (response) => {
+        if (response.cancelled && taskInteractionController.cancel(response.id)) return;
+        if (taskInteractionController.resolve(response)) return;
+        if (response.cancelled) {
+            approvalControlClient.resolvePendingApproval('deny', response.id).catch((error) => {
+                activeAgent.logger?.error?.(`Failed to cancel WebChat interaction: ${error.message}`);
+            });
+            return;
+        }
         const decision = approvalDecisionFromInteractionOption(response.optionId);
         if (!decision) return;
         approvalControlClient.resolvePendingApproval(decision, response.id).catch((error) => {
@@ -1112,6 +1170,7 @@ async function runWebchatInteractive(agent, options) {
     } finally {
         activeWebchatConversationProgress = null;
         workspaceFileIndex.stop();
+        taskInteractionController.dispose();
         backgroundTaskManager.close();
         try {
             handleControlData.cleanup?.();
@@ -1254,6 +1313,14 @@ async function executeWebchatSlashCommand({
     if (result.showRunTestsPicker) {
         return { output: 'Usage: /run-tests <skill-name|all>' };
     }
+    if (result.skillState) {
+        emitWebchatSkillsEnvelope(createWebchatSkillsEnvelope(result.skillState, {
+            event: result.skillStateEvent || 'list',
+            operation: result.skillOperation || null,
+            error: result.error || '',
+        }));
+        return { output: '' };
+    }
     if (result.sessionList) {
         emitWebchatSessionEnvelope(createSessionListEnvelope(result.sessionList));
         return { output: '' };
@@ -1284,6 +1351,8 @@ function formatHistoryEntries(entries = []) {
 function updateWebchatContextForMessage(context, normalizedMessage, { workingDir }) {
     const materialized = materializeWebchatContext(normalizedMessage, { workingDir });
     context.invocationToken = String(normalizedMessage?.invocationToken || '').trim();
+    context.sourceTabId = String(normalizedMessage?.sourceTabId || '').trim();
+    context.sourcePageInstanceId = String(normalizedMessage?.sourcePageInstanceId || '').trim();
     context.webchatAttachments = Array.isArray(normalizedMessage?.attachments) ? normalizedMessage.attachments : [];
     context.webchatReferences = Array.isArray(normalizedMessage?.references) ? normalizedMessage.references : [];
     context.webchatResources = materialized.resources;

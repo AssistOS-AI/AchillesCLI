@@ -40,6 +40,14 @@ export function getCurrentSessionId(workingDir = process.cwd()) {
     return typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null;
 }
 
+export function getDisabledSkills(workingDir = process.cwd()) {
+    const disabledSkills = readAchillesSettings(workingDir).disabledSkills;
+    if (!Array.isArray(disabledSkills)) return [];
+    return [...new Set(disabledSkills
+        .filter((name) => typeof name === 'string' && name.trim())
+        .map((name) => name.trim()))];
+}
+
 function writeAchillesSettings(workingDir, settings) {
     const settingsPath = getAchillesSettingsPath(workingDir);
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -103,4 +111,18 @@ export function setCurrentSessionId(workingDir, sessionId) {
         currentSessionId,
     });
     return currentSessionId;
+}
+
+export function setDisabledSkills(workingDir, skillNames) {
+    if (!Array.isArray(skillNames)) {
+        throw new TypeError('Disabled skill names must be an array.');
+    }
+    const disabledSkills = [...new Set(skillNames
+        .filter((name) => typeof name === 'string' && name.trim())
+        .map((name) => name.trim()))].sort();
+    const settings = readAchillesSettings(workingDir);
+    if (disabledSkills.length) settings.disabledSkills = disabledSkills;
+    else delete settings.disabledSkills;
+    writeAchillesSettings(workingDir, settings);
+    return disabledSkills;
 }

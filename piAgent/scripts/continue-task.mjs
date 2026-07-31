@@ -32,9 +32,13 @@ async function main() {
     const input = parseInput(await readStdin());
     const handle = String(input?.handle || '').trim();
     const prompt = String(input?.prompt || '').trim();
+    const requestedProvider = String(input?.provider || '').trim();
+    const requestedModel = String(input?.model || '').trim();
     if (!handle || !prompt) throw new Error('handle and prompt are required');
     const record = readContinuationRecord(handle);
-    const currentModel = readCurrentPiModel({ projectDir: record.projectDir });
+    const currentModel = requestedModel
+        ? { provider: requestedProvider, model: requestedModel, thinking: '' }
+        : readCurrentPiModel({ projectDir: record.projectDir });
     const result = await executeTask({
         prompt,
         projectDir: record.projectDir,

@@ -20,6 +20,13 @@
             "successThreshold": 1
         }
     },
+    "endpoints": {
+        "models": {
+            "command": "node",
+            "args": ["/code/openai-api/models.mjs"],
+            "cwd": "/code"
+        }
+    },
     "cli": "\"$HOME/.local/bin/pi\"",
     "env": [
         "PLOINKY_WORKSPACE_ROOT",

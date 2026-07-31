@@ -115,6 +115,7 @@
   <div class="card">
     Durable conversations live under <code>.achilles-cli/sessions/</code>. The selected
     <code>currentSessionId</code> is stored in <code>.achilles-cli/settings.json</code> beside model and permissions.
+    The same workspace settings object stores canonical disabled skill names. The <code>/skills</code> command lists enabled and disabled workspace skills, while singular <code>/skill</code> and plural <code>/skills</code> mutations update one skill or every registered skill below a relative directory.
     Terminal users can open the selector with <code>/session</code>, create a conversation with
     <code>/session new</code>, and resume one with <code>/session resume &lt;session-id&gt;</code>.
     WebChat autocomplete shows saved conversation names after <code>/session resume</code> while inserting the
@@ -143,8 +144,10 @@
     local id. Terminal autocomplete shows task names and inserts ids after the selected action. WebChat uses these same
     commands for its Tasks overlay and task page; it does not own task persistence or actions. UI-originated task
     commands do not add acknowledgements or errors to the main chat. On continuation, AchillesCLI appends the submitted
-    prompt to the durable task log first with a visible <code>you&gt; </code> prefix, publishes that delta,
-    and then appends provider output in arrival order.
+    prompt to the durable task log first with a visible <code>you&gt; </code> prefix and no synthetic turn label, publishes that delta,
+    and then appends provider output in arrival order. The task journal stores an ordered final-output range for each
+    completed turn, allowing WebChat to keep earlier final answers emphasized throughout later continuations without
+    inserting presentation markers into the raw log.
   </div>
 
   <h2>MCP Tool Exposure</h2>

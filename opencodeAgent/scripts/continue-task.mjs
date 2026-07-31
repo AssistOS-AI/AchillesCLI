@@ -32,9 +32,12 @@ async function main() {
     const input = parseInput(await readStdin());
     const handle = String(input?.handle || '').trim();
     const prompt = String(input?.prompt || '').trim();
+    const requestedModel = String(input?.model || '').trim();
     if (!handle || !prompt) throw new Error('handle and prompt are required');
     const record = readContinuationRecord(handle);
-    const currentModel = await readRecentOpenCodeModel();
+    const currentModel = requestedModel
+        ? { model: requestedModel, variant: '' }
+        : await readRecentOpenCodeModel();
     const result = await executeOpenCodeTask({
         prompt,
         projectDir: record.projectDir,

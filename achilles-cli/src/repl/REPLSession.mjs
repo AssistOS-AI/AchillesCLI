@@ -53,6 +53,12 @@ import {
     ConversationSessionStore,
 } from '../lib/conversationSessionStore.mjs';
 import { CliApprovalController } from '../permissions/CliApprovalController.mjs';
+import {
+    createWorkspaceSkillsSnapshot,
+    formatWorkspaceSkills,
+    setWorkspaceDirectoryEnabled,
+    setWorkspaceSkillEnabled,
+} from '../lib/workspaceSkillsState.mjs';
 
 // Import tier utilities from achillesAgentLib (direct path — not re-exported from index)
 let _listTiersFromCache = null;
@@ -145,6 +151,19 @@ export class REPLSession {
             continueTask: (taskId, prompt) => this.taskManager?.continueTask(taskId, prompt),
             stopTask: (taskId) => this.taskManager?.stopTask(taskId),
             getTaskCompletions: (action) => buildTaskCompletions(this.workingDir, action),
+            getSkillState: () => createWorkspaceSkillsSnapshot(this.agent, this.workingDir),
+            setSkillEnabled: (name, enabled) => setWorkspaceSkillEnabled(
+                this.agent,
+                this.workingDir,
+                name,
+                enabled,
+            ),
+            setSkillsDirectoryEnabled: (directory, enabled) => setWorkspaceDirectoryEnabled(
+                this.agent,
+                this.workingDir,
+                directory,
+                enabled,
+            ),
         });
 
         // Build command list for interactive selector
@@ -786,6 +805,10 @@ export class REPLSession {
                 } else if (result.showHelpPicker) {
                     spinner.stop();
                     await this._handleHelpPicker();
+                } else if (result.skillState) {
+                    spinner.stop();
+                    if (result.error) console.error(result.error);
+                    console.log(`${formatWorkspaceSkills(result.skillState)}\n`);
                 } else if (result.showSessionPicker) {
                     spinner.stop();
                     const selected = await this._handleSessionPicker();

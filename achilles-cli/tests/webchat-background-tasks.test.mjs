@@ -12,6 +12,7 @@ import {
     getTask,
     ingestTaskEvent,
     readTaskLog,
+    setTaskModel,
 } from '../src/lib/workspaceTasks.mjs';
 
 test('detached WebChat tasks poll remote status every two seconds', () => {
@@ -88,6 +89,40 @@ test('terminal task result text is exposed separately from the live log', () => 
         },
     }), 'Final answer');
     assert.equal(__testables.taskResultText({ result: null }), '');
+});
+
+test('AchillesCLI declares generic task-view commands only for continuable terminal tasks', () => {
+    const task = __testables.presentTask({
+        id: 'task_111111111111111111111111',
+        status: 'finished',
+        continuation: { handle: 'opaque-task-handle' },
+    });
+    assert.deepEqual(task.commands, [
+        {
+            name: '/model',
+            command: '/task model task_111111111111111111111111',
+            description: 'Choose the execution model for this task',
+            loadingLabel: 'Loading models…',
+            argMatchMode: 'fragment',
+            argCompletions: [],
+        },
+        {
+            name: '/login',
+            command: '/task login task_111111111111111111111111',
+            description: 'Connect a provider in this task agent',
+            loadingLabel: 'Loading providers…',
+        },
+    ]);
+    const withCatalog = __testables.presentTask(task, new Map([[
+        task.id,
+        [{ key: 'openai/gpt-test', label: 'GPT Test', description: 'OpenAI model' }],
+    ]]));
+    assert.deepEqual(withCatalog.commands[0].argCompletions, [{
+        value: 'openai/gpt-test',
+        label: 'GPT Test',
+        description: 'OpenAI model',
+    }]);
+    assert.deepEqual(__testables.presentTask({ ...task, status: 'ongoing' }).commands, []);
 });
 
 test('AchillesCLI manager stops and continues tasks through agent commands', async () => {
@@ -176,8 +211,8 @@ test('AchillesCLI manager stops and continues tasks through agent commands', asy
             assert.match(readTaskLog(workspace, finishedId).text, /you> finish the tests/);
             const continuationEvent = published.find((event) => event.event === 'continued');
             assert.equal(continuationEvent.task.id, finishedId);
-            assert.match(continuationEvent.logAppend, /\[Continuation 2\]/);
             assert.match(continuationEvent.logAppend, /you> finish the tests/);
+            assert.doesNotMatch(continuationEvent.logAppend, /\[Continuation \d+\]/);
             assert.equal(continuationEvent.logOffset, readTaskLog(workspace, finishedId).nextOffset);
         } finally {
             manager.close();
@@ -189,6 +224,75 @@ test('AchillesCLI manager stops and continues tasks through agent commands', asy
             ['ensure', 'worker', { mode: 'global' }],
             ['continue', 'continue-task', { handle: 'opaque-task-handle', prompt: 'finish the tests' }],
         ]);
+    } finally {
+        fs.rmSync(workspace, { recursive: true, force: true });
+    }
+});
+
+test('AchillesCLI passes a persisted task model explicitly to continuation', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-model-continuation-'));
+    const taskId = 'task_aaaaaaaaaaaaaaaaaaaaaaaa';
+    let observer = null;
+    let continuationArgs = null;
+    const agentClientModule = {
+        setAgentTaskObserver(next) {
+            observer = next;
+            return () => { observer = null; };
+        },
+        async createAgentClient(agentName) {
+            return {
+                async ensureAgentRunning() {},
+                async callToolWithoutWait(toolName, args) {
+                    continuationArgs = args;
+                    await observer({
+                        agentName,
+                        taskId: 'remote-selected-model',
+                        toolName,
+                        arguments: args,
+                        metadata: { status: 'queued' },
+                        getTaskStatus: async () => ({ id: 'remote-selected-model', status: 'queued' }),
+                    });
+                },
+            };
+        },
+    };
+
+    try {
+        ingestTaskEvent(workspace, { task: {
+            id: taskId,
+            targetAgent: 'piAgent',
+            remoteTaskId: 'remote-original',
+            toolName: 'execute-task',
+            status: 'finished',
+            continuation: {
+                version: 1,
+                targetAgent: 'piAgent',
+                toolName: 'continue-task',
+                handle: 'opaque-selected-model-handle',
+            },
+        } });
+        setTaskModel(workspace, taskId, {
+            key: 'anthropic/claude-sonnet',
+            provider: 'anthropic',
+            model: 'claude-sonnet',
+            label: 'Claude Sonnet',
+        });
+        const manager = await createWebchatBackgroundTaskManager({
+            workingDir: workspace,
+            emitProtocol: false,
+            agentClientModule,
+        });
+        try {
+            await manager.continueTask(taskId, 'Use the selected model');
+        } finally {
+            manager.close();
+        }
+        assert.deepEqual(continuationArgs, {
+            handle: 'opaque-selected-model-handle',
+            prompt: 'Use the selected model',
+            model: 'claude-sonnet',
+            provider: 'anthropic',
+        });
     } finally {
         fs.rmSync(workspace, { recursive: true, force: true });
     }
@@ -235,23 +339,28 @@ test('a completed continuation persists its terminal state on the current turn',
     };
 
     try {
-        ingestTaskEvent(workspace, { task: {
-            id: taskId,
-            targetAgent: 'worker',
-            remoteTaskId: 'remote-turn-one',
-            toolName: 'run-task',
-            status: 'finished',
-            remoteStatus: 'completed',
-            createdAt,
-            updatedAt: createdAt,
-            turn: 1,
-            continuation: {
-                version: 1,
+        ingestTaskEvent(workspace, {
+            task: {
+                id: taskId,
                 targetAgent: 'worker',
-                toolName: 'continue-task',
-                handle: 'opaque-task-handle',
+                remoteTaskId: 'remote-turn-one',
+                toolName: 'run-task',
+                status: 'finished',
+                remoteStatus: 'completed',
+                createdAt,
+                updatedAt: createdAt,
+                turn: 1,
+                continuation: {
+                    version: 1,
+                    targetAgent: 'worker',
+                    toolName: 'continue-task',
+                    handle: 'opaque-task-handle',
+                },
+                logRetention: 'full',
             },
-        } });
+            log: { tail: 'First answer', seq: 1 },
+            finalOutput: 'First answer',
+        });
 
         const manager = await createWebchatBackgroundTaskManager({
             workingDir: workspace,
@@ -261,6 +370,10 @@ test('a completed continuation persists its terminal state on the current turn',
         try {
             const continued = await manager.continueTask(taskId, 'continue');
             assert.equal(continued.turn, 2);
+            assert.deepEqual(
+                continued.finalOutputRanges.map(({ turn, length }) => ({ turn, length })),
+                [{ turn: 1, length: 'First answer'.length }],
+            );
 
             let stored = getTask(workspace, taskId);
             const deadline = Date.now() + 500;
@@ -276,6 +389,18 @@ test('a completed continuation persists its terminal state on the current turn',
             assert.equal(stored.createdAt, createdAt);
             assert.equal(stored.executionStartedAt, continuationStartedAt);
             assert.equal(stored.updatedAt, completedAt);
+            assert.deepEqual(
+                stored.finalOutputRanges.map(({ turn, length }) => ({ turn, length })),
+                [
+                    { turn: 1, length: 'First answer'.length },
+                    { turn: 2, length: 'Done.'.length },
+                ],
+            );
+            const storedLog = readTaskLog(workspace, taskId).text;
+            assert.equal(
+                stored.finalOutputRanges.map(({ offset, length }) => storedLog.slice(offset, offset + length)).join('|'),
+                'First answer|Done.',
+            );
         } finally {
             manager.close();
         }

@@ -49,7 +49,32 @@
                     "type": "string",
                     "description": "New user message to execute in the existing OpenCode session.",
                     "optional": false
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Optional task-specific OpenCode model override.",
+                    "optional": true
                 }
+            }
+        },
+        {
+            "name": "task-session-control",
+            "title": "Control OpenCode Task Session",
+            "description": "Run typed provider authentication operations for an OpenCode task session.",
+            "command": "node",
+            "args": ["/code/scripts/task-session-control.mjs"],
+            "cwd": "/code",
+            "tags": ["internal"],
+            "inputSchema": {
+                "operation": { "type": "string", "optional": false },
+                "handle": { "type": "string", "optional": false },
+                "provider": { "type": "string", "optional": true },
+                "method": { "type": "string", "optional": true },
+                "flowId": { "type": "string", "optional": true },
+                "response": { "type": "string", "optional": true },
+                "apiKey": { "type": "string", "optional": true },
+                "inputs": { "type": "object", "additionalProperties": true, "optional": true },
+                "secretResponse": { "type": "string", "optional": true }
             }
         }
     ]

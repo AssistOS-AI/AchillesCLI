@@ -127,6 +127,8 @@ ${C.bold}${C.yellow}Slash Commands${C.reset} ${C.dim}(direct skill execution)${C
   ${C.cyan}/model${C.reset} [name|clear]      Pin a model or clear pin
   ${C.cyan}/permissions${C.reset} [mode]      Show/set Bash approval mode
   ${C.cyan}/tasks${C.reset} [count|all]       Show background task summaries
+  ${C.cyan}/skills${C.reset}                  List enabled and disabled workspace skills
+  ${C.cyan}/skill${C.reset} <action> <name>   Enable or disable one workspace skill
   ${C.cyan}/task view${C.reset} <task-id>     Show a task and its stored log
   ${C.cyan}/task stop${C.reset} <task-id>     Stop an ongoing task
   ${C.cyan}/task continue${C.reset} <id> <prompt> Continue a terminal task
@@ -908,6 +910,29 @@ ${C.bold}${C.yellow}Description:${C.reset}
   include the final five log lines, bounded to 2 KiB per task.
 `,
     },
+    skills: {
+        title: '/skills - Manage Workspace Skills',
+        content: `
+${C.bold}${C.cyan}/skills - Manage Workspace Skills${C.reset}
+
+${C.bold}${C.yellow}Usage:${C.reset}
+  ${C.green}/skills${C.reset}                              List enabled and disabled workspace skills
+  ${C.green}/skills enable <relative-directory>${C.reset}  Enable every registered descendant
+  ${C.green}/skills disable <relative-directory>${C.reset} Disable every registered descendant
+  ${C.green}/skill enable <skill-name>${C.reset}           Enable one canonical skill
+  ${C.green}/skill disable <skill-name>${C.reset}          Disable one canonical skill
+
+Only registered skills below the current working directory are mutable. Disabled names are persisted in <workspace>/.achilles-cli/settings.json.
+`,
+    },
+    skill: {
+        title: '/skill - Toggle One Workspace Skill',
+        content: `
+${C.bold}${C.cyan}/skill - Toggle One Workspace Skill${C.reset}
+
+Use ${C.green}/skill enable <skill-name>${C.reset} or ${C.green}/skill disable <skill-name>${C.reset}. The skill remains registered and visible through ${C.green}/skills${C.reset}, but a disabled skill cannot execute or appear as an agent tool.
+`,
+    },
 
     task: {
         title: '/task - Manage Background Tasks',
@@ -1243,6 +1268,7 @@ ${C.bold}${C.yellow}Common Slash Commands${C.reset}
   ${C.cyan}/update repos${C.reset}      Pull cloned repositories
   ${C.cyan}/permissions${C.reset} [mode] Show/set Bash approval mode
   ${C.cyan}/tasks${C.reset} [count|all] Show background task summaries
+  ${C.cyan}/skills${C.reset}            List and toggle workspace skills
   ${C.cyan}/task${C.reset} <action> <id> View, stop, or continue a task
   ${C.cyan}/add-repo${C.reset} <URL>   Clone a repository
   ${C.cyan}/list-repos${C.reset}       List cloned repositories

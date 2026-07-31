@@ -148,6 +148,7 @@ export function opencodeModelDescriptor(record) {
             opencodeCapabilities: details.capabilities || null,
             opencodeLimits: details.limit || null,
         },
+        execution: { model: providerModelId },
     };
 }
 

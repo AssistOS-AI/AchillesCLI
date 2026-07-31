@@ -264,7 +264,7 @@ test('cancelled OpenCode task saves the session before the wrapper exits', async
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_WORKSPACE_ROOT: projectDir,
         FAKE_OPENCODE_WAIT_MS: '1000',
-    }, { signalAfterMs: 100 });
+    }, { signalAfterMs: 250 });
 
     assert.equal(result.code, 1);
     const payload = JSON.parse(result.stdout);
@@ -321,6 +321,17 @@ test('continue-task resumes the exact OpenCode session behind the opaque handle'
     assert.equal(args[args.indexOf('--model') + 1], 'openai/gpt-5.4-mini');
     assert.equal(args[args.indexOf('--variant') + 1], 'high');
     assert.equal(args.at(-1), 'Continue the same task');
+
+    const overridden = await runTaskScript(continueTaskPath, {
+        handle: firstPayload.continuation.handle,
+        prompt: 'Continue with the task model',
+        model: 'anthropic/claude-sonnet-4-5',
+    }, env);
+    assert.equal(overridden.code, 0, overridden.stderr);
+    const overrideArgs = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.equal(overrideArgs[overrideArgs.indexOf('--model') + 1], 'anthropic/claude-sonnet-4-5');
+    assert.equal(overrideArgs.includes('--variant'), false);
+    assert.equal(overrideArgs.at(-1), 'Continue with the task model');
 });
 
 test('parseVerboseModels maps OpenCode metadata to Soul Gateway model descriptors', () => {

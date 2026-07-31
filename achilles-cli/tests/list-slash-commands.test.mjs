@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ConversationSessionStore } from '../src/lib/conversationSessionStore.mjs';
+import { setDisabledSkills } from '../src/lib/achillesSettings.mjs';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const localDependencyPath = join(repoRoot, 'node_modules', 'achillesAgentLib');
@@ -100,6 +101,54 @@ test('command catalog exposes the workspace task summary command', async () => {
     assert.deepEqual(tasks.argCompletions, []);
 });
 
+test('command catalog exposes singular skill and plural directory controls', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?skills-state=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) await unlink(localDependencyPath);
+    }
+    const skillDirectoryCompletions = [{ value: 'packages/tools', label: 'packages/tools', description: 'folder' }];
+    const catalog = toAutocompleteCatalog({ dir: repoRoot, skillDirectoryCompletions });
+    const skill = catalog.commands.find((command) => command.name === '/skill');
+    const skills = catalog.commands.find((command) => command.name === '/skills');
+
+    assert.deepEqual(skill.subCommands.map((command) => command.name), ['enable', 'disable']);
+    assert.ok(skill.subCommands.every((command) => command.argCompletions.length > 0));
+    assert.deepEqual(skills.subCommands.map((command) => command.name), ['enable', 'disable']);
+    assert.ok(skills.subCommands.every((command) => command.argCompletions === skillDirectoryCompletions));
+});
+
+test('command catalog removes disabled skills from /exec but keeps them available to /skill enable', async (t) => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?disabled-skills=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) await unlink(localDependencyPath);
+    }
+    const tempRoot = await mkdtemp(join(tmpdir(), 'achilles-cli-disabled-catalog-'));
+    t.after(() => rm(tempRoot, { recursive: true, force: true }));
+    for (const name of ['alpha', 'beta']) {
+        const skillDir = join(tempRoot, 'skills', name);
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(join(skillDir, 'cskill.md'), `# ${name}\n\n## Description\n${name}\n`);
+    }
+    setDisabledSkills(tempRoot, ['alpha-cskill']);
+
+    const catalog = toAutocompleteCatalog({ dir: tempRoot });
+    const exec = catalog.commands.find((command) => command.name === '/exec');
+    const skill = catalog.commands.find((command) => command.name === '/skill');
+    const enable = skill.subCommands.find((command) => command.name === 'enable');
+    const disable = skill.subCommands.find((command) => command.name === 'disable');
+
+    assert.equal(exec.argCompletions.some((entry) => entry.value === 'alpha'), false);
+    assert.equal(exec.argCompletions.some((entry) => entry.value === 'beta'), true);
+    assert.equal(enable.argCompletions.some((entry) => entry.value === 'alpha'), true);
+    assert.equal(disable.argCompletions.some((entry) => entry.value === 'alpha'), false);
+});
+
 test('command catalog exposes named session ids only under /session resume', async () => {
     const createdDependencyLink = await ensureLocalAchillesAgentLib();
     let toAutocompleteCatalog;
@@ -142,7 +191,7 @@ test('task action completions display task names and insert opaque task ids', as
         taskCompletions: { view: [completion], continue: [], stop: [completion] },
     });
     const task = catalog.commands.find((command) => command.name === '/task');
-    assert.deepEqual(task.subCommands.map((sub) => sub.name), ['view', 'continue', 'stop']);
+    assert.deepEqual(task.subCommands.map((sub) => sub.name), ['view', 'continue', 'stop', 'model', 'login']);
     assert.deepEqual(task.subCommands.find((sub) => sub.name === 'view').argCompletions, [completion]);
     assert.deepEqual(task.subCommands.find((sub) => sub.name === 'stop').argCompletions, [completion]);
 });

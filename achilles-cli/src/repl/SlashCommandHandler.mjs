@@ -207,12 +207,26 @@ export const COMMAND_DEFINITIONS = {
         args: 'optional',
         needsSkillArg: false,
     },
-    'task': {
-        usage: '/task <view|continue|stop> <task-id> [prompt]',
-        description: 'View, continue, or stop a background task',
+    'skills': {
+        usage: '/skills [enable|disable <relative-directory>]',
+        description: 'List workspace skills or toggle every skill under a directory',
+        args: 'optional',
+        needsSkillArg: false,
+        subOptions: ['enable', 'disable'],
+    },
+    'skill': {
+        usage: '/skill <enable|disable> <skill-name>',
+        description: 'Enable or disable one registered workspace skill',
         args: 'required',
         needsSkillArg: false,
-        subOptions: ['view', 'continue', 'stop'],
+        subOptions: ['enable', 'disable'],
+    },
+    'task': {
+        usage: '/task <view|continue|stop|model|login> <task-id> [arguments]',
+        description: 'View, continue, stop, or configure a background task',
+        args: 'required',
+        needsSkillArg: false,
+        subOptions: ['view', 'continue', 'stop', 'model', 'login'],
     },
     'session': {
         usage: '/session [new|resume <session-id>]',
@@ -240,6 +254,38 @@ export const COMMAND_DEFINITIONS = {
  * Each sub-option maps to a handler or skill execution.
  */
 export const SUB_OPTIONS = {
+    'skills': {
+        'enable': {
+            skill: null,
+            usage: '/skills enable <relative-directory>',
+            description: 'Enable every registered skill under a workspace directory',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'disable': {
+            skill: null,
+            usage: '/skills disable <relative-directory>',
+            description: 'Disable every registered skill under a workspace directory',
+            args: 'required',
+            needsSkillArg: false,
+        },
+    },
+    'skill': {
+        'enable': {
+            skill: null,
+            usage: '/skill enable <skill-name>',
+            description: 'Enable one registered workspace skill',
+            args: 'required',
+            needsSkillArg: true,
+        },
+        'disable': {
+            skill: null,
+            usage: '/skill disable <skill-name>',
+            description: 'Disable one registered workspace skill',
+            args: 'required',
+            needsSkillArg: true,
+        },
+    },
     'task': {
         'view': {
             skill: null,
@@ -259,6 +305,20 @@ export const SUB_OPTIONS = {
             skill: null,
             usage: '/task stop <task-id>',
             description: 'Stop a queued or running task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'model': {
+            skill: null,
+            usage: '/task model <task-id> [model-key]',
+            description: 'Choose or set the execution model for a continuable task',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'login': {
+            skill: null,
+            usage: '/task login <task-id> [provider] [method]',
+            description: 'Connect a provider in the task agent',
             args: 'required',
             needsSkillArg: false,
         },
@@ -428,7 +488,12 @@ export class SlashCommandHandler {
         viewTask,
         continueTask,
         stopTask,
+        modelTask,
+        loginTask,
         getTaskCompletions,
+        getSkillState,
+        setSkillEnabled,
+        setSkillsDirectoryEnabled,
     }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
@@ -445,7 +510,12 @@ export class SlashCommandHandler {
         this.viewTask = viewTask;
         this.continueTask = continueTask;
         this.stopTask = stopTask;
+        this.modelTask = modelTask;
+        this.loginTask = loginTask;
         this.getTaskCompletions = getTaskCompletions;
+        this.getSkillState = getSkillState;
+        this.setSkillEnabled = setSkillEnabled;
+        this.setSkillsDirectoryEnabled = setSkillsDirectoryEnabled;
         this.availableModels = [];
     }
 
@@ -633,6 +703,13 @@ export class SlashCommandHandler {
             }
         }
 
+        if (command === 'skills') {
+            if (typeof this.getSkillState !== 'function') {
+                return { handled: true, error: 'Workspace skill controls are unavailable.' };
+            }
+            return { handled: true, skillState: this.getSkillState(), skillStateEvent: 'list' };
+        }
+
         if (command === 'session') {
             if (typeof this.getSessions !== 'function') {
                 return { handled: true, error: 'Conversation sessions are unavailable.' };
@@ -775,6 +852,50 @@ export class SlashCommandHandler {
             };
         }
 
+        if (command === 'skill' && (subOption === 'enable' || subOption === 'disable')) {
+            if (typeof this.setSkillEnabled !== 'function' || typeof this.getSkillState !== 'function') {
+                return { handled: true, error: 'Workspace skill controls are unavailable.' };
+            }
+            try {
+                return {
+                    handled: true,
+                    skillState: await this.setSkillEnabled(args.trim(), subOption === 'enable'),
+                    skillStateEvent: 'changed',
+                    skillOperation: { scope: 'skill', action: subOption, target: args.trim() },
+                };
+            } catch (error) {
+                return {
+                    handled: true,
+                    error: error.message,
+                    skillState: this.getSkillState(),
+                    skillStateEvent: 'error',
+                    skillOperation: { scope: 'skill', action: subOption, target: args.trim() },
+                };
+            }
+        }
+
+        if (command === 'skills' && (subOption === 'enable' || subOption === 'disable')) {
+            if (typeof this.setSkillsDirectoryEnabled !== 'function' || typeof this.getSkillState !== 'function') {
+                return { handled: true, error: 'Workspace skill controls are unavailable.' };
+            }
+            try {
+                return {
+                    handled: true,
+                    skillState: await this.setSkillsDirectoryEnabled(args.trim(), subOption === 'enable'),
+                    skillStateEvent: 'changed',
+                    skillOperation: { scope: 'directory', action: subOption, target: args.trim() },
+                };
+            } catch (error) {
+                return {
+                    handled: true,
+                    error: error.message,
+                    skillState: this.getSkillState(),
+                    skillStateEvent: 'error',
+                    skillOperation: { scope: 'directory', action: subOption, target: args.trim() },
+                };
+            }
+        }
+
         if (command === 'session' && subOption === 'new') {
             if (typeof this.createSession !== 'function') {
                 return { handled: true, error: 'Conversation sessions are unavailable.' };
@@ -814,6 +935,29 @@ export class SlashCommandHandler {
             try {
                 const task = await this.continueTask(match[1], match[2].trim());
                 return { handled: true, result: `Continued ${task.id}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'model') {
+            if (typeof this.modelTask !== 'function') return { handled: true, error: 'Task model control is unavailable.' };
+            const match = args.match(/^(task_[0-9a-f]{24})(?:\s+(\S+))?$/);
+            if (!match) return { handled: true, error: 'Usage: /task model <task-id> [model-key]' };
+            try {
+                const result = await this.modelTask(match[1], match[2] || '', options);
+                if (result?.type === 'task-model-catalog') {
+                    return { handled: true, result: `Loaded ${result.models?.length || 0} task models.` };
+                }
+                return { handled: true, result: `Task model set to ${result.model?.label || result.model?.key || result.model?.model}.` };
+            } catch (error) { return { handled: true, error: error.message }; }
+        }
+
+        if (command === 'task' && subOption === 'login') {
+            if (typeof this.loginTask !== 'function') return { handled: true, error: 'Task provider login is unavailable.' };
+            const match = args.match(/^(task_[0-9a-f]{24})(?:\s+(\S+))?(?:\s+(\S+))?$/);
+            if (!match) return { handled: true, error: 'Usage: /task login <task-id> [provider] [method]' };
+            try {
+                const result = await this.loginTask(match[1], match[2] || '', match[3] || '', options);
+                return { handled: true, result: `Provider connected${result.provider ? `: ${result.provider}` : ''}.` };
             } catch (error) { return { handled: true, error: error.message }; }
         }
 

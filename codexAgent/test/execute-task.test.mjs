@@ -78,7 +78,7 @@ test('Codex initial arguments persist a thread and allow an explicit initial mod
     ]);
 });
 
-test('Codex resume arguments never replay an initial model', () => {
+test('Codex resume arguments apply an explicit task model', () => {
     const args = buildCodexArgs({
         prompt: 'Continue.',
         model: 'must-not-be-used',
@@ -93,10 +93,12 @@ test('Codex resume arguments never replay an initial model', () => {
         'resume',
         '--json',
         '--skip-git-repo-check',
+        '--model',
+        'must-not-be-used',
         'thread-1',
         'Continue.',
     ]);
-    assert.equal(args.includes('--model'), false);
+    assert.equal(args.includes('--model'), true);
 });
 
 test('eventLogText exposes provider text without synthetic decoration', () => {
@@ -157,7 +159,7 @@ test('execute-task streams Codex text and stderr raw and persists only private r
     assert.equal(Object.hasOwn(record, 'model'), false);
 });
 
-test('continue-task resumes the stored thread with the model configured now', async () => {
+test('continue-task keeps the default without an override and applies a task model when supplied', async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-agent-resume-'));
     const projectDir = path.join(temporaryDirectory, 'project');
     const argsPath = path.join(temporaryDirectory, 'args.json');
@@ -204,6 +206,16 @@ test('continue-task resumes the stored thread with the model configured now', as
     assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
     assert.equal(args.at(-2), '018f6f4a-4ec8-7d31-a852-0242ac120002');
     assert.equal(args.at(-1), 'Continue the task');
+
+    const overridden = await runTaskScript(continueTaskPath, {
+        handle: initialPayload.continuation.handle,
+        prompt: 'Continue with selected model',
+        model: 'gpt-task-selected',
+    }, env);
+    assert.equal(overridden.code, 0, overridden.stderr);
+    const overrideArgs = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.equal(overrideArgs[overrideArgs.indexOf('--model') + 1], 'gpt-task-selected');
+    assert.equal(overrideArgs.at(-1), 'Continue with selected model');
 });
 
 test('failed Codex execution still returns a continuation when the thread exists', async () => {

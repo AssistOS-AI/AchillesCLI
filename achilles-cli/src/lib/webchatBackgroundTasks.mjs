@@ -1,11 +1,13 @@
 import crypto from 'node:crypto';
 import {
+    appendTaskLogEntry as persistTaskLogEntry,
     beginTaskContinuation,
     getTask,
     ingestTaskEvent,
     readOngoingTasks,
     readTaskLog,
     readWorkspaceTasks,
+    setTaskModel as persistTaskModel,
 } from './workspaceTasks.mjs';
 
 const TASK_POLL_INTERVAL_MS = 2000;
@@ -76,6 +78,34 @@ function taskResultText(task) {
         .join('\n');
 }
 
+function presentTask(task, taskModelCatalogs = new Map()) {
+    if (!task || typeof task !== 'object') return task;
+    const modelCompletions = (taskModelCatalogs.get(task.id) || []).map((entry) => ({
+        value: entry.key,
+        label: entry.label || entry.key,
+        description: entry.description || entry.key,
+    }));
+    const commands = task.continuation?.handle && task.status !== 'ongoing'
+        ? [
+            {
+                name: '/model',
+                command: `/task model ${task.id}`,
+                description: 'Choose the execution model for this task',
+                loadingLabel: 'Loading models…',
+                argMatchMode: 'fragment',
+                argCompletions: modelCompletions,
+            },
+            {
+                name: '/login',
+                command: `/task login ${task.id}`,
+                description: 'Connect a provider in this task agent',
+                loadingLabel: 'Loading providers…',
+            },
+        ]
+        : [];
+    return { ...task, commands };
+}
+
 export async function createWebchatBackgroundTaskManager({
     workingDir,
     onTaskStarted = null,
@@ -89,6 +119,7 @@ export async function createWebchatBackgroundTaskManager({
     }
 
     const active = new Map();
+    const taskModelCatalogs = new Map();
     const taskStartWaiters = new Set();
     let pendingContinuation = null;
     let closed = false;
@@ -103,6 +134,10 @@ export async function createWebchatBackgroundTaskManager({
         if (persist && payload?.task) {
             const stored = ingestTaskEvent(workingDir, payload);
             outgoing = { ...payload, ...stored };
+        }
+        if (outgoing?.task) outgoing = { ...outgoing, task: presentTask(outgoing.task, taskModelCatalogs) };
+        if (Array.isArray(outgoing?.tasks)) {
+            outgoing = { ...outgoing, tasks: outgoing.tasks.map((task) => presentTask(task, taskModelCatalogs)) };
         }
         if (typeof onPublish === 'function') onPublish(outgoing);
         if (emitProtocol) emitTaskEvent(outgoing);
@@ -388,12 +423,15 @@ export async function createWebchatBackgroundTaskManager({
                 toolName: task.continuation.toolName,
                 handle: task.continuation.handle,
                 message: prompt,
+                model: task.execution?.model || null,
                 startedTask: null,
             };
             try {
                 await client.callToolWithoutWait(task.continuation.toolName, {
                     handle: task.continuation.handle,
                     prompt,
+                    ...(task.execution?.model?.model ? { model: task.execution.model.model } : {}),
+                    ...(task.execution?.model?.provider ? { provider: task.execution.model.provider } : {}),
                 });
                 if (!pendingContinuation.startedTask) throw new Error('continuation_did_not_start_task');
                 publish({
@@ -406,6 +444,51 @@ export async function createWebchatBackgroundTaskManager({
             } finally {
                 pendingContinuation = null;
             }
+        },
+        setTaskModel(taskId, modelSelection) {
+            const updated = persistTaskModel(workingDir, taskId, modelSelection);
+            publish({
+                event: 'control',
+                action: 'model',
+                task: updated,
+                logAppend: updated.logAppend,
+                logOffset: updated.logOffset,
+            }, { persist: false });
+            return updated;
+        },
+        appendTaskLog(taskId, message, action = 'control') {
+            const updated = persistTaskLogEntry(workingDir, taskId, message);
+            publish({
+                event: 'control',
+                action,
+                task: updated,
+                logAppend: updated.logAppend,
+                logOffset: updated.logOffset,
+            }, { persist: false });
+            return updated;
+        },
+        setTaskModelCatalog(taskId, models) {
+            const task = getTask(workingDir, taskId);
+            if (!task) throw new Error('task_not_found');
+            const normalized = Array.isArray(models)
+                ? models.slice(0, 2000).map((entry) => {
+                    const key = trim(entry?.key).slice(0, 300);
+                    if (!key) return null;
+                    return {
+                        key,
+                        label: trim(entry?.label).slice(0, 300) || key,
+                        description: trim(entry?.description).slice(0, 500),
+                    };
+                }).filter(Boolean)
+                : [];
+            taskModelCatalogs.set(taskId, normalized);
+            publish({
+                event: 'control',
+                action: 'models',
+                ok: true,
+                task,
+            }, { persist: false });
+            return normalized;
         },
         reportActionError(action, taskId, error) {
             let task = null;
@@ -428,6 +511,7 @@ export async function createWebchatBackgroundTaskManager({
             }
             taskStartWaiters.clear();
             active.clear();
+            taskModelCatalogs.clear();
         },
     };
 }
@@ -439,5 +523,6 @@ export const __testables = {
     normalizeStatus,
     normalizeContinuation,
     taskResultText,
+    presentTask,
     readOngoingTasks,
 };

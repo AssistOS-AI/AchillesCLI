@@ -23,6 +23,7 @@ Skill runtime model:
    normalized name; this is how a deployed provider launcher supersedes an
    unavailable placeholder.
 5. Skill catalogs are reloadable at runtime after mutation operations.
+6. Every workspace skill is enabled by default. AchillesCLI persists only canonical disabled names and reapplies them when a MainAgent is created.
 
 Built-in skill responsibilities (`src/skills/`):
 1. Catalog and inspection:
@@ -68,6 +69,8 @@ Catalog and refresh invariants:
    responsible for finding the active root set from built-ins, CLI flags,
    node_modules, and Ploinky repo `achilles-skills` roots.
 5. Permission policy is infrastructure owned by the external broker and Supervisor, never by skill code.
+6. Directory expansion and confinement belong to AchillesCLI; MainAgent receives only canonical name arrays through `enableSkills()` or `disableSkills()`.
+7. Disabled records remain listable but cannot execute, build, or participate in MainAgent or orchestrator tool surfaces.
 
 ## Decisions & Questions
 
