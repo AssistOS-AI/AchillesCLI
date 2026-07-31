@@ -6,7 +6,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { discoverSkills, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
 import { parseSkillDocument } from 'achillesAgentLib/utils/skillDocumentParser.mjs';
 import { buildSlashCommandCatalog } from '../repl/SlashCommandHandler.mjs';
-import { getSelectedModel } from '../lib/achillesSettings.mjs';
+import { getDisabledSkills, getSelectedModel } from '../lib/achillesSettings.mjs';
 import { ConversationSessionStore } from '../lib/conversationSessionStore.mjs';
 import { buildTaskCompletions } from '../lib/workspaceTasks.mjs';
 import { loadSoulGatewayModels, toModelCompletions } from '../lib/soulGatewayModels.mjs';
@@ -106,11 +106,12 @@ function extractInput(payload) {
     return {};
 }
 
-export function buildSkillCompletions(dir) {
+export function buildSkillCompletions(dir, { includeDisabled = false } = {}) {
+    const disabledNames = includeDisabled || !dir ? new Set() : new Set(getDisabledSkills(dir));
     const skills = [
         ...discoverSkills(dir || process.cwd(), { logger: NOOP_LOGGER }),
         ...discoverBuiltInSkills(),
-    ];
+    ].filter((skill) => !disabledNames.has(skill.name));
     const completions = new Map();
     for (const skill of skills) {
         const name = String(skill?.shortName || skill?.name || '').trim();
@@ -198,6 +199,7 @@ function buildArgCompletions(command, skillCompletions, modelCompletions) {
 
 export function toAutocompleteCatalog(options = {}) {
     const skillCompletions = buildSkillCompletions(options.dir);
+    const allSkillCompletions = buildSkillCompletions(options.dir, { includeDisabled: true });
     const modelCompletions = Array.isArray(options.modelCompletions)
         ? options.modelCompletions
         : [];
@@ -221,6 +223,7 @@ export function toAutocompleteCatalog(options = {}) {
                 const isSessionResume = command.name === '/session' && subCommand.name === 'resume';
                 const isTaskAction = command.name === '/task';
                 const isSkillsDirectoryAction = command.name === '/skills';
+                const isSkillEnableAction = command.name === '/skill' && subCommand.name === 'enable';
                 return {
                     name: subCommand.name,
                     usage: subCommand.usage,
@@ -231,7 +234,9 @@ export function toAutocompleteCatalog(options = {}) {
                             ? (taskCompletions[subCommand.name] || [])
                             : (isSkillsDirectoryAction
                                 ? skillDirectoryCompletions
-                                : (subCommand.needsSkillArg ? skillCompletions : []))),
+                                : (isSkillEnableAction
+                                    ? allSkillCompletions
+                                    : (subCommand.needsSkillArg ? skillCompletions : [])))),
                 };
             })
             : [],

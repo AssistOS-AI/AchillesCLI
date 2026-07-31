@@ -59,6 +59,7 @@ Command routing model:
 9. `/task view <task-id>` reads the complete stored log, `/task stop <task-id>` cancels the current remote task, and `/task continue <task-id> <prompt>` starts another remote execution through the stored generic continuation capability. Continuation must append each submitted prompt line to the durable task log with a `you> ` prefix before provider output, without a synthetic `[Continuation <turn>]` label, publish that log delta with its resulting offset, and preserve the journal metadata ranges for every earlier final answer.
 10. `/task` autocomplete must first expose `view`, `continue`, and `stop`, then show action-compatible task names while inserting the opaque local task id. `stop` lists only ongoing tasks; `continue` lists only terminal tasks carrying a continuation handle.
 11. `/skills` returns every registered skill below the active working directory, including disabled records. `/skill enable|disable <skill-name>` changes one canonical skill, while `/skills enable|disable <relative-directory>` changes every registered descendant of a workspace-confined directory.
+12. The structured slash catalog must exclude persisted disabled skills from executable skill arguments such as `/exec`, while `/skill enable` must continue to offer the complete catalog so disabled skills can be restored.
 
 Hierarchical command structure:
 1. Commands with `subOptions` in `COMMAND_DEFINITIONS` show a sub-menu when selected.
