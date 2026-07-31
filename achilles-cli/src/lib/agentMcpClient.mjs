@@ -1,5 +1,34 @@
 const DEFAULT_TIMEOUT_MS = 450000;
 
+const GENERATED_LOCAL_ROUTER_FIELDS = new Set([
+    'PLOINKY_ROUTER_DESCRIPTOR_FILE',
+    'PLOINKY_ROUTER_URL',
+    'PLOINKY_ROUTER_HOST',
+    'PLOINKY_ROUTER_PORT',
+    'PLOINKY_ROUTER_REQUEST_AUTHORITY',
+    'PLOINKY_ROUTER_AUTHORITY',
+    'PLOINKY_INTERNAL_ROUTER_URL',
+    'PLOINKY_EDGE_TOPOLOGY_FILE',
+    'PLOINKY_ROUTER_LISTENER_CLASS',
+    'PLOINKY_ROUTER_ATTESTATION_ID',
+    'PLOINKY_ROUTER_TRANSPORT_VERSION',
+    'PLOINKY_ROUTER_LOCAL_STREAMING',
+    'PLOINKY_AGENT_API_PUBLIC_KEY',
+    'PLOINKY_AGENT_API_KEY',
+]);
+
+function assertNoGeneratedLocalCredentialedFallback(env) {
+    const names = Object.keys(env || {});
+    if (names.some((name) => GENERATED_LOCAL_ROUTER_FIELDS.has(name)
+        || name.startsWith('PLOINKY_ENV_SOURCE_PLOINKY_'))) {
+        const error = new Error(
+            'Generated-local Agent MCP invocation requires the certified descriptor authority transport; raw Router URL fallback is disabled.',
+        );
+        error.code = 'PLOINKY_AGENT_MCP_LOCAL_TRANSPORT_NOT_CERTIFIED';
+        throw error;
+    }
+}
+
 function resolveRouterUrl(env = process.env) {
     const explicit = String(env.PLOINKY_ROUTER_URL || '').trim();
     if (explicit) {
@@ -11,7 +40,9 @@ function resolveRouterUrl(env = process.env) {
 }
 
 export async function callAgentTool(agent, toolName, input = {}, options = {}) {
-    const base = resolveRouterUrl(options.env || process.env);
+    const env = options.env || process.env;
+    assertNoGeneratedLocalCredentialedFallback(env);
+    const base = resolveRouterUrl(env);
     const url = new URL(`/${encodeURIComponent(agent)}/mcp`, base);
     const payload = {
         jsonrpc: '2.0',

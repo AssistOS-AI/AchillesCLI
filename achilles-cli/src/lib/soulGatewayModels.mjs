@@ -1,6 +1,8 @@
 const DEFAULT_CACHE_TTL_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 5_000;
 
+let generatedLocalApiPromise = null;
+
 const RECOMMENDED_MODEL_NAMES = new Map([
     ['fast', 0],
     ['plan', 1],
@@ -14,6 +16,7 @@ const RECOMMENDED_MODEL_NAMES = new Map([
 
 let catalogCache = null;
 let catalogCacheExpiresAt = 0;
+let catalogCacheKey = null;
 
 function normalizeBaseUrl(value) {
     const text = String(value || '').trim();
@@ -26,14 +29,9 @@ function normalizeBaseUrl(value) {
 }
 
 export function resolveSoulGatewayModelsUrl(env = process.env) {
-    const routerBase = normalizeBaseUrl(env.PLOINKY_ROUTER_URL);
-    if (routerBase) {
-        return new URL('/base-agent-additional-server/soul-gateway/7000/v1/models', routerBase);
-    }
-
     const explicitBase = normalizeBaseUrl(env.SOUL_GATEWAY_BASE_URL);
     if (!explicitBase) {
-        throw new Error('Soul Gateway is unavailable because PLOINKY_ROUTER_URL is not set.');
+        throw new Error('Soul Gateway is unavailable because SOUL_GATEWAY_BASE_URL is not set.');
     }
     const pathname = explicitBase.pathname.replace(/\/+$/, '');
     explicitBase.pathname = pathname.endsWith('/v1')
@@ -44,8 +42,51 @@ export function resolveSoulGatewayModelsUrl(env = process.env) {
     return explicitBase;
 }
 
+async function importGeneratedLocalApi() {
+    const [descriptorApi, transportApi] = await Promise.all([
+        import('achillesAgentLib/utils/LLMProviders/transport/generatedLocalRouterDescriptor.mjs'),
+        import('achillesAgentLib/utils/LLMProviders/transport/routerHttpTransport.mjs'),
+    ]);
+    return Object.freeze({
+        ...descriptorApi,
+        routerHttpRequest: transportApi.routerHttpRequest,
+    });
+}
+
+async function resolveGeneratedLocalApi(injectedApi) {
+    if (injectedApi) return injectedApi;
+    generatedLocalApiPromise ||= importGeneratedLocalApi();
+    return generatedLocalApiPromise;
+}
+
+function requireGeneratedLocalApi(api) {
+    const required = [
+        'loadGeneratedLocalRouterDescriptor',
+        'refreshGeneratedLocalRouterDescriptor',
+        'buildGeneratedLocalOperationURL',
+        'routerHttpRequest',
+    ];
+    for (const name of required) {
+        if (typeof api?.[name] !== 'function') {
+            throw new TypeError(`Generated-local AgentLib API is missing ${name}().`);
+        }
+    }
+    if (typeof api.GENERATED_LOCAL_MODELS_PATH !== 'string') {
+        throw new TypeError('Generated-local AgentLib API is missing its exact models path.');
+    }
+    return api;
+}
+
+export async function validateGeneratedLocalStartup(options = {}) {
+    const env = options.env || process.env;
+    const api = requireGeneratedLocalApi(await resolveGeneratedLocalApi(options.generatedLocalApi));
+    const descriptor = api.loadGeneratedLocalRouterDescriptor({ env });
+    if (!descriptor) return null;
+    return api.refreshGeneratedLocalRouterDescriptor(descriptor, { env });
+}
+
 export function resolveSoulGatewayApiKey(env = process.env) {
-    return String(env.PLOINKY_AGENT_API_KEY || env.SOUL_GATEWAY_API_KEY || '').trim();
+    return String(env.SOUL_GATEWAY_API_KEY || '').trim();
 }
 
 function normalizeTags(value) {
@@ -145,37 +186,72 @@ export async function loadSoulGatewayModels(options = {}) {
         timeoutMs = DEFAULT_TIMEOUT_MS,
         forceRefresh = false,
         selectedModel = null,
+        generatedLocalApi = null,
     } = options;
 
+    const api = requireGeneratedLocalApi(await resolveGeneratedLocalApi(generatedLocalApi));
+    const initialDescriptor = api.loadGeneratedLocalRouterDescriptor({ env });
+    const descriptor = initialDescriptor
+        ? api.refreshGeneratedLocalRouterDescriptor(initialDescriptor, { env })
+        : null;
+    if (descriptor) {
+        api.buildGeneratedLocalOperationURL(descriptor, api.GENERATED_LOCAL_MODELS_PATH);
+    }
+    const externalUrl = descriptor ? null : resolveSoulGatewayModelsUrl(env);
+    const cacheKey = descriptor
+        ? `generated:${descriptor.envelopeDigest}`
+        : `external:${externalUrl.href}`;
     const now = Date.now();
-    if (!forceRefresh && catalogCache && now < catalogCacheExpiresAt) {
+    if (!forceRefresh
+        && catalogCache
+        && catalogCacheKey === cacheKey
+        && now < catalogCacheExpiresAt) {
         return sortModels(catalogCache, selectedModel);
     }
-    if (typeof fetchImpl !== 'function') {
-        throw new Error('Soul Gateway model discovery requires fetch support.');
+    if (!descriptor && typeof fetchImpl !== 'function') {
+        throw new Error('External Soul Gateway model discovery requires fetch support.');
     }
 
-    const apiKey = resolveSoulGatewayApiKey(env);
+    // Descriptor presence, provenance, signature, mirrors, operation path, and
+    // freshness are all checked before this generated credential is read.
+    const apiKey = descriptor
+        ? String(env.PLOINKY_AGENT_API_KEY || '').trim()
+        : resolveSoulGatewayApiKey(env);
     if (!apiKey) {
-        throw new Error('Soul Gateway model discovery requires PLOINKY_AGENT_API_KEY.');
+        throw new Error(descriptor
+            ? 'Generated-local Soul Gateway model discovery requires PLOINKY_AGENT_API_KEY.'
+            : 'External Soul Gateway model discovery requires SOUL_GATEWAY_API_KEY.');
     }
 
-    const url = resolveSoulGatewayModelsUrl(env);
     const signal = typeof AbortSignal?.timeout === 'function'
         ? AbortSignal.timeout(timeoutMs)
         : undefined;
     let response;
     try {
-        response = await fetchImpl(url, {
-            method: 'GET',
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                Accept: 'application/json',
-            },
-            ...(signal ? { signal } : {}),
-        });
+        if (descriptor) {
+            response = await api.routerHttpRequest({
+                descriptor,
+                pathname: api.GENERATED_LOCAL_MODELS_PATH,
+                method: 'GET',
+                bearer: apiKey,
+                accept: 'application/json',
+                totalTimeoutMs: timeoutMs,
+                ...(signal ? { signal } : {}),
+            });
+        } else {
+            response = await fetchImpl(externalUrl, {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    Accept: 'application/json',
+                },
+                ...(signal ? { signal } : {}),
+            });
+        }
     } catch (error) {
-        throw new Error(`Could not load models from Soul Gateway: ${error.message}`);
+        const wrapped = new Error(`Could not load models from Soul Gateway: ${error.message}`, { cause: error });
+        if (error?.code) wrapped.code = error.code;
+        throw wrapped;
     }
 
     if (!response?.ok) {
@@ -191,11 +267,13 @@ export async function loadSoulGatewayModels(options = {}) {
     }
 
     catalogCache = models;
+    catalogCacheKey = cacheKey;
     catalogCacheExpiresAt = now + Math.max(0, Number(cacheTtlMs) || 0);
     return sortModels(models, selectedModel);
 }
 
 export function clearSoulGatewayModelCache() {
     catalogCache = null;
+    catalogCacheKey = null;
     catalogCacheExpiresAt = 0;
 }

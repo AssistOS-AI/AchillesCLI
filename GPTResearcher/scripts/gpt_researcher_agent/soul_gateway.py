@@ -5,6 +5,44 @@ from types import SimpleNamespace
 from .io_utils import normalize_string
 
 
+GENERATED_LOCAL_DESCRIPTOR_SIGNALS = (
+    "PLOINKY_ROUTER_DESCRIPTOR_FILE",
+    "PLOINKY_ROUTER_HOST",
+    "PLOINKY_ROUTER_PORT",
+    "PLOINKY_ROUTER_URL",
+    "PLOINKY_ROUTER_REQUEST_AUTHORITY",
+    "PLOINKY_ROUTER_AUTHORITY",
+    "PLOINKY_INTERNAL_ROUTER_URL",
+    "PLOINKY_EDGE_TOPOLOGY_FILE",
+    "PLOINKY_ROUTER_LISTENER_CLASS",
+    "PLOINKY_ROUTER_ATTESTATION_ID",
+    "PLOINKY_ROUTER_TRANSPORT_VERSION",
+    "PLOINKY_ROUTER_LOCAL_STREAMING",
+    "PLOINKY_AGENT_API_PUBLIC_KEY",
+    "PLOINKY_AGENT_API_KEY",
+)
+
+
+def assert_generated_local_consumer_certified(environ=None):
+    source = os.environ if environ is None else environ
+    if any(
+        str(name).startswith("PLOINKY_ENV_SOURCE_PLOINKY_")
+        for name in source
+    ):
+        raise RuntimeError(
+            "PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED: "
+            "GPTResearcher generated-local Soul Gateway access is disabled "
+            "until its authority transport is certified."
+        )
+    for name in GENERATED_LOCAL_DESCRIPTOR_SIGNALS:
+        if name in source or f"PLOINKY_ENV_SOURCE_{name}" in source:
+            raise RuntimeError(
+                "PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED: "
+                "GPTResearcher generated-local Soul Gateway access is disabled "
+                "until its authority transport is certified."
+            )
+
+
 def normalize_soul_gateway_base_url(value):
     base_url = normalize_string(value)
     if not base_url:
@@ -34,15 +72,19 @@ def resolve_soul_gateway_embeddings_url(base_url):
     return f"{trimmed}/v1/embeddings"
 
 
-def soul_gateway_router_base_url():
-    router_url = normalize_string(os.environ.get("PLOINKY_ROUTER_URL"))
+def soul_gateway_router_base_url(environ=None):
+    source = os.environ if environ is None else environ
+    assert_generated_local_consumer_certified(source)
+    router_url = normalize_string(source.get("PLOINKY_ROUTER_URL"))
     if not router_url:
         raise RuntimeError("Soul Gateway local provider requires PLOINKY_ROUTER_URL.")
     return f"{router_url.rstrip('/')}/base-agent-additional-server/soul-gateway/7000/v1"
 
 
-def soul_gateway_api_key():
-    api_key = normalize_string(os.environ.get("PLOINKY_AGENT_API_KEY"))
+def soul_gateway_api_key(environ=None):
+    source = os.environ if environ is None else environ
+    assert_generated_local_consumer_certified(source)
+    api_key = normalize_string(source.get("PLOINKY_AGENT_API_KEY"))
     if not api_key:
         raise RuntimeError("Soul Gateway local provider requires PLOINKY_AGENT_API_KEY.")
     return api_key

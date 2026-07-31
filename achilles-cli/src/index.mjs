@@ -8,6 +8,7 @@ import { realpathSync } from 'node:fs';
 import { MainAgent, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
 import { LLMAgent } from 'achillesAgentLib/LLMAgents';
 import { defaultLLMInvokerStrategy } from 'achillesAgentLib/utils/LLMClient.mjs';
+import { isVerifiedGeneratedLocalRouterDescriptor } from 'achillesAgentLib/utils/LLMProviders/transport/generatedLocalRouterDescriptor.mjs';
 import { IOServices } from 'achillesAgentLib';
 import { HistoryManager } from './repl/HistoryManager.mjs';
 import { CommandSelector, showCommandSelector, showSkillSelector, buildCommandList } from './ui/CommandSelector.mjs';
@@ -64,6 +65,7 @@ import {
     emitWebchatSessionEnvelope,
 } from './lib/webchatSessionState.mjs';
 import { createSoulGatewayInvoker } from './lib/soulGatewayInvoker.mjs';
+import { validateGeneratedLocalStartup } from './lib/soulGatewayModels.mjs';
 import { BrokerClient } from './permissions/BrokerClient.mjs';
 import { BashSecuritySupervisor } from './permissions/BashSecuritySupervisor.mjs';
 import { createBashExecutor } from './permissions/LocalBashExecutor.mjs';
@@ -114,6 +116,9 @@ export {
 
 // CLI entry point when run directly
 async function main() {
+    // A partial, mixed, stale, or invalid generated-local bundle is a startup
+    // error. This happens before broker construction or any generated key read.
+    const generatedLocalDescriptor = await validateGeneratedLocalStartup();
     const args = process.argv.slice(2);
 
     // Parse options
@@ -288,7 +293,10 @@ async function main() {
             supervisor,
             llmAgentOptions: {
                 name: 'achilles-cli-agent',
-                invokerStrategy: createSoulGatewayInvoker(defaultLLMInvokerStrategy),
+                invokerStrategy: createSoulGatewayInvoker(defaultLLMInvokerStrategy, {
+                    generatedLocalDescriptor,
+                    isVerifiedGeneratedLocalRouterDescriptor,
+                }),
             },
             logger,
         });

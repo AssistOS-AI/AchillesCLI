@@ -110,7 +110,7 @@ test('GPTResearcher SearchAgent bridge forwards configured provider', async () =
     assert.match(source, /provider,\s*\n\s*query:/);
 });
 
-test('GPTResearcher derives search providers from Soul Gateway search-tagged models', async () => {
+test('GPTResearcher model listing safety-disables uncertified generated-local discovery', async () => {
     const result = await runScript('../scripts/list-soul-gateway-models.mjs', {
         imports: ['./fixtures/mock-soul-gateway-models-fetch.mjs'],
         env: {
@@ -120,19 +120,9 @@ test('GPTResearcher derives search providers from Soul Gateway search-tagged mod
     });
 
     assert.equal(result.code, 0, result.stderr);
-    assert.equal(result.payload.ok, true);
-    assert.deepEqual(
-        result.payload.searchProviders.map((provider) => provider.id).sort(),
-        ['duckduckgo', 'tavily'],
-    );
-    assert.deepEqual(
-        result.payload.chatModels.map((model) => model.id),
-        ['codex-api/gpt-5.4-mini'],
-    );
-    assert.deepEqual(
-        result.payload.embeddingModels.map((model) => model.id),
-        ['codestral/codestral-embed'],
-    );
+    assert.equal(result.payload.ok, false);
+    assert.equal(result.payload.code, 'PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED');
+    assert.match(result.payload.error, /disabled until its authority transport is certified/);
 });
 
 test('GPTResearcher model listing does not bypass Soul Gateway for SearchAgent providers', async () => {

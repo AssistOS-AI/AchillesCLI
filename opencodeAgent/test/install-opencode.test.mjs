@@ -97,10 +97,9 @@ test('installer leaves the persistent config untouched when OpenCode download fa
     assert.equal(await fs.readFile(configPath, 'utf8'), '{"existing":true}\n');
 });
 
-test('config and manifest preserve runtime model selection and generated identity injection', async () => {
+test('config safety-disables uncertified generated-local provider interpolation', async () => {
     const config = JSON.parse(await fs.readFile(configTemplate, 'utf8'));
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-    const provider = config.provider?.['soul-gateway'];
 
     assert.equal(config.model, undefined);
     assert.equal(config.small_model, undefined);
@@ -109,10 +108,9 @@ test('config and manifest preserve runtime model selection and generated identit
         '*': 'allow',
         external_directory: 'deny',
     });
-    assert.equal(provider.npm, '@ai-sdk/openai-compatible');
-    assert.equal(provider.options.baseURL, '{env:PLOINKY_ROUTER_URL}/services/soul-gateway/v1');
-    assert.equal(provider.options.apiKey, '{env:PLOINKY_AGENT_API_KEY}');
-    assert.deepEqual(Object.keys(provider.models).sort(), ['deep', 'fast', 'plan']);
+    assert.equal(config.provider?.['soul-gateway'], undefined);
+    assert.ok(!JSON.stringify(config).includes('PLOINKY_ROUTER_URL'));
+    assert.ok(!JSON.stringify(config).includes('PLOINKY_AGENT_API_KEY'));
     assert.equal(manifest.profiles.default.install, 'sh /code/scripts/install-opencode.sh');
     assert.equal(manifest.cli, '"$HOME/.opencode/bin/opencode"');
     assert.equal(manifest.containerSecurity?.privileged, true);

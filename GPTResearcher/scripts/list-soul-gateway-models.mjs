@@ -1,7 +1,42 @@
 #!/usr/bin/env node
 
+import { pathToFileURL } from 'node:url';
+
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+const GENERATED_LOCAL_DESCRIPTOR_SIGNALS = Object.freeze([
+    'PLOINKY_ROUTER_DESCRIPTOR_FILE',
+    'PLOINKY_ROUTER_HOST',
+    'PLOINKY_ROUTER_PORT',
+    'PLOINKY_ROUTER_URL',
+    'PLOINKY_ROUTER_REQUEST_AUTHORITY',
+    'PLOINKY_ROUTER_AUTHORITY',
+    'PLOINKY_INTERNAL_ROUTER_URL',
+    'PLOINKY_EDGE_TOPOLOGY_FILE',
+    'PLOINKY_ROUTER_LISTENER_CLASS',
+    'PLOINKY_ROUTER_ATTESTATION_ID',
+    'PLOINKY_ROUTER_TRANSPORT_VERSION',
+    'PLOINKY_ROUTER_LOCAL_STREAMING',
+    'PLOINKY_AGENT_API_PUBLIC_KEY',
+    'PLOINKY_AGENT_API_KEY',
+]);
+
+function hasGeneratedLocalDescriptorSignal(env) {
+    return GENERATED_LOCAL_DESCRIPTOR_SIGNALS.some((name) => (
+        Object.prototype.hasOwnProperty.call(env, name)
+        || Object.prototype.hasOwnProperty.call(env, `PLOINKY_ENV_SOURCE_${name}`)
+    )) || Object.keys(env).some((name) => name.startsWith('PLOINKY_ENV_SOURCE_PLOINKY_'));
+}
+
+export function assertGeneratedLocalConsumerCertified(env) {
+    if (!hasGeneratedLocalDescriptorSignal(env)) return;
+    const error = new Error(
+        'GPTResearcher generated-local Soul Gateway access is disabled until its authority transport is certified.',
+    );
+    error.code = 'PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED';
+    throw error;
 }
 
 function asArray(value) {
@@ -206,9 +241,10 @@ function normalizePayload(payload) {
     };
 }
 
-async function main() {
-    const routerUrl = trim(process.env.PLOINKY_ROUTER_URL);
-    const apiKey = trim(process.env.PLOINKY_AGENT_API_KEY);
+export async function main({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
+    assertGeneratedLocalConsumerCertified(env);
+    const routerUrl = trim(env.PLOINKY_ROUTER_URL);
+    const apiKey = trim(env.PLOINKY_AGENT_API_KEY);
     if (!routerUrl) {
         throw new Error('PLOINKY_ROUTER_URL is required to list Soul Gateway models.');
     }
@@ -217,7 +253,7 @@ async function main() {
     }
 
     const url = `${routerUrl.replace(/\/+$/, '')}/base-agent-additional-server/soul-gateway/7000/v1/models`;
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
         headers: {
             Accept: 'application/json',
             Authorization: `Bearer ${apiKey}`,
@@ -237,11 +273,14 @@ async function main() {
     process.stdout.write(JSON.stringify(normalized));
 }
 
-try {
-    await main();
-} catch (error) {
-    process.stdout.write(JSON.stringify({
-        ok: false,
-        error: error?.message || 'Failed to list Soul Gateway models.',
-    }));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    try {
+        await main();
+    } catch (error) {
+        process.stdout.write(JSON.stringify({
+            ok: false,
+            code: error?.code || null,
+            error: error?.message || 'Failed to list Soul Gateway models.',
+        }));
+    }
 }
