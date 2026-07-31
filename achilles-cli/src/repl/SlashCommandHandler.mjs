@@ -207,6 +207,20 @@ export const COMMAND_DEFINITIONS = {
         args: 'optional',
         needsSkillArg: false,
     },
+    'skills': {
+        usage: '/skills [enable|disable <relative-directory>]',
+        description: 'List workspace skills or toggle every skill under a directory',
+        args: 'optional',
+        needsSkillArg: false,
+        subOptions: ['enable', 'disable'],
+    },
+    'skill': {
+        usage: '/skill <enable|disable> <skill-name>',
+        description: 'Enable or disable one registered workspace skill',
+        args: 'required',
+        needsSkillArg: false,
+        subOptions: ['enable', 'disable'],
+    },
     'task': {
         usage: '/task <view|continue|stop|model|login> <task-id> [arguments]',
         description: 'View, continue, stop, or configure a background task',
@@ -240,6 +254,38 @@ export const COMMAND_DEFINITIONS = {
  * Each sub-option maps to a handler or skill execution.
  */
 export const SUB_OPTIONS = {
+    'skills': {
+        'enable': {
+            skill: null,
+            usage: '/skills enable <relative-directory>',
+            description: 'Enable every registered skill under a workspace directory',
+            args: 'required',
+            needsSkillArg: false,
+        },
+        'disable': {
+            skill: null,
+            usage: '/skills disable <relative-directory>',
+            description: 'Disable every registered skill under a workspace directory',
+            args: 'required',
+            needsSkillArg: false,
+        },
+    },
+    'skill': {
+        'enable': {
+            skill: null,
+            usage: '/skill enable <skill-name>',
+            description: 'Enable one registered workspace skill',
+            args: 'required',
+            needsSkillArg: true,
+        },
+        'disable': {
+            skill: null,
+            usage: '/skill disable <skill-name>',
+            description: 'Disable one registered workspace skill',
+            args: 'required',
+            needsSkillArg: true,
+        },
+    },
     'task': {
         'view': {
             skill: null,
@@ -445,6 +491,9 @@ export class SlashCommandHandler {
         modelTask,
         loginTask,
         getTaskCompletions,
+        getSkillState,
+        setSkillEnabled,
+        setSkillsDirectoryEnabled,
     }) {
         this.executeSkill = executeSkill;
         this.buildSkills = buildSkills;
@@ -464,6 +513,9 @@ export class SlashCommandHandler {
         this.modelTask = modelTask;
         this.loginTask = loginTask;
         this.getTaskCompletions = getTaskCompletions;
+        this.getSkillState = getSkillState;
+        this.setSkillEnabled = setSkillEnabled;
+        this.setSkillsDirectoryEnabled = setSkillsDirectoryEnabled;
         this.availableModels = [];
     }
 
@@ -651,6 +703,13 @@ export class SlashCommandHandler {
             }
         }
 
+        if (command === 'skills') {
+            if (typeof this.getSkillState !== 'function') {
+                return { handled: true, error: 'Workspace skill controls are unavailable.' };
+            }
+            return { handled: true, skillState: this.getSkillState(), skillStateEvent: 'list' };
+        }
+
         if (command === 'session') {
             if (typeof this.getSessions !== 'function') {
                 return { handled: true, error: 'Conversation sessions are unavailable.' };
@@ -791,6 +850,50 @@ export class SlashCommandHandler {
                 handled: true,
                 error: `Usage: ${subDef.usage}\n  ${subDef.description}`,
             };
+        }
+
+        if (command === 'skill' && (subOption === 'enable' || subOption === 'disable')) {
+            if (typeof this.setSkillEnabled !== 'function' || typeof this.getSkillState !== 'function') {
+                return { handled: true, error: 'Workspace skill controls are unavailable.' };
+            }
+            try {
+                return {
+                    handled: true,
+                    skillState: await this.setSkillEnabled(args.trim(), subOption === 'enable'),
+                    skillStateEvent: 'changed',
+                    skillOperation: { scope: 'skill', action: subOption, target: args.trim() },
+                };
+            } catch (error) {
+                return {
+                    handled: true,
+                    error: error.message,
+                    skillState: this.getSkillState(),
+                    skillStateEvent: 'error',
+                    skillOperation: { scope: 'skill', action: subOption, target: args.trim() },
+                };
+            }
+        }
+
+        if (command === 'skills' && (subOption === 'enable' || subOption === 'disable')) {
+            if (typeof this.setSkillsDirectoryEnabled !== 'function' || typeof this.getSkillState !== 'function') {
+                return { handled: true, error: 'Workspace skill controls are unavailable.' };
+            }
+            try {
+                return {
+                    handled: true,
+                    skillState: await this.setSkillsDirectoryEnabled(args.trim(), subOption === 'enable'),
+                    skillStateEvent: 'changed',
+                    skillOperation: { scope: 'directory', action: subOption, target: args.trim() },
+                };
+            } catch (error) {
+                return {
+                    handled: true,
+                    error: error.message,
+                    skillState: this.getSkillState(),
+                    skillStateEvent: 'error',
+                    skillOperation: { scope: 'directory', action: subOption, target: args.trim() },
+                };
+            }
         }
 
         if (command === 'session' && subOption === 'new') {

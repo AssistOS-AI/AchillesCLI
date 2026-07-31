@@ -58,6 +58,7 @@ Command routing model:
 8. `/session` is the single conversation-session command. It opens or refreshes a selector containing `New` and saved sessions; `/session new` creates and selects a session, while `/session resume <session-id>` loads and selects an existing one.
 9. `/task view <task-id>` reads the complete stored log, `/task stop <task-id>` cancels the current remote task, and `/task continue <task-id> <prompt>` starts another remote execution through the stored generic continuation capability. Continuation must append each submitted prompt line to the durable task log with a `you> ` prefix before provider output, without a synthetic `[Continuation <turn>]` label, publish that log delta with its resulting offset, and preserve the journal metadata ranges for every earlier final answer.
 10. `/task` autocomplete must first expose `view`, `continue`, and `stop`, then show action-compatible task names while inserting the opaque local task id. `stop` lists only ongoing tasks; `continue` lists only terminal tasks carrying a continuation handle.
+11. `/skills` returns every registered skill below the active working directory, including disabled records. `/skill enable|disable <skill-name>` changes one canonical skill, while `/skills enable|disable <relative-directory>` changes every registered descendant of a workspace-confined directory.
 
 Hierarchical command structure:
 1. Commands with `subOptions` in `COMMAND_DEFINITIONS` show a sub-menu when selected.
@@ -84,6 +85,7 @@ Session control behavior:
 16. WebChat mode must publish `current`, `list`, and `selected` session records through version-1 `__webchatSession` envelopes. `/session`, `/session new`, and `/session resume <id>` remain ordinary SlashCommandHandler operations; the browser does not receive a separate session API.
 17. The WebChat slash-command catalog must expose no `/sessions` alias. Its `/session resume` subcommand must provide saved sessions as argument completions whose inserted value is the opaque `sessionId` and whose visible label is the session preview, allowing selection without exposing ids as the only human-readable identifier.
 18. WebChat prompt dispatch must use a serial queue that recovers from a rejected previous turn before starting the next input. Post-turn workspace-skill refresh is best-effort maintenance: errors must be logged without rejecting the queue, and a refresh that does not settle within five seconds must stop gating subsequent prompts.
+19. WebChat skill commands must publish version-1 `__webchatSkills` snapshots containing only canonical names, display names, descriptor-family labels, enabled state, and paths relative to the working directory.
 
 Operational invariants:
 1. Deterministic slash flows must avoid unnecessary LLM routing.
@@ -98,6 +100,7 @@ Operational invariants:
 10. `currentSessionId` must be preserved in the same unversioned settings object as `model` and `permissions`.
 11. Emitting or persisting an assistant response must not leave the WebChat prompt queue permanently pending or rejected. The runtime must clear its processing and abort-controller state even when post-turn maintenance fails or times out.
 12. Local task status vocabulary must remain `ongoing`, `finished`, `stopped`, and `error`. Provider queue vocabulary, including `queued`, remains in `remoteStatus`; protocol event names such as `started`, `reattached`, and `update` must not be treated as statuses.
+13. The workspace settings object may persist `disabledSkills` as canonical names. Missing state means every discovered workspace skill is enabled, and writes must preserve model, permission, and current-session settings.
 
 ## Decisions & Questions
 

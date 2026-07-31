@@ -115,6 +115,7 @@
   <div class="card">
     Durable conversations live under <code>.achilles-cli/sessions/</code>. The selected
     <code>currentSessionId</code> is stored in <code>.achilles-cli/settings.json</code> beside model and permissions.
+    The same workspace settings object stores canonical disabled skill names. The <code>/skills</code> command lists enabled and disabled workspace skills, while singular <code>/skill</code> and plural <code>/skills</code> mutations update one skill or every registered skill below a relative directory.
     Terminal users can open the selector with <code>/session</code>, create a conversation with
     <code>/session new</code>, and resume one with <code>/session resume &lt;session-id&gt;</code>.
     WebChat autocomplete shows saved conversation names after <code>/session resume</code> while inserting the

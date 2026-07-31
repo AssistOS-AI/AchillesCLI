@@ -51,7 +51,8 @@ Cancellation test coverage requirements:
 7. Approved-command context coverage must verify that one-time and reusable approvals both return only the ordinary Bash output or error to the agentic session, without user-approval text, metadata, or direct writes of child stdout/stderr to the user-facing process streams.
 8. Denied-command context coverage must verify that the Bash handler is never invoked, that the exact tool name, exact parameters, and denial reason receive a result reference visible to the next planner step, and that raw supervisor protocol fields do not become the final chat response.
 9. Permission-settings coverage must verify per-workspace persistence beside the selected model, an unversioned stored object with cleanup of the legacy `version` property on write, safe fallback for missing or invalid values, restoration before Broker startup, explicit CLI override precedence without rewriting the saved value, Broker-first mutation, and best-effort Broker rollback after a settings write failure.
-10. Task-management coverage must verify AchillesCLI-owned metadata and log persistence, preservation of `queued` as a remote status, action-specific autocomplete, exact remote cancellation, stable local ids across continuation turns, stale-turn rejection, and identical slash-command behavior in terminal and WebChat modes.
+10. Skill-state coverage must verify default-enabled discovery, canonical disabled-name persistence, workspace path confinement, recursive directory targeting, session-tool refresh, WebChat envelope output, and restoration after MainAgent replacement.
+11. Task-management coverage must verify AchillesCLI-owned metadata and log persistence, preservation of `queued` as a remote status, action-specific autocomplete, exact remote cancellation, stable local ids across continuation turns, stale-turn rejection, and identical slash-command behavior in terminal and WebChat modes.
 
 ## Decisions & Questions
 

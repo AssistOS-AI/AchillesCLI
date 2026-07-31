@@ -56,6 +56,14 @@ import {
 } from './lib/workspaceTasks.mjs';
 import { getSelectedModel } from './lib/achillesSettings.mjs';
 import {
+    applyPersistedWorkspaceSkillState,
+    createWebchatSkillsEnvelope,
+    createWorkspaceSkillsSnapshot,
+    emitWebchatSkillsEnvelope,
+    setWorkspaceDirectoryEnabled,
+    setWorkspaceSkillEnabled,
+} from './lib/workspaceSkillsState.mjs';
+import {
     buildConversationInitialHistory,
     ConversationSessionStore,
 } from './lib/conversationSessionStore.mjs';
@@ -295,6 +303,7 @@ async function main() {
             logger,
         });
         registerSkillRoots(configuredAgent, allSkillRoots, logger);
+        applyPersistedWorkspaceSkillState(configuredAgent, workingDir);
         installWorkspaceSkillRefreshHook(configuredAgent);
         if (typeof configuredAgent.llmAgent?.setInputReader === 'function') {
             configuredAgent.llmAgent.setInputReader(inputReader);
@@ -809,6 +818,14 @@ async function runWebchatInteractive(agent, options) {
             }
         },
         getTaskCompletions: (action) => buildTaskCompletions(workingDir, action),
+        getSkillState: () => createWorkspaceSkillsSnapshot(activeAgent, workingDir),
+        setSkillEnabled: (name, enabled) => setWorkspaceSkillEnabled(activeAgent, workingDir, name, enabled),
+        setSkillsDirectoryEnabled: (directory, enabled) => setWorkspaceDirectoryEnabled(
+            activeAgent,
+            workingDir,
+            directory,
+            enabled,
+        ),
         getPermissions,
         setPermissions,
         getSessions: () => sessionStore.listSessions(),
@@ -1287,6 +1304,14 @@ async function executeWebchatSlashCommand({
     }
     if (result.showRunTestsPicker) {
         return { output: 'Usage: /run-tests <skill-name|all>' };
+    }
+    if (result.skillState) {
+        emitWebchatSkillsEnvelope(createWebchatSkillsEnvelope(result.skillState, {
+            event: result.skillStateEvent || 'list',
+            operation: result.skillOperation || null,
+            error: result.error || '',
+        }));
+        return { output: '' };
     }
     if (result.sessionList) {
         emitWebchatSessionEnvelope(createSessionListEnvelope(result.sessionList));

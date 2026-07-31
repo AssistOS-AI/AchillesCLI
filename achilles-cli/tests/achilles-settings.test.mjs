@@ -7,10 +7,12 @@ import { join } from 'node:path';
 import {
     clearSelectedModel,
     getCurrentSessionId,
+    getDisabledSkills,
     getPermissionMode,
     getSelectedModel,
     setPermissionMode,
     setCurrentSessionId,
+    setDisabledSkills,
     setSelectedModel,
 } from '../src/lib/achillesSettings.mjs';
 
@@ -26,6 +28,22 @@ test('selected model is stored under the workspace .achilles-cli directory', asy
 
     clearSelectedModel(workingDir);
     assert.equal(getSelectedModel(workingDir), null);
+});
+
+test('disabled skills are stored per workspace and preserve unrelated settings', async () => {
+    const workingDir = await mkdtemp(join(tmpdir(), 'achilles-disabled-skills-'));
+    setSelectedModel(workingDir, 'test/model');
+    assert.deepEqual(setDisabledSkills(workingDir, ['beta-cskill', 'alpha-oskill', 'beta-cskill']), [
+        'alpha-oskill',
+        'beta-cskill',
+    ]);
+    assert.deepEqual(getDisabledSkills(workingDir), ['alpha-oskill', 'beta-cskill']);
+    const stored = JSON.parse(await readFile(join(workingDir, '.achilles-cli', 'settings.json'), 'utf8'));
+    assert.equal(stored.model, 'test/model');
+
+    setDisabledSkills(workingDir, []);
+    assert.deepEqual(getDisabledSkills(workingDir), []);
+    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(workingDir, '.achilles-cli', 'settings.json'), 'utf8')), 'disabledSkills'), false);
 });
 
 test('malformed settings fall back without destroying the file', async () => {

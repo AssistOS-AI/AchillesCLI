@@ -100,6 +100,25 @@ test('command catalog exposes the workspace task summary command', async () => {
     assert.deepEqual(tasks.argCompletions, []);
 });
 
+test('command catalog exposes singular skill and plural directory controls', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let toAutocompleteCatalog;
+    try {
+        ({ toAutocompleteCatalog } = await import(`../src/mcp/list-slash-commands.mjs?skills-state=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) await unlink(localDependencyPath);
+    }
+    const skillDirectoryCompletions = [{ value: 'packages/tools', label: 'packages/tools', description: 'folder' }];
+    const catalog = toAutocompleteCatalog({ dir: repoRoot, skillDirectoryCompletions });
+    const skill = catalog.commands.find((command) => command.name === '/skill');
+    const skills = catalog.commands.find((command) => command.name === '/skills');
+
+    assert.deepEqual(skill.subCommands.map((command) => command.name), ['enable', 'disable']);
+    assert.ok(skill.subCommands.every((command) => command.argCompletions.length > 0));
+    assert.deepEqual(skills.subCommands.map((command) => command.name), ['enable', 'disable']);
+    assert.ok(skills.subCommands.every((command) => command.argCompletions === skillDirectoryCompletions));
+});
+
 test('command catalog exposes named session ids only under /session resume', async () => {
     const createdDependencyLink = await ensureLocalAchillesAgentLib();
     let toAutocompleteCatalog;

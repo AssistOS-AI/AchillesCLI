@@ -2,7 +2,7 @@
 
 import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { discoverSkills, discoverSkillsFromRoot } from 'achillesAgentLib/MainAgent';
 import { parseSkillDocument } from 'achillesAgentLib/utils/skillDocumentParser.mjs';
 import { buildSlashCommandCatalog } from '../repl/SlashCommandHandler.mjs';
@@ -130,6 +130,26 @@ export function buildSkillCompletions(dir) {
         .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+export function buildSkillDirectoryCompletions(dir) {
+    if (!dir) return [];
+    const root = resolve(dir);
+    const directories = new Set();
+    for (const skill of discoverSkills(root, { logger: NOOP_LOGGER })) {
+        let current = relative(root, skill.skillDir);
+        while (current && current !== '..' && !current.startsWith(`..${sep}`)) {
+            directories.add(current.split(sep).join('/'));
+            const parent = dirname(current);
+            if (!parent || parent === '.' || parent === current) break;
+            current = parent;
+        }
+    }
+    return [...directories].sort().map((directory) => ({
+        value: directory,
+        label: directory,
+        description: 'Toggle all registered skills below this directory',
+    }));
+}
+
 function commandUsesSkillArgument(command) {
     return Boolean(command?.needsSkillArg) || OPTIONAL_SKILL_ARG_COMMANDS.has(command?.name);
 }
@@ -187,6 +207,9 @@ export function toAutocompleteCatalog(options = {}) {
     const taskCompletions = options.taskCompletions && typeof options.taskCompletions === 'object'
         ? options.taskCompletions
         : {};
+    const skillDirectoryCompletions = Array.isArray(options.skillDirectoryCompletions)
+        ? options.skillDirectoryCompletions
+        : [];
     const commands = buildSlashCommandCatalog().map((command) => ({
         name: command.name,
         usage: command.usage,
@@ -197,6 +220,7 @@ export function toAutocompleteCatalog(options = {}) {
             ? command.subCommands.map((subCommand) => {
                 const isSessionResume = command.name === '/session' && subCommand.name === 'resume';
                 const isTaskAction = command.name === '/task';
+                const isSkillsDirectoryAction = command.name === '/skills';
                 return {
                     name: subCommand.name,
                     usage: subCommand.usage,
@@ -205,7 +229,9 @@ export function toAutocompleteCatalog(options = {}) {
                         ? sessionCompletions
                         : (isTaskAction
                             ? (taskCompletions[subCommand.name] || [])
-                            : (subCommand.needsSkillArg ? skillCompletions : [])),
+                            : (isSkillsDirectoryAction
+                                ? skillDirectoryCompletions
+                                : (subCommand.needsSkillArg ? skillCompletions : []))),
                 };
             })
             : [],
@@ -231,6 +257,7 @@ export async function loadAutocompleteCatalog(options = {}) {
         ...options,
         modelCompletions: toModelCompletions(models),
         sessionCompletions: buildSessionCompletions(options.dir),
+        skillDirectoryCompletions: buildSkillDirectoryCompletions(options.dir),
         taskCompletions: {
             view: buildTaskActionCompletions(options.dir, 'view'),
             continue: buildTaskActionCompletions(options.dir, 'continue'),
