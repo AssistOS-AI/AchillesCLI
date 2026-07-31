@@ -34,6 +34,8 @@ Operational controls:
 8. AchillesAgentLib errors must pass through without AchillesCLI reclassification. WebChat, the terminal REPL, and single-shot execution therefore show the same concise explanation, while only WebChat adds the mapped source link.
 9. The local Bash executor must capture child stdout and stderr as bounded tool results and must not relay them through the AchillesCLI process streams.
 10. Bubblewrap startup failures and broker protocol failures must be explicit and fail closed.
+    A parent-namespace procfs mismatch must name the process id and `/proc/self`
+    mismatch instead of surfacing Bubblewrap's lower-level namespace-open error.
 
 Reliability invariants:
 1. Runtime failures should surface explicit diagnostics without leaking sensitive internals in non-debug output.
@@ -46,7 +48,7 @@ Cancellation test coverage requirements:
 2. Agentic session interruption paths verify transition to `interrupted` and recovery on the next user prompt.
 3. Slash-command execution paths verify cancellation propagation to runtime options.
 4. Task-summary coverage must verify journal materialization, terminal-state non-regression, ordering, argument limits, terminal-only log tails, output bounds, and unsafe-path rejection.
-5. Sandbox coverage must verify that the local Bash executor starts the requested command without a second Bubblewrap process, inherits MainAgent's namespace, writes inside the selected workspace, cannot read siblings, exposes no broker execution endpoint, performs no outside retry, and preserves approval controls, the empty-`/proc` fallback, and asynchronous Unix socket responses.
+5. Sandbox coverage must verify that the local Bash executor starts the requested command without a second Bubblewrap process, inherits MainAgent's namespace, writes inside the selected workspace, cannot read siblings, exposes no broker execution endpoint, performs no outside retry, and preserves approval controls, the empty-`/proc` fallback, pre-sandbox procfs/PID-namespace consistency, and asynchronous Unix socket responses.
 6. WebChat approval coverage must verify stable interaction identifiers, `always-allow` as the first and default option, suspension of the original broker request, all three decisions, stale-decision rejection, and suppression of raw approval JSON from user-visible tool failures.
 7. Approved-command context coverage must verify that one-time and reusable approvals both return only the ordinary Bash output or error to the agentic session, without user-approval text, metadata, or direct writes of child stdout/stderr to the user-facing process streams.
 8. Denied-command context coverage must verify that the Bash handler is never invoked, that the exact tool name, exact parameters, and denial reason receive a result reference visible to the next planner step, and that raw supervisor protocol fields do not become the final chat response.

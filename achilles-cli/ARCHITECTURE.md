@@ -93,7 +93,7 @@ Comenzile Bash sunt procese copil ale acestui proces și moștenesc același mou
 - spații temporare izolate;
 - numai resursele de sistem necesare funcționării CLI-ului.
 
-Pe host, `bwrap` montează un `/proc` privat. Într-un container WebChat neprivilegiat, runtime-ul poate refuza această montare. Brokerul verifică suportul la pornire și folosește atunci un director `/proc` gol. Nu montează `/proc` din containerul exterior, pentru că prin el s-ar putea vedea rădăcinile altor procese și s-ar slăbi izolarea de filesystem.
+Pe host, `bwrap` montează un `/proc` privat. Într-un container WebChat neprivilegiat, runtime-ul poate refuza această montare. Brokerul verifică suportul la pornire și folosește atunci un director `/proc` gol. Nu montează `/proc` din containerul exterior, pentru că prin el s-ar putea vedea rădăcinile altor procese și s-ar slăbi izolarea de filesystem. Înainte să pornească `bwrap`, Brokerul verifică și că `/proc/self` indică PID-ul procesului curent și că handle-ul namespace-ului său PID este vizibil. Astfel, o configurare greșită a containerului eșuează cu un diagnostic explicit, înainte ca `bwrap` să încerce să deschidă un PID care există numai în namespace-ul părinte.
 
 Nu vede automat celelalte proiecte din workspace și nu primește întregul home al utilizatorului. O aprobare dată unei comenzi nu modifică sandboxul principal și nu lărgește permanent ce poate vedea `MainAgent`.
 

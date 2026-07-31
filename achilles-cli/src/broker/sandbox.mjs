@@ -12,6 +12,53 @@ export function findBubblewrap() {
     return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
+export function inspectCurrentProcfs({
+    fsApi = fs,
+    pid = process.pid,
+    procRoot = '/proc',
+} = {}) {
+    const processPid = Number(pid);
+    try {
+        const procSelfTarget = fsApi.readlinkSync(path.join(procRoot, 'self'));
+        const procSelfPid = Number(path.basename(procSelfTarget));
+        const pidNamespaceVisible = fsApi.existsSync(
+            path.join(procRoot, String(processPid), 'ns', 'pid'),
+        );
+        return Object.freeze({
+            ok: Number.isInteger(processPid)
+                && processPid > 0
+                && procSelfPid === processPid
+                && pidNamespaceVisible,
+            processPid,
+            procSelfPid,
+            pidNamespaceVisible,
+            error: null,
+        });
+    } catch (error) {
+        return Object.freeze({
+            ok: false,
+            processPid,
+            procSelfPid: null,
+            pidNamespaceVisible: false,
+            error: error?.message || String(error),
+        });
+    }
+}
+
+export function assertCurrentProcfs(options = {}) {
+    const result = inspectCurrentProcfs(options);
+    if (result.ok) return result;
+    const procSelf = Number.isInteger(result.procSelfPid)
+        ? String(result.procSelfPid)
+        : 'unavailable';
+    const detail = result.error ? ` (${result.error})` : '';
+    throw new Error(
+        `AchillesCLI requires /proc to represent its current PID namespace `
+        + `(process PID ${result.processPid}, /proc/self ${procSelf})${detail}. `
+        + `Do not bind a parent container's /proc into the agent container.`,
+    );
+}
+
 export function buildSandboxArgs({
     workspace,
     socketDir = null,

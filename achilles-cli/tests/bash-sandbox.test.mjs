@@ -6,7 +6,13 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { AchillesBroker, runBrokeredMainAgent } from '../src/broker/AchillesBroker.mjs';
-import { buildSandboxArgs, canMountPrivateProc, findBubblewrap } from '../src/broker/sandbox.mjs';
+import {
+    assertCurrentProcfs,
+    buildSandboxArgs,
+    canMountPrivateProc,
+    findBubblewrap,
+    inspectCurrentProcfs,
+} from '../src/broker/sandbox.mjs';
 import { BrokerClient } from '../src/permissions/BrokerClient.mjs';
 import { createBashExecutor } from '../src/permissions/LocalBashExecutor.mjs';
 import { action as runBashSkill } from '../src/skills/bash/src/index.mjs';
@@ -95,6 +101,47 @@ test('sandbox uses an empty proc directory when nested proc mounts are unavailab
 
 test('private proc capability probe returns a boolean', () => {
     assert.equal(typeof canMountPrivateProc(bwrap), 'boolean');
+});
+
+test('procfs invariant accepts the current PID namespace view', () => {
+    const fsApi = {
+        readlinkSync: (target) => {
+            assert.equal(target, '/proc/self');
+            return '321';
+        },
+        existsSync: (target) => {
+            assert.equal(target, '/proc/321/ns/pid');
+            return true;
+        },
+    };
+
+    assert.deepEqual(inspectCurrentProcfs({ fsApi, pid: 321 }), {
+        ok: true,
+        processPid: 321,
+        procSelfPid: 321,
+        pidNamespaceVisible: true,
+        error: null,
+    });
+    assert.equal(assertCurrentProcfs({ fsApi, pid: 321 }).ok, true);
+});
+
+test('procfs invariant rejects a proc mount from a parent PID namespace', () => {
+    const fsApi = {
+        readlinkSync: () => '90210',
+        existsSync: () => false,
+    };
+
+    assert.deepEqual(inspectCurrentProcfs({ fsApi, pid: 321 }), {
+        ok: false,
+        processPid: 321,
+        procSelfPid: 90210,
+        pidNamespaceVisible: false,
+        error: null,
+    });
+    assert.throws(
+        () => assertCurrentProcfs({ fsApi, pid: 321 }),
+        /process PID 321, \/proc\/self 90210.*Do not bind a parent container's \/proc/,
+    );
 });
 
 test('WebChat approval protocol orders always approve first and parses control responses', () => {
@@ -392,7 +439,7 @@ test('local Bash executor captures stdout only in its tool result', async () => 
     try {
         const executor = createBashExecutor({ cwd: fixture.workspace });
         const result = await executor({
-            command: '/usr/bin/cat',
+            command: '/bin/cat',
             args: [fixture.insideFile],
             raw: `cat ${fixture.insideFile}`,
         });

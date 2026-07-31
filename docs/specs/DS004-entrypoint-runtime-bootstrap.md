@@ -50,7 +50,10 @@ Runtime wiring:
    and must not alter ordinary terminal output or conversation history.
 7. The broker remains outside Bubblewrap and handles authorization only. MainAgent, skill code, the local Bash executor, and every Bash child process inherit the persistent workspace sandbox.
 8. Bubblewrap keeps the network namespace shared and exposes only system runtime paths, read-only Achilles code/dependencies, isolated temporary storage, the broker socket, and the writable session workspace.
-9. Startup fails closed when Bubblewrap or the broker connection is unavailable.
+9. Startup fails closed when Bubblewrap or the broker connection is unavailable. Before
+   starting Bubblewrap, the trusted entrypoint must also verify that `/proc/self`
+   identifies its own process id and that its own PID namespace handle is visible.
+   A proc filesystem inherited from a parent PID namespace is a startup error.
 10. The Unix socket protocol must preserve its response half after the client finishes writing a request, because broker handlers may complete asynchronously.
 11. In webchat mode, structured interaction responses received on stdin must be demultiplexed before ordinary prompt processing and forwarded through the trusted broker control channel.
 12. A successful `/permissions` change must update the trusted Broker before the confirmed mode is written atomically to the workspace settings file.
@@ -76,7 +79,7 @@ MainAgent must reach configured LLM services and router-mediated agents during n
 ### Question #3: Why can a nested container use an empty `/proc`?
 
 Response:
-Bubblewrap must probe whether the current runtime permits mounting a private proc filesystem. Native host execution uses a private `/proc` when supported. A nested unprivileged container that rejects the proc mount must receive an empty `/proc` directory instead; it must never bind the outer container's `/proc`, because that would expose process-root paths across the filesystem boundary.
+Bubblewrap must probe whether the current runtime permits mounting a private proc filesystem. Native host execution uses a private `/proc` when supported. A nested unprivileged container that rejects the proc mount must receive an empty `/proc` directory instead; it must never bind the outer container's `/proc`, because that would expose process-root paths across the filesystem boundary. The agent container's pre-sandbox `/proc` must itself represent the agent PID namespace, because Bubblewrap resolves its namespace child through that proc filesystem before it constructs the sandbox root.
 
 ### Question #4: Why does AchillesCLI restore sessions instead of relying on WebChat process identity?
 

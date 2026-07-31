@@ -15,6 +15,7 @@ import {
     PERMISSION_MODES,
 } from '../permissions/protocol.mjs';
 import {
+    assertCurrentProcfs,
     buildSandboxArgs,
     collectMainAgentRuntimeMounts,
     findBubblewrap,
@@ -259,6 +260,7 @@ export async function runBrokeredMainAgent({
     if (!bwrap) {
         throw new Error('AchillesCLI requires bubblewrap (bwrap). Run the agent install hook before starting it.');
     }
+    assertCurrentProcfs();
     const broker = new AchillesBroker({
         workspace,
         webchat,
