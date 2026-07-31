@@ -37,7 +37,6 @@
     "env": [
         "PLOINKY_WORKSPACE_ROOT",
         "OPENCODE_API_KEY",
-        "SOUL_GATEWAY_BASE_URL",
         "XAI_API_KEY",
         "OPENCODE_API_KEY",
         "GEMINI_API_KEY",

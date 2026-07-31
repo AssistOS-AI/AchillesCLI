@@ -116,4 +116,8 @@ test('config safety-disables uncertified generated-local provider interpolation'
     assert.equal(manifest.containerSecurity?.privileged, true);
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
     assert.ok(!JSON.stringify(manifest).includes('PLOINKY_AGENT_API_KEY'));
+    assert.doesNotMatch(
+        JSON.stringify(manifest),
+        /SOUL_GATEWAY_(?:API_KEY|BASE_URL)|PLOINKY_ROUTER_(?:URL|HOST|PORT)/,
+    );
 });

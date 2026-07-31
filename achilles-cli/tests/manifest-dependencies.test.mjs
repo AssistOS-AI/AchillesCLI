@@ -20,6 +20,13 @@ test('AchillesCLI opts into structured WebChat envelopes', async () => {
     assert.equal(manifest.webchat?.forwardEnvelope, true);
 });
 
+test('AchillesCLI manifest does not redeclare generated-local protected overrides', async () => {
+    const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
+    const source = JSON.stringify(manifest);
+
+    assert.doesNotMatch(source, /SOUL_GATEWAY_(?:API_KEY|BASE_URL)|PLOINKY_ROUTER_(?:URL|HOST|PORT)/);
+});
+
 test('AchillesCLI installs Bubblewrap and enters through the trusted broker launcher', async () => {
     const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
 
