@@ -44,15 +44,27 @@ function tomlString(value) {
 export function resolveManagedSoulProvider(env = process.env) {
     const keySource = String(env.PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY || '').trim();
     const routerSource = String(env.PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL || '').trim();
-    const generatedMode = keySource === 'generated' || routerSource === 'generated';
+    const authoritySource = String(
+        env.PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY || '',
+    ).trim();
+    const generatedMode = keySource === 'generated'
+        || routerSource === 'generated'
+        || authoritySource === 'generated';
     if (!generatedMode) return null;
-    if (keySource !== 'generated' || routerSource !== 'generated') {
-        throw new Error('Managed Codex routing requires generated provenance for Router URL and agent API key');
+    if (keySource !== 'generated'
+        || routerSource !== 'generated'
+        || authoritySource !== 'generated') {
+        throw new Error(
+            'Managed Codex routing requires generated provenance for Router URL, request authority, and agent API key',
+        );
     }
     const routerUrl = String(env.PLOINKY_ROUTER_URL || '').trim();
+    const requestAuthority = String(env.PLOINKY_ROUTER_REQUEST_AUTHORITY || '').trim();
     const apiKey = String(env.PLOINKY_AGENT_API_KEY || '').trim();
-    if (!routerUrl || !apiKey) {
-        throw new Error('Managed Codex routing requires both PLOINKY_ROUTER_URL and PLOINKY_AGENT_API_KEY');
+    if (!routerUrl || !requestAuthority || !apiKey) {
+        throw new Error(
+            'Managed Codex routing requires PLOINKY_ROUTER_URL, PLOINKY_ROUTER_REQUEST_AUTHORITY, and PLOINKY_AGENT_API_KEY',
+        );
     }
     let baseUrl;
     try {
@@ -66,9 +78,23 @@ export function resolveManagedSoulProvider(env = process.env) {
     } catch (cause) {
         throw new Error('PLOINKY_ROUTER_URL is not a valid managed Router URL', { cause });
     }
+    try {
+        if (/[\u0000-\u0020\u007f/?#@]/u.test(requestAuthority)) {
+            throw new Error('unsupported Router request authority');
+        }
+        const parsed = new URL(`http://${requestAuthority}`);
+        if (!parsed.hostname || parsed.host !== requestAuthority
+            || parsed.username || parsed.password || parsed.pathname !== '/'
+            || parsed.search || parsed.hash) {
+            throw new Error('unsupported Router request authority');
+        }
+    } catch (cause) {
+        throw new Error('PLOINKY_ROUTER_REQUEST_AUTHORITY is not a valid managed Router authority', { cause });
+    }
     return Object.freeze({
         provider: MANAGED_SOUL_PROVIDER,
         baseUrl,
+        requestAuthority,
         model: MANAGED_SOUL_MODEL,
     });
 }
@@ -112,6 +138,7 @@ export function buildCodexArgs({ prompt, model = '', threadId = '' }, env = proc
             '--config', `model_provider=${tomlString(managed.provider)}`,
             '--config', `model_providers.${managed.provider}.name=${tomlString('Ploinky Soul Gateway')}`,
             '--config', `model_providers.${managed.provider}.base_url=${tomlString(managed.baseUrl)}`,
+            '--config', `model_providers.${managed.provider}.http_headers={Host=${tomlString(managed.requestAuthority)}}`,
             '--config', `model_providers.${managed.provider}.env_key=${tomlString('PLOINKY_AGENT_API_KEY')}`,
             '--config', `model_providers.${managed.provider}.wire_api=${tomlString('responses')}`,
             '--config', `model_providers.${managed.provider}.requires_openai_auth=false`,

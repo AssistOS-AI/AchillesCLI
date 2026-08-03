@@ -110,13 +110,16 @@ test('Codex resume arguments apply an explicit task model', () => {
 test('managed Codex uses generated Soul identity, local Router, and fast tier by default', () => {
     const env = {
         PLOINKY_ROUTER_URL: 'http://host.containers.internal:8080',
+        PLOINKY_ROUTER_REQUEST_AUTHORITY: '127.0.0.1:8080',
         PLOINKY_AGENT_API_KEY: 'generated-agent-identity',
         PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
         PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
     };
     assert.deepEqual(resolveManagedSoulProvider(env), {
         provider: 'ploinky_soul',
         baseUrl: 'http://host.containers.internal:8080/base-agent-additional-server/soul-gateway/7000/v1',
+        requestAuthority: '127.0.0.1:8080',
         model: 'fast',
     });
     const args = buildCodexArgs({ prompt: 'Build this.' }, env);
@@ -130,6 +133,7 @@ test('managed Codex uses generated Soul identity, local Router, and fast tier by
     assert.ok(args.includes('model_providers.ploinky_soul.env_key="PLOINKY_AGENT_API_KEY"'));
     assert.ok(args.includes('model_providers.ploinky_soul.wire_api="responses"'));
     assert.ok(args.includes('model_providers.ploinky_soul.requires_openai_auth=false'));
+    assert.ok(args.includes('model_providers.ploinky_soul.http_headers={Host="127.0.0.1:8080"}'));
     assert.ok(args.includes('shell_environment_policy.ignore_default_excludes=false'));
     assert.ok(args.includes('model_providers.ploinky_soul.base_url="http://host.containers.internal:8080/base-agent-additional-server/soul-gateway/7000/v1"'));
     assert.ok(args.includes('model="fast"'));
@@ -156,18 +160,43 @@ test('managed Codex fails closed when Router identity configuration is partial',
     assert.throws(
         () => buildCodexArgs({ prompt: 'Build this.' }, {
             PLOINKY_ROUTER_URL: 'http://router.test',
+            PLOINKY_ROUTER_REQUEST_AUTHORITY: 'router.test',
             PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
             PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
         }),
-        /requires both PLOINKY_ROUTER_URL and PLOINKY_AGENT_API_KEY/,
+        /requires PLOINKY_ROUTER_URL, PLOINKY_ROUTER_REQUEST_AUTHORITY, and PLOINKY_AGENT_API_KEY/,
     );
     assert.throws(
         () => buildCodexArgs({ prompt: 'Build this.' }, {
             PLOINKY_AGENT_API_KEY: 'identity',
             PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
             PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
         }),
-        /requires both PLOINKY_ROUTER_URL and PLOINKY_AGENT_API_KEY/,
+        /requires PLOINKY_ROUTER_URL, PLOINKY_ROUTER_REQUEST_AUTHORITY, and PLOINKY_AGENT_API_KEY/,
+    );
+});
+
+test('managed Codex rejects ungenerated or invalid Router request authority', () => {
+    const managedEnv = {
+        PLOINKY_ROUTER_URL: 'http://host.containers.internal:8080',
+        PLOINKY_ROUTER_REQUEST_AUTHORITY: '127.0.0.1:8080',
+        PLOINKY_AGENT_API_KEY: 'generated-agent-identity',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+    };
+    assert.throws(
+        () => buildCodexArgs({ prompt: 'Build this.' }, managedEnv),
+        /requires generated provenance for Router URL, request authority, and agent API key/,
+    );
+    assert.throws(
+        () => buildCodexArgs({ prompt: 'Build this.' }, {
+            ...managedEnv,
+            PLOINKY_ROUTER_REQUEST_AUTHORITY: 'router.test\r\nX-Injected: true',
+            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
+        }),
+        /PLOINKY_ROUTER_REQUEST_AUTHORITY is not a valid managed Router authority/,
     );
 });
 
