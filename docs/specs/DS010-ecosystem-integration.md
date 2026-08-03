@@ -357,9 +357,11 @@ Provider launcher discovery:
    `--sandbox workspace-write --ask-for-approval never` options before `exec`.
    In generated-local Ploinky mode they also select a fixed custom provider at
    the Router's local Soul Gateway Responses endpoint, reference the generated
-   `PLOINKY_AGENT_API_KEY` by environment-variable name, and use the `fast`
-   tier as a one-run config default without persisting credentials or provider
-   state in the workspace. Partial generated provenance fails before spawn,
+   `PLOINKY_AGENT_API_KEY` by environment-variable name, and use the concrete
+   `gpt-5.6-sol` model identity as a one-run config default. Soul Gateway maps
+   that compatibility alias to its operator-managed `fast` cascade, separating
+   Codex capability lookup from routing policy without persisting credentials
+   or provider state in the workspace. Partial generated provenance fails before spawn,
    while non-generated invocations retain normal Codex authentication.
    The selected project directory is writable, broader filesystem writes fail
    without prompting, and the wrapper must not bypass Codex's sandbox. On

@@ -75,11 +75,14 @@ When Ploinky marks both `PLOINKY_ROUTER_URL` and
 custom provider for the local Router path
 `/base-agent-additional-server/soul-gateway/7000/v1`. The provider uses the
 Responses wire API, reads only the generated agent key named by `env_key`, and
-sets `requires_openai_auth=false`. The managed default is the Soul Gateway
-`fast` tier through a one-run `model="fast"` config override; a direct internal
-model argument remains authoritative. Initial and resumed executions receive
-the same provider overrides. Partial generated provenance, a missing generated
-key or Router URL, or an invalid Router URL fails before Codex is spawned.
+sets `requires_openai_auth=false`. The managed default is the concrete
+`gpt-5.6-sol` model identity through a one-run config override. Soul Gateway
+maps that compatibility alias to the operator-managed `fast` cascade, keeping
+Codex model capability lookup separate from tier-routing policy; a direct
+internal model argument remains authoritative. Initial and resumed executions
+receive the same provider overrides. Partial generated provenance, a missing
+generated key or Router URL, or an invalid Router URL fails before Codex is
+spawned.
 Outside generated-local mode the existing Codex login or `OPENAI_API_KEY`
 behavior is unchanged. The wrapper retains Codex's default secret-name
 exclusions for child shell commands so provider credentials remain available

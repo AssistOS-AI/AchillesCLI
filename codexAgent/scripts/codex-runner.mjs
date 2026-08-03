@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 
 export const DEFAULT_CODEX_HOME = '/root';
 export const DEFAULT_CODEX_BIN = '/root/.local/bin/codex';
-export const MANAGED_SOUL_MODEL = 'fast';
+export const MANAGED_SOUL_MODEL = 'gpt-5.6-sol';
 export const MANAGED_SOUL_PROVIDER = 'ploinky_soul';
 
 const LOG_TAIL_LIMIT = 16 * 1024;
