@@ -16,7 +16,8 @@ const TASK_ENV_ALLOWLIST = new Set([
     'NO_COLOR',
     'PI_OFFLINE',
     'PI_SKIP_VERSION_CHECK',
-    'PLOINKY_ROUTER_URL',
+    'PLOINKY_TASK_BROKER_KEY',
+    'PLOINKY_TASK_BROKER_URL',
     'TERM',
     'TZ',
 ]);

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { startScopedSoulBroker } from './scoped-soul-broker.mjs';
 import {
     buildTaskSandboxLaunch,
     prepareTaskSandbox,
@@ -16,6 +17,7 @@ const SEMANTIC_FAILURE_PATTERNS = [
     /the user rejected permission/i,
     /read \. failed/i,
 ];
+const SOUL_MODELS = new Set(['fast', 'plan', 'deep']);
 
 function serializeCause(cause, depth = 0) {
     if (!cause || depth >= 4) return undefined;
@@ -184,6 +186,43 @@ async function findSessionId({ opencodeBin, projectDir, env, title, sandboxDepen
     return String(match?.id || '').trim();
 }
 
+export async function findSessionIdFromDatabase({ projectDir, env, title }) {
+    const dataRoot = String(env.XDG_DATA_HOME || '').trim()
+        || path.join(String(env.HOME || DEFAULT_OPENCODE_HOME), '.local', 'share');
+    const databasePath = path.join(dataRoot, 'opencode', 'opencode.db');
+    let expectedDirectory = path.resolve(projectDir);
+    try {
+        expectedDirectory = fsSync.realpathSync(expectedDirectory);
+    } catch {
+    }
+    try {
+        const { DatabaseSync } = await import('node:sqlite');
+        const database = new DatabaseSync(databasePath, { readOnly: true });
+        try {
+            const row = database.prepare(`
+                SELECT id
+                FROM session
+                WHERE title = ? AND directory = ?
+                ORDER BY time_updated DESC
+                LIMIT 1
+            `).get(title, expectedDirectory);
+            return String(row?.id || '').trim();
+        } finally {
+            database.close();
+        }
+    } catch {
+        return '';
+    }
+}
+
+function managedOpenCodeModel(requestedModel) {
+    const requested = String(requestedModel || '').trim();
+    const [provider, model] = requested.split('/');
+    return provider === 'soul' && SOUL_MODELS.has(model)
+        ? requested
+        : 'soul/fast';
+}
+
 function exportSession({ opencodeBin, projectDir, env, sessionId, sandboxDependencies }) {
     return new Promise((resolve, reject) => {
         const child = spawnSandboxedOpenCode({
@@ -317,6 +356,7 @@ export function runOpenCode({
         child.on('close', async (code, closeSignal) => {
             signal?.removeEventListener?.('abort', abort);
             let resolvedSessionId = sessionId;
+            let sessionLookupError = '';
             if (sessionTitle) {
                 try {
                     resolvedSessionId = await findSessionId({
@@ -327,8 +367,12 @@ export function runOpenCode({
                         sandboxDependencies,
                     });
                 } catch (error) {
-                    reject(error);
-                    return;
+                    sessionLookupError = error?.message || String(error);
+                    resolvedSessionId = await findSessionIdFromDatabase({
+                        projectDir,
+                        env,
+                        title: sessionTitle,
+                    });
                 }
             }
             let outputText = stdoutTail;
@@ -352,6 +396,7 @@ export function runOpenCode({
                 stdoutTail,
                 stderrTail,
                 sessionId: resolvedSessionId,
+                sessionLookupError,
                 outputText,
             });
         });
@@ -414,16 +459,24 @@ export async function executeOpenCodeTask({
         };
     }
 
+    let broker = null;
     try {
+        broker = await startScopedSoulBroker(env);
+        const taskEnv = broker
+            ? { ...env, ...broker.environment }
+            : env;
+        const effectiveModel = broker
+            ? managedOpenCodeModel(resolvedModel)
+            : resolvedModel;
         const result = await runOpenCode({
             projectDir: effectiveProjectDir,
-            model: resolvedModel,
+            model: effectiveModel,
             variant: resolvedVariant,
             prompt: taskPrompt,
             sessionId,
             captureSession,
             logStream,
-            env,
+            env: taskEnv,
             opencodeBin: env.OPENCODE_BIN || resolveOpenCodeBin(env),
             signal,
             sandboxDependencies,
@@ -441,8 +494,22 @@ export async function executeOpenCodeTask({
                 outputText,
                 projectDir: resolvedProjectDir,
                 effectiveProjectDir,
-                model: resolvedModel,
+                model: effectiveModel,
                 sessionId: result.sessionId || sessionId,
+            };
+        }
+
+        if (captureSession && !result.sessionId) {
+            return {
+                ok: false,
+                error: result.sessionLookupError
+                    ? `OpenCode completed, but its session could not be recovered: ${result.sessionLookupError}`
+                    : 'OpenCode completed, but did not persist a resumable session.',
+                outputText,
+                projectDir: resolvedProjectDir,
+                effectiveProjectDir,
+                model: effectiveModel,
+                sessionId: '',
             };
         }
 
@@ -451,7 +518,7 @@ export async function executeOpenCodeTask({
             outputText,
             projectDir: resolvedProjectDir,
             effectiveProjectDir,
-            model: resolvedModel,
+            model: effectiveModel,
             sessionId: result.sessionId || sessionId,
         };
     } catch (error) {
@@ -465,6 +532,8 @@ export async function executeOpenCodeTask({
             effectiveProjectDir,
             model: resolvedModel,
         };
+    } finally {
+        await broker?.close();
     }
 }
 

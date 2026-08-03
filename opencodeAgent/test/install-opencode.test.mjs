@@ -97,7 +97,7 @@ test('installer leaves the persistent config untouched when OpenCode download fa
     assert.equal(await fs.readFile(configPath, 'utf8'), '{"existing":true}\n');
 });
 
-test('config safety-disables uncertified generated-local provider interpolation', async () => {
+test('config uses only the task-scoped Soul broker credential', async () => {
     const config = JSON.parse(await fs.readFile(configTemplate, 'utf8'));
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
 
@@ -108,7 +108,10 @@ test('config safety-disables uncertified generated-local provider interpolation'
         '*': 'allow',
         external_directory: 'deny',
     });
-    assert.equal(config.provider?.['soul-gateway'], undefined);
+    assert.equal(config.provider?.soul?.npm, '@ai-sdk/openai-compatible');
+    assert.equal(config.provider?.soul?.options?.baseURL, '{env:PLOINKY_TASK_BROKER_URL}');
+    assert.equal(config.provider?.soul?.options?.apiKey, '{env:PLOINKY_TASK_BROKER_KEY}');
+    assert.deepEqual(Object.keys(config.provider?.soul?.models || {}), ['fast', 'plan', 'deep']);
     assert.ok(!JSON.stringify(config).includes('PLOINKY_ROUTER_URL'));
     assert.ok(!JSON.stringify(config).includes('PLOINKY_AGENT_API_KEY'));
     assert.equal(manifest.profiles.default.install, 'sh /code/scripts/install-opencode.sh');

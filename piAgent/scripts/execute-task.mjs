@@ -16,10 +16,15 @@ import {
     buildTaskSandboxLaunch,
     prepareTaskSandbox,
 } from './task-sandbox.mjs';
+import { startScopedSoulBroker } from './scoped-soul-broker.mjs';
 
 const LOG_TAIL_LIMIT = 16 * 1024;
 const DEFAULT_PI_HOME = '/root';
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const SOUL_MODELS = new Set(['fast', 'plan', 'deep']);
+const SOUL_EXTENSION_PATH = fileURLToPath(
+    new URL('../extensions/ploinky-soul.mjs', import.meta.url)
+);
 
 function serializeCause(cause, depth = 0) {
     if (!cause || depth >= 4) return undefined;
@@ -229,6 +234,7 @@ function runPi({
     env = { ...process.env },
     signal,
     sandboxDependencies = {},
+    extensionPath = '',
 }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
@@ -239,6 +245,7 @@ function runPi({
             sessionId,
             '--session-dir',
             sessionDir,
+            ...(extensionPath ? ['--extension', extensionPath] : []),
             ...(provider ? ['--provider', provider] : []),
             ...(model ? ['--model', model] : []),
             ...(thinking ? ['--thinking', thinking] : []),
@@ -259,6 +266,7 @@ function runPi({
             env: childEnv,
             readOnlyPaths: [
                 '/root/.local',
+                extensionPath,
             ].filter((candidate) => fs.existsSync(candidate)),
             writablePaths: [
                 '/root/.pi/agent',
@@ -385,6 +393,23 @@ export async function executeTask({
         };
     }
     const resolvedProjectDir = prepared.projectDir;
+    let broker = null;
+    try {
+        broker = await startScopedSoulBroker(env);
+    } catch (error) {
+        return {
+            ok: false,
+            error: `PI scoped Soul routing failed: ${error?.message || error}`,
+            code: error?.code,
+            status: error?.status,
+            cause: serializeCause(error?.cause),
+        };
+    }
+    const effectiveProvider = broker ? 'ploinky-soul' : resolvedProvider;
+    const effectiveModel = broker
+        ? (SOUL_MODELS.has(resolvedModel) ? resolvedModel : 'fast')
+        : resolvedModel;
+    const taskEnv = broker ? { ...env, ...broker.environment } : env;
     const handle = typeof sessionId === 'string' && sessionId.trim()
         ? sessionId.trim()
         : createContinuationHandle();
@@ -393,16 +418,17 @@ export async function executeTask({
     try {
         const result = await runPi({
             projectDir: resolvedProjectDir,
-            provider: resolvedProvider,
-            model: resolvedModel,
+            provider: effectiveProvider,
+            model: effectiveModel,
             thinking: resolvedThinking,
             prompt: prompt.trim(),
             sessionId: handle,
             sessionDir: resolvedSessionDir,
             logStream,
             signal,
-            env,
+            env: taskEnv,
             sandboxDependencies,
+            extensionPath: broker ? SOUL_EXTENSION_PATH : '',
         });
         if (result.assistantError || result.code !== 0) {
             return {
@@ -427,6 +453,8 @@ export async function executeTask({
             cause: serializeCause(error?.cause),
             continuation: continuationDescriptor(handle),
         };
+    } finally {
+        await broker?.close();
     }
 }
 

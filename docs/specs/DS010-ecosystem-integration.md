@@ -269,8 +269,8 @@ Provider launcher discovery:
    install the current OpenCode release and then atomically replace the
    OpenCode config under the effective runtime `HOME` with the repository-owned
    Soul Gateway provider template before AgentServer starts. The template must
-   reference the Ploinky-injected router URL and signed agent API key through
-   OpenCode environment substitution, must add the `fast`, `deep`, and `plan`
+   reference only a task-scoped loopback broker URL and short-lived broker key
+   through OpenCode environment substitution, must add the `fast`, `deep`, and `plan`
    models, must set the permission catch-all to `allow`, must override
    `external_directory` to `deny`, and must not select a default model or
    restrict other providers. This is an OpenCode application policy rather
@@ -299,9 +299,13 @@ Provider launcher discovery:
    `PLOINKY_AGENT_API_KEY`, `PLOINKY_AGENT_PRIVATE_SECRET`,
    `PLOINKY_AGENT_CLIENT_SECRET`, `PLOINKY_AGENT_SECRET`,
    `PLOINKY_MASTER_KEY`, invocation/router credentials, and provider secrets.
-   Provider authentication must come from provider-owned persistent state or a
-   separately specified scoped broker; raw Ploinky credentials are not task
-   authority. Capability failure returns
+   In generated-local mode the outer wrapper owns a loopback broker limited to
+   the Soul Gateway chat-completions route and the `fast`, `plan`, and `deep`
+   models. It injects the signed agent key upstream while the nested task sees
+   only the broker URL and a random per-task bearer token. PI registers the same
+   broker through its repository-owned provider extension. Outside that mode,
+   provider authentication comes from provider-owned persistent state; raw
+   Ploinky credentials are never task authority. Capability failure returns
    `PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE` with status and cause before task or
    persistent-state mutation. Provider execution has no elapsed timeout and
    remains active until completion, cancellation, failure, or runtime
@@ -316,7 +320,9 @@ Provider launcher discovery:
    same non-skipping private/empty proc, UID/GID/home, writable-path, and real
    task checks used to qualify the exact Box runtime image.
    For initial
-   PI tasks, the provider owns model selection. Before continuation, `piAgent`
+   PI tasks outside generated-local mode, the provider owns model selection.
+   Generated-local tasks use the scoped Soul `fast` model unless an allowed
+   Soul tier is requested. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,
    read the effective `defaultProvider`, `defaultModel`, and valid
    `defaultThinkingLevel`, and pass them as explicit CLI overrides while
@@ -324,7 +330,10 @@ Provider launcher discovery:
    settings fall back to PI's native session-resume behavior. For initial
    OpenCode tasks, the wrapper must assign an unpredictable internal session
    title and resolve the provider session id through the separate session-list
-   interface after execution; session-list output must never enter task logs.
+   interface after execution. If that read-only CLI operation cannot run in the
+   selected proc mode, the wrapper must query OpenCode's persisted session
+   database directly without masking the primary task result; neither lookup's
+   output may enter task logs.
    Before continuation, `opencodeAgent` must read the first recent model and
    its non-default variant from its persistent OpenCode state and pass them as
    explicit CLI overrides while retaining the stored session id. Unavailable

@@ -13,6 +13,7 @@ import {
 } from '../openai-api/models.mjs';
 import {
     __testables as openCodeRunnerTestables,
+    findSessionIdFromDatabase,
     readRecentOpenCodeModel,
 } from '../scripts/opencode-runner.mjs';
 
@@ -147,6 +148,35 @@ test('recent OpenCode model lookup falls back when state is unavailable', async 
     );
 });
 
+test('OpenCode session recovery reads the persisted database without launching the CLI', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-session-db-test-'));
+    const projectDir = path.join(tmpDir, 'project');
+    const dataRoot = path.join(tmpDir, 'data');
+    const databaseDirectory = path.join(dataRoot, 'opencode');
+    await fs.mkdir(projectDir);
+    await fs.mkdir(databaseDirectory, { recursive: true });
+    const { DatabaseSync } = await import('node:sqlite');
+    const database = new DatabaseSync(path.join(databaseDirectory, 'opencode.db'));
+    database.exec(`
+        CREATE TABLE session (
+            id TEXT PRIMARY KEY,
+            directory TEXT NOT NULL,
+            title TEXT NOT NULL,
+            time_updated INTEGER NOT NULL
+        )
+    `);
+    database.prepare(
+        'INSERT INTO session (id, directory, title, time_updated) VALUES (?, ?, ?, ?)'
+    ).run('ses_db', await fs.realpath(projectDir), 'ploinky-task-test', 1);
+    database.close();
+
+    assert.equal(await findSessionIdFromDatabase({
+        projectDir,
+        title: 'ploinky-task-test',
+        env: { XDG_DATA_HOME: dataRoot },
+    }), 'ses_db');
+});
+
 test('OpenCode retained output is byte bounded without an elapsed task timeout', () => {
     const retained = openCodeRunnerTestables.appendBoundedTail('', '€'.repeat(20_000));
     assert.ok(Buffer.byteLength(retained, 'utf8') <= openCodeRunnerTestables.LOG_TAIL_LIMIT);
@@ -267,6 +297,37 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
     ));
     assert.equal(record.sessionId, 'ses_test_resume');
     assert.equal(record.projectDir, await fs.realpath(projectDir));
+});
+
+test('generated-local OpenCode tasks use the scoped Soul provider', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-soul-task-test-'));
+    const projectDir = path.join(tmpDir, 'project');
+    const argsPath = path.join(tmpDir, 'args.json');
+    const titlePath = path.join(tmpDir, 'title.txt');
+    await fs.mkdir(projectDir);
+    const fakeBin = await makeFakeOpenCodeBin(tmpDir);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Run through Soul.',
+        projectDir,
+        model: 'xai/grok-4.3',
+    }, {
+        OPENCODE_BIN: fakeBin,
+        OPENCODE_ARGS_PATH: argsPath,
+        OPENCODE_TITLE_PATH: titlePath,
+        PLOINKY_CONTINUATION_STORE_DIR: path.join(tmpDir, 'continuations'),
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        PLOINKY_ROUTER_URL: 'http://127.0.0.1:9',
+        PLOINKY_ROUTER_REQUEST_AUTHORITY: '127.0.0.1:9',
+        PLOINKY_AGENT_API_KEY: 'outer-only-key',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.equal(args[args.indexOf('--model') + 1], 'soul/fast');
 });
 
 test('failed OpenCode task returns a continuation handle when its session was created', async () => {

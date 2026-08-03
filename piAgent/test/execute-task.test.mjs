@@ -307,6 +307,39 @@ test('PI wrapper creates a resumable session and returns a continuation handle',
     });
 });
 
+test('generated-local PI tasks load the scoped Soul provider extension', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-soul-task-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Use Soul.',
+        projectDir,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PLOINKY_CONTINUATION_STORE_DIR: path.join(temporaryDirectory, 'continuations'),
+        PLOINKY_PI_SESSION_DIR: path.join(temporaryDirectory, 'sessions'),
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        PLOINKY_ROUTER_URL: 'http://127.0.0.1:9',
+        PLOINKY_ROUTER_REQUEST_AUTHORITY: '127.0.0.1:9',
+        PLOINKY_AGENT_API_KEY: 'outer-only-key',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.equal(args[args.indexOf('--provider') + 1], 'ploinky-soul');
+    assert.equal(args[args.indexOf('--model') + 1], 'fast');
+    assert.match(args[args.indexOf('--extension') + 1], /ploinky-soul\.mjs$/);
+});
+
 test('failed PI task returns and persists its continuation handle', async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-failed-task-test-'));
     const projectDir = path.join(temporaryDirectory, 'project');
