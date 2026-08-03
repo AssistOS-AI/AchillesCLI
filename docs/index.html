@@ -185,13 +185,12 @@
   <h2>Semantic Copilot Routing</h2>
   <div class="card">
     AchillesCLI Copilot owns semantic provider routing. Ploinky WebChat supplies only the generic
-    envelope, sanitized references, and selected-agent invocation token. Non-slash Copilot turns route
-    through <code>copilot-router</code>, which may call deterministic launcher cskills such as
-    <code>launch-open-interpreter</code>, <code>launch-web-search</code>, or
-    <code>launch-opencode</code>, or <code>launch-codex</code>. Explicit <code>opencode</code> or
-    <code>opencodeAgent</code> requests route to <code>launch-opencode</code> before generic
-    execution launchers; explicit <code>codex</code> or <code>codexAgent</code>
-    requests similarly route to <code>launch-codex</code>. Deprecated provider tokens such as
+    envelope, sanitized references, and selected-agent invocation token. Non-slash Copilot turns normally
+    use AchillesCLI's general skill-aware reasoning loop. Before that loop, explicit task requests naming
+    <code>opencode</code>/<code>opencodeAgent</code>, <code>codex</code>/<code>codexAgent</code>,
+    or <code>piAgent</code> route deterministically to <code>launch-opencode</code>,
+    <code>launch-codex</code>, or <code>launch-pi</code>. Mere mentions remain ordinary chat.
+    Deprecated provider tokens such as
     <code>@open-interpreter</code> remain ordinary chat text. Explorer launch metadata may add generic
     parameters such as <code>forward-envelope=1</code> and <code>workspace-dir</code>, but provider tags,
     relay tool names, and provider agent ids stay out of WebChat launch URLs.

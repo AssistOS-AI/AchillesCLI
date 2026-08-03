@@ -53,14 +53,13 @@ Ploinky integration boundary:
    forwarded resources. Files above the inline byte limit must remain available
    to launcher integrations through their validated path rather than being
    discarded.
-10. Non-slash WebChat turns are routed through the built-in `copilot-router`
-   oskill. The router may call deterministic launcher cskills such as
-   `launch-open-interpreter`, `launch-web-search`, `launch-opencode`, or
-   `launch-codex`.
-   When the user explicitly names `opencode` or `opencodeAgent`, the router
-   must select `launch-opencode` before generic execution launchers so the
-   named provider intent is preserved. Explicit `codex` or `codexAgent`
-   requests must similarly select `launch-codex`. Launchers receive the
+10. Non-slash WebChat turns normally use AchillesCLI's general skill-aware
+   reasoning loop. Before that loop, a deterministic named-coding-agent
+   selector handles explicit task requests for `opencode`/`opencodeAgent`,
+   `codex`/`codexAgent`, and `piAgent`. It must select `launch-opencode`,
+   `launch-codex`, or `launch-pi`, respectively, so named-provider intent is
+   not lost to generic reasoning or another execution launcher. Mere mentions
+   without task intent remain ordinary chat. Launchers receive the
    normalized prompt, safe WebChat context, and current invocation token through
    the AchillesCLI skill execution context. Launchers must call external
    provider execution only through

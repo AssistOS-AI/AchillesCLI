@@ -2,16 +2,28 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import test from 'node:test';
 
-const routerPath = new URL('../src/skills/copilot-router/oskill.md', import.meta.url);
+import { resolveCopilotCodingAgentLauncher } from '../src/lib/copilotCodingAgentRouting.mjs';
 
-test('Copilot router permits and prioritizes fixed coding-agent launchers', async () => {
-    const descriptor = await fs.readFile(routerPath, 'utf8');
-    for (const [provider, launcher] of [
-        ['codexAgent', 'launch-codex'],
-        ['opencodeAgent', 'launch-opencode'],
-        ['piAgent', 'launch-pi'],
-    ]) {
-        assert.match(descriptor, new RegExp(`explicitly asks[\\s\\S]*${provider}[\\s\\S]*${launcher}`));
-        assert.match(descriptor, new RegExp(`## Allowed-Skills[\\s\\S]*- ${launcher}`));
-    }
+test('Copilot routes explicit fixed coding-agent task requests before generic reasoning', () => {
+    assert.equal(resolveCopilotCodingAgentLauncher('Delegate this task specifically to Codex/codexAgent.'), 'launch-codex');
+    assert.equal(resolveCopilotCodingAgentLauncher('Use Open Code to refactor this module.'), 'launch-opencode');
+    assert.equal(resolveCopilotCodingAgentLauncher('Have piAgent inspect this failure.'), 'launch-pi');
+});
+
+test('Copilot does not route mentions that lack task intent', () => {
+    assert.equal(resolveCopilotCodingAgentLauncher('What is Codex?'), null);
+    assert.equal(resolveCopilotCodingAgentLauncher('What should Codex do?'), null);
+    assert.equal(resolveCopilotCodingAgentLauncher('Compare OpenCode and Codex.'), null);
+    assert.equal(resolveCopilotCodingAgentLauncher('@codex hello'), null);
+});
+
+test('WebChat invokes the fixed launcher before the generic reasoning loop', async () => {
+    const source = await fs.readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
+    const resolverIndex = source.indexOf('resolveCopilotCodingAgentLauncher(message)');
+    const launcherIndex = source.indexOf('skillName: fixedCodingAgentLauncher', resolverIndex);
+    const genericIndex = source.indexOf('activeAgent.executePrompt(akuPrompt.prompt', resolverIndex);
+
+    assert.ok(resolverIndex >= 0);
+    assert.ok(launcherIndex > resolverIndex);
+    assert.ok(genericIndex > launcherIndex);
 });

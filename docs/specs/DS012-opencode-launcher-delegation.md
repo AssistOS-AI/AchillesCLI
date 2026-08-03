@@ -24,10 +24,10 @@ fields, without parsing or rejecting it. The skill must reject missing task
 text before making any MCP request.
 
 The fixed target is `opencodeAgent`, and the fixed MCP tool is `execute-task`.
-The `copilot-router` oskill resolves explicit `opencode` or `opencodeAgent`
-user requests to `launch-opencode` so users do not provide agent names as skill
-input. The skill must not shell out to OpenCode or any other provider command
-directly.
+The WebChat named-coding-agent selector resolves explicit `opencode` or
+`opencodeAgent` task requests to `launch-opencode` before generic reasoning, so
+users do not provide agent names as skill input. The skill must not shell out
+to OpenCode or any other provider command directly.
 
 The delegated MCP payload must include only `prompt` and `projectDir`. `prompt`
 is the complete task text. `projectDir` comes from
@@ -122,10 +122,10 @@ client must call
 skill must not use AchillesCLI's legacy invocation-token MCP helper or a local
 path fallback for this delegation.
 
-The `copilot-router` oskill must select `launch-opencode` before the more
-general execution-provider launchers when the user explicitly asks for
-`opencode` or `opencodeAgent`. This keeps named-provider intent from being
-captured by generic Open Interpreter routing.
+The WebChat named-coding-agent selector must select `launch-opencode` before
+generic reasoning or more general execution-provider launchers when the user
+explicitly asks `opencode` or `opencodeAgent` to perform a task. This keeps
+named-provider intent from being captured by generic Open Interpreter routing.
 
 The AchillesCLI Ploinky manifest must omit `opencodeAgent` from its `enable`
 dependencies so Explorer startup is not blocked by an optional coding worker.

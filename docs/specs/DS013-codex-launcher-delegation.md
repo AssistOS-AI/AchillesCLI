@@ -21,9 +21,9 @@ The `launch-codex` C-Skill accepts only non-empty natural-language task text.
 Its target is fixed to `AchillesCLI/codexAgent`, and its MCP tool is fixed to
 `execute-task`. It resolves `projectDir` from
 `invocation.mainAgent.startDir`, sends only `prompt` and `projectDir`, and does
-not parse JSON-shaped text or forward the AchillesCLI model. Explicit
-`codex` or `codexAgent` requests are routed to this skill before generic
-execution launchers.
+not parse JSON-shaped text or forward the AchillesCLI model. The WebChat
+named-coding-agent selector routes explicit `codex` or `codexAgent` task
+requests to this skill before generic reasoning or execution launchers.
 
 The launcher uses the router-mediated `AgentMcpClient` path. It checks the
 installed target's Marketplace state, requests global activation only when the

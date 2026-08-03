@@ -75,6 +75,7 @@ import {
     emitWebchatSessionEnvelope,
 } from './lib/webchatSessionState.mjs';
 import { createSoulGatewayInvoker } from './lib/soulGatewayInvoker.mjs';
+import { resolveCopilotCodingAgentLauncher } from './lib/copilotCodingAgentRouting.mjs';
 import { validateGeneratedLocalStartup } from './lib/soulGatewayModels.mjs';
 import { BrokerClient } from './permissions/BrokerClient.mjs';
 import { BashSecuritySupervisor } from './permissions/BashSecuritySupervisor.mjs';
@@ -997,14 +998,30 @@ async function runWebchatInteractive(agent, options) {
                     // The restored history is process-bootstrap state. Consume it
                     // before execution so retries after cancellation do not resend it.
                     pendingConversationHistory = [];
-                    let result = await activeAgent.executePrompt(akuPrompt.prompt, {
-                        signal: activeAbortController.signal,
-                        context,
-                        supervisor: activeAgent.supervisor || null,
-                        model: slashState.pinnedModel || slashState.activeTier,
-                        systemPrompt: buildOrchestratorSystemPrompt(),
-                        ...(initialHistory.length > 0 ? { initialHistory } : {}),
-                    });
+                    const fixedCodingAgentLauncher = resolveCopilotCodingAgentLauncher(message);
+                    let result;
+                    if (fixedCodingAgentLauncher) {
+                        result = await executeWebchatSkill({
+                            agent: activeAgent,
+                            skillName: fixedCodingAgentLauncher,
+                            input: message,
+                            opts: {
+                                signal: activeAbortController.signal,
+                                context,
+                                supervisor: activeAgent.supervisor || null,
+                            },
+                            slashState,
+                        });
+                    } else {
+                        result = await activeAgent.executePrompt(akuPrompt.prompt, {
+                            signal: activeAbortController.signal,
+                            context,
+                            supervisor: activeAgent.supervisor || null,
+                            model: slashState.pinnedModel || slashState.activeTier,
+                            systemPrompt: buildOrchestratorSystemPrompt(),
+                            ...(initialHistory.length > 0 ? { initialHistory } : {}),
+                        });
+                    }
                     await drainWorkspaceSkillsRefresh(activeAgent, { logger: activeAgent.logger });
                     result = formatExecutionResult(result, debug);
                     await persistProviderLauncherResults(context, {
