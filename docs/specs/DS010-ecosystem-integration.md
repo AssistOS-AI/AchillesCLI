@@ -311,10 +311,10 @@ Provider launcher discovery:
    a `lite-sandbox` Bubblewrap process: container profiles must permit nested
    namespaces, the installer must install `bubblewrap` only when `bwrap` is not
    already available, and readiness must prove that a nested sandbox can
-   actually start before the agent becomes ready. The OpenCode and PI
-   privileged manifest declarations remain in place until the same immutable
-   runner candidate passes non-skipping private/empty, UID/GID/home, writable
-   path, readiness, and real-task proof in the exact unprivileged Box.
+   actually start before the agent becomes ready. OpenCode and PI do not request
+   privileged containers. Their unprivileged container readiness must pass the
+   same non-skipping private/empty proc, UID/GID/home, writable-path, and real
+   task checks used to qualify the exact Box runtime image.
    For initial
    PI tasks, the provider owns model selection. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,

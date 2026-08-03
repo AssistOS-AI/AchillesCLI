@@ -113,7 +113,7 @@ test('config safety-disables uncertified generated-local provider interpolation'
     assert.ok(!JSON.stringify(config).includes('PLOINKY_AGENT_API_KEY'));
     assert.equal(manifest.profiles.default.install, 'sh /code/scripts/install-opencode.sh');
     assert.equal(manifest.cli, '"$HOME/.opencode/bin/opencode"');
-    assert.equal(manifest.containerSecurity?.privileged, true);
+    assert.equal(manifest.containerSecurity, undefined);
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
     assert.ok(!JSON.stringify(manifest).includes('PLOINKY_AGENT_API_KEY'));
     assert.doesNotMatch(

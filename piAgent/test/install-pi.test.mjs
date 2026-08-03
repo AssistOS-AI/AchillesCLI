@@ -53,7 +53,7 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
 
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
     assert.equal(manifest.cli, '"$HOME/.local/bin/pi"');
-    assert.equal(manifest.containerSecurity?.privileged, true);
+    assert.equal(manifest.containerSecurity, undefined);
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
 
     const script = await fs.readFile(installScript, 'utf8');
