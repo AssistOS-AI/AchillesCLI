@@ -19,6 +19,9 @@ The skill returns plain text only. Successful runs return
 `OpenCode task completed.` and append the bounded `outputText` returned by
 `opencodeAgent.execute-task` when that field is non-empty. Failed runs return
 the agent error text or an MCP failure message.
+Allowlisted lifecycle failures surface their stable code with a fixed safe
+description. The launcher must not include command lines, environment values,
+credentials, hidden routing state, or raw diagnostic tails with such a code.
 
 The skill calls `AgentMcpClient.callToolWithoutWait`. When `execute-task` is
 registered as an async MCP tool and returns a task id, the client offers it to

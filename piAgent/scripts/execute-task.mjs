@@ -14,12 +14,22 @@ import {
 } from './continuation-store.mjs';
 import {
     buildTaskSandboxLaunch,
-    resolveSandboxProject,
+    prepareTaskSandbox,
 } from './task-sandbox.mjs';
 
 const LOG_TAIL_LIMIT = 16 * 1024;
 const DEFAULT_PI_HOME = '/root';
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+
+function serializeCause(cause, depth = 0) {
+    if (!cause || depth >= 4) return undefined;
+    if (typeof cause !== 'object') return { message: String(cause) };
+    return {
+        ...(typeof cause.code === 'string' ? { code: cause.code } : {}),
+        ...(typeof cause.message === 'string' ? { message: cause.message } : {}),
+        ...(cause.cause ? { cause: serializeCause(cause.cause, depth + 1) } : {}),
+    };
+}
 
 export function resolvePiBinary(env = process.env) {
     if (typeof env.PI_BIN === 'string' && env.PI_BIN.trim()) return env.PI_BIN.trim();
@@ -49,8 +59,12 @@ function createContainerLogStream() {
 }
 
 function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
-    const next = `${current}${chunk}`;
-    return next.length <= limit ? next : next.slice(next.length - limit);
+    const currentBytes = Buffer.from(String(current || ''), 'utf8');
+    const chunkBytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk || ''), 'utf8');
+    const next = Buffer.concat([currentBytes, chunkBytes]);
+    let start = Math.max(0, next.length - limit);
+    while (start < next.length && (next[start] & 0xc0) === 0x80) start += 1;
+    return next.subarray(start).toString('utf8');
 }
 
 function extractTextContent(value) {
@@ -116,7 +130,7 @@ export function createPiJsonEventParser({ onText = () => {} } = {}) {
         if (event?.type === 'message_update') {
             const update = event.assistantMessageEvent;
             if (update?.type === 'text_delta' && typeof update.delta === 'string') {
-                currentAssistantText += update.delta;
+                currentAssistantText = appendBoundedTail(currentAssistantText, update.delta);
                 emit(update.delta);
             }
             return;
@@ -124,7 +138,7 @@ export function createPiJsonEventParser({ onText = () => {} } = {}) {
         if (event?.type === 'message_end' && event.message?.role === 'assistant') {
             const completeText = extractTextContent(event.message.content);
             emit(unseenText(currentAssistantText, completeText));
-            if (completeText) finalAssistantText = completeText;
+            if (completeText) finalAssistantText = appendBoundedTail('', completeText);
             assistantError ||= extractAssistantError(event.message);
             currentAssistantText = '';
             return;
@@ -141,7 +155,7 @@ export function createPiJsonEventParser({ onText = () => {} } = {}) {
             if (event.type === 'tool_execution_end') {
                 toolOutput.delete(toolCallId);
             } else {
-                toolOutput.set(toolCallId, `${previous}${suffix}`);
+                toolOutput.set(toolCallId, appendBoundedTail(previous, suffix));
             }
         }
     };
@@ -214,6 +228,7 @@ function runPi({
     logStream,
     env = { ...process.env },
     signal,
+    sandboxDependencies = {},
 }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
@@ -249,6 +264,7 @@ function runPi({
                 '/root/.pi/agent',
                 sessionDir,
             ].filter((candidate) => fs.existsSync(candidate)),
+            dependencies: sandboxDependencies,
         });
         const child = spawn(launch.command, launch.args, {
             cwd: launch.cwd,
@@ -335,6 +351,8 @@ export async function executeTask({
     sessionId,
     sessionDir: suppliedSessionDir,
     signal,
+    env = process.env,
+    sandboxDependencies = {},
 } = {}) {
     const logStream = createContainerLogStream();
     if (typeof prompt !== 'string' || !prompt.trim()) {
@@ -349,20 +367,29 @@ export async function executeTask({
     const resolvedThinking = typeof thinking === 'string' && THINKING_LEVELS.has(thinking.trim())
         ? thinking.trim()
         : '';
-    const handle = typeof sessionId === 'string' && sessionId.trim()
-        ? sessionId.trim()
-        : createContinuationHandle();
-    const resolvedSessionDir = suppliedSessionDir || sessionDirectory(handle);
-    let resolvedProjectDir;
+    let prepared;
     try {
-        resolvedProjectDir = resolveSandboxProject(projectDir.trim(), process.env);
+        prepared = prepareTaskSandbox({
+            projectDir: projectDir.trim(),
+            env,
+            createProjectDir: true,
+            dependencies: sandboxDependencies,
+        });
     } catch (error) {
         return {
             ok: false,
             error: `PI task sandbox rejected projectDir: ${error?.message || error}`,
+            code: error?.code,
+            status: error?.status,
+            cause: serializeCause(error?.cause),
         };
     }
-    writeContinuationRecord(handle, { projectDir: resolvedProjectDir });
+    const resolvedProjectDir = prepared.projectDir;
+    const handle = typeof sessionId === 'string' && sessionId.trim()
+        ? sessionId.trim()
+        : createContinuationHandle();
+    const resolvedSessionDir = suppliedSessionDir || sessionDirectory(handle, env);
+    writeContinuationRecord(handle, { projectDir: resolvedProjectDir }, env);
     try {
         const result = await runPi({
             projectDir: resolvedProjectDir,
@@ -374,6 +401,8 @@ export async function executeTask({
             sessionDir: resolvedSessionDir,
             logStream,
             signal,
+            env,
+            sandboxDependencies,
         });
         if (result.assistantError || result.code !== 0) {
             return {
@@ -383,7 +412,7 @@ export async function executeTask({
                 continuation: continuationDescriptor(handle),
             };
         }
-        writeContinuationRecord(handle, { projectDir: resolvedProjectDir });
+        writeContinuationRecord(handle, { projectDir: resolvedProjectDir }, env);
         return {
             ok: true,
             outputText: result.finalOutputText || summarizeOutput(result),
@@ -393,12 +422,20 @@ export async function executeTask({
         return {
             ok: false,
             error: `PI task failed: ${error?.message || 'unknown error'}`,
+            code: error?.code,
+            status: error?.status,
+            cause: serializeCause(error?.cause),
             continuation: continuationDescriptor(handle),
         };
     }
 }
 
-async function main() {
+function formatError(result, fallback) {
+    const message = result?.error || fallback;
+    return result?.code ? `${result.code}: ${message}` : message;
+}
+
+export async function main({ sandboxDependencies = {} } = {}) {
     const cancellation = new AbortController();
     process.on('SIGTERM', () => cancellation.abort());
     try {
@@ -408,15 +445,22 @@ async function main() {
             process.exitCode = 1;
             return;
         }
-        const result = await executeTask({ ...input, signal: cancellation.signal });
+        const result = await executeTask({
+            ...input,
+            signal: cancellation.signal,
+            sandboxDependencies,
+        });
         if (!result.ok) {
-            if (result.continuation) {
-                process.stdout.write(JSON.stringify({
-                    outputText: result.outputText || '',
-                    continuation: result.continuation,
-                }));
-            }
-            process.stderr.write(`${result.error || 'PI task failed.'}\n`);
+            process.stdout.write(JSON.stringify({
+                ok: false,
+                outputText: result.outputText || '',
+                ...(result.continuation ? { continuation: result.continuation } : {}),
+                error: result.error,
+                code: result.code,
+                status: result.status,
+                cause: result.cause,
+            }));
+            process.stderr.write(`${formatError(result, 'PI task failed.')}\n`);
             process.exitCode = 1;
             return;
         }
@@ -435,4 +479,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === currentFilePath) {
     await main();
 }
 
-export const __testables = { runPi };
+export const __testables = { appendBoundedTail, runPi };

@@ -38,6 +38,21 @@ export function sessionDirectory(handle, env = process.env) {
     return directory;
 }
 
+function existingSessionDirectory(handle, env = process.env) {
+    const root = rootDirectory(env, 'PLOINKY_PI_SESSION_DIR', DEFAULT_SESSION_DIRECTORY);
+    const directory = path.join(root, assertHandle(handle));
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('unsafe_pi_session_directory');
+    return directory;
+}
+
+function existingStoreDirectory(env = process.env) {
+    const directory = rootDirectory(env, 'PLOINKY_CONTINUATION_STORE_DIR', DEFAULT_STORE_DIRECTORY);
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('unsafe_continuation_store');
+    return directory;
+}
+
 export function createContinuationHandle() {
     return crypto.randomUUID();
 }
@@ -70,7 +85,7 @@ export function writeContinuationRecord(handle, record, env = process.env) {
 
 export function readContinuationRecord(handle, env = process.env) {
     const normalized = assertHandle(handle);
-    const filePath = path.join(storeDirectory(env), `${normalized}.json`);
+    const filePath = path.join(existingStoreDirectory(env), `${normalized}.json`);
     const stat = fs.lstatSync(filePath);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('unsafe_continuation_record');
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -82,7 +97,7 @@ export function readContinuationRecord(handle, env = process.env) {
     return {
         ...parsed,
         projectDir: path.resolve(rawProjectDir),
-        sessionDir: sessionDirectory(normalized, env),
+        sessionDir: existingSessionDirectory(normalized, env),
     };
 }
 

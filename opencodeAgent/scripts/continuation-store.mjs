@@ -36,8 +36,16 @@ function ensureStore(env = process.env) {
     return directory;
 }
 
-function recordPath(handle, env = process.env) {
-    return path.join(ensureStore(env), `${assertHandle(handle)}.json`);
+function existingStore(env = process.env) {
+    const directory = storeDirectory(env);
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('unsafe_continuation_store');
+    return directory;
+}
+
+function recordPath(handle, env = process.env, { createStore = true } = {}) {
+    const directory = createStore ? ensureStore(env) : existingStore(env);
+    return path.join(directory, `${assertHandle(handle)}.json`);
 }
 
 export function createContinuationHandle() {
@@ -71,7 +79,7 @@ export function writeContinuationRecord(handle, record, env = process.env) {
 }
 
 export function readContinuationRecord(handle, env = process.env) {
-    const filePath = recordPath(handle, env);
+    const filePath = recordPath(handle, env, { createStore: false });
     assertRegularFileOrMissing(filePath);
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     if (parsed?.version !== 1 || parsed?.provider !== 'opencode') {

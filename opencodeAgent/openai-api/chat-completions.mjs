@@ -108,6 +108,7 @@ function failureContent(message, details = {}) {
 export async function handleChatCompletions(payload, {
     env = process.env,
     logStream = createContainerLogStream(),
+    sandboxDependencies,
 } = {}) {
     const request = extractOpenAiRequest(payload);
     const model = typeof request?.model === 'string' ? request.model.trim() : '';
@@ -143,14 +144,18 @@ export async function handleChatCompletions(payload, {
         logStream,
         env,
         createProjectDir: false,
+        sandboxDependencies,
     });
 
     if (!result.ok) {
         return openAiCompletion({
             model,
-            content: failureContent(result.error || 'OpenCode task failed.', {
+            content: failureContent(
+                result.code ? `${result.code}: ${result.error || 'OpenCode task failed.'}` : result.error || 'OpenCode task failed.',
+                {
                 output: result.outputText,
-            }),
+                },
+            ),
         });
     }
 

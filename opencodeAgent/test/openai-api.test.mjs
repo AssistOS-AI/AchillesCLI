@@ -11,39 +11,82 @@ import {
     parseSimpleModelIds,
     parseVerboseModels,
 } from '../openai-api/models.mjs';
-import { readRecentOpenCodeModel } from '../scripts/opencode-runner.mjs';
+import {
+    __testables as openCodeRunnerTestables,
+    readRecentOpenCodeModel,
+} from '../scripts/opencode-runner.mjs';
 
 const silentLogStream = { write() {} };
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
 const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
 const fakeBwrapPath = new URL('../../tests/helpers/fake-bwrap.sh', import.meta.url).pathname;
+const taskHarnessPath = new URL('../../tests/helpers/run-agent-task.mjs', import.meta.url).pathname;
 
-function runTaskScript(scriptPath, input, env, { signalAfterMs = 0 } = {}) {
+function sandboxDependencies() {
+    return {
+        bwrapPath: fakeBwrapPath,
+        procInspector: () => ({
+            ok: true,
+            processPid: process.pid,
+            procSelfPid: process.pid,
+            pidNamespaceVisible: true,
+            namespaceDevice: 'test-device',
+            namespaceInode: 'test-inode',
+            error: null,
+        }),
+        taskEnvironmentNames: [
+            'FAKE_OPENCODE_FAIL',
+            'FAKE_OPENCODE_WAIT_MS',
+            'OPENCODE_ARGS_PATH',
+            'OPENCODE_PROJECT_DIR',
+            'OPENCODE_TITLE_PATH',
+        ],
+    };
+}
+
+function runTaskScript(scriptPath, input, env, { signalAfterMs = 0, signalAfterPath = '' } = {}) {
     return new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [scriptPath], {
+        const child = spawn(process.execPath, [taskHarnessPath, scriptPath], {
             env: {
                 ...process.env,
-                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
+                TEST_TASK_BWRAP_BIN: fakeBwrapPath,
                 ...env,
             },
             stdio: ['pipe', 'pipe', 'pipe'],
         });
         let stdout = '';
         let stderr = '';
+        let closed = false;
         child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
         child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
         child.on('error', reject);
-        child.on('close', (code) => resolve({ code, stdout, stderr }));
+        child.on('close', (code) => {
+            closed = true;
+            resolve({ code, stdout, stderr });
+        });
         child.stdin.end(JSON.stringify({ input }));
         if (signalAfterMs > 0) {
             setTimeout(() => child.kill('SIGTERM'), signalAfterMs);
+        }
+        if (signalAfterPath) {
+            void (async () => {
+                while (!closed) {
+                    try {
+                        await fs.access(signalAfterPath);
+                        child.kill('SIGTERM');
+                        return;
+                    } catch {
+                        await new Promise((wait) => setTimeout(wait, 10));
+                    }
+                }
+            })();
         }
     });
 }
 
 async function makeFakeOpenCodeBin(dir) {
     const binPath = path.join(dir, 'fake-opencode.mjs');
-    await fs.writeFile(binPath, `#!/usr/bin/env node
+    await fs.writeFile(binPath, `#!${process.execPath}
 import fs from 'node:fs';
 
 const writeStdout = (text) => fs.writeSync(1, text);
@@ -53,7 +96,7 @@ if (process.argv[2] === 'session') {
     writeStdout(JSON.stringify([{
         id: 'ses_test_resume',
         title,
-        directory: process.env.OPENCODE_PROJECT_DIR
+        directory: process.cwd()
     }]));
     process.exit(0);
 }
@@ -104,6 +147,41 @@ test('recent OpenCode model lookup falls back when state is unavailable', async 
     );
 });
 
+test('OpenCode retained output is byte bounded without an elapsed task timeout', () => {
+    const retained = openCodeRunnerTestables.appendBoundedTail('', '€'.repeat(20_000));
+    assert.ok(Buffer.byteLength(retained, 'utf8') <= openCodeRunnerTestables.LOG_TAIL_LIMIT);
+    assert.match(retained, /€+$/u);
+});
+
+test('OpenCode capability failure returns the stable code before project or session mutation', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-capability-failure-test-'));
+    const workspaceDir = path.join(tmpDir, 'workspace');
+    const projectDir = path.join(workspaceDir, 'missing-project');
+    const continuationStore = path.join(tmpDir, 'continuations');
+    await fs.mkdir(workspaceDir);
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'must not run',
+        projectDir,
+    }, {
+        OPENCODE_BIN: path.join(tmpDir, 'missing-opencode'),
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_WORKSPACE_ROOT: workspaceDir,
+        TEST_TASK_BWRAP_MODE: 'fail',
+    });
+
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE:/);
+    assert.deepEqual(JSON.parse(result.stdout), {
+        ok: false,
+        outputText: '',
+        error: 'nested Bubblewrap capability is unavailable (private: test capability unavailable; empty: test capability unavailable)',
+        code: 'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE',
+        status: 422,
+    });
+    await assert.rejects(fs.access(projectDir));
+    await assert.rejects(fs.access(continuationStore));
+});
+
 test('chat completions runs OpenCode in WORKSPACE_PATH with requested model', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-agent-test-'));
     const workspaceDir = path.join(tmpDir, 'workspace');
@@ -127,9 +205,9 @@ test('chat completions runs OpenCode in WORKSPACE_PATH with requested model', as
             OPENCODE_ARGS_PATH: argsPath,
             WORKSPACE_PATH: workspaceDir,
             PLOINKY_WORKSPACE_ROOT: workspaceDir,
-            PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
         },
         logStream: silentLogStream,
+        sandboxDependencies: sandboxDependencies(),
     });
 
     assert.equal(completion.object, 'chat.completion');
@@ -141,7 +219,7 @@ test('chat completions runs OpenCode in WORKSPACE_PATH with requested model', as
         'run',
         '--auto',
         '--dir',
-        workspaceDir,
+        await fs.realpath(workspaceDir),
         '--model',
     ]);
     assert.equal(args[5], 'opencode/gpt-5');
@@ -157,40 +235,17 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
     await fs.mkdir(projectDir);
     const fakeBin = await makeFakeOpenCodeBin(tmpDir);
 
-    const result = await new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [executeTaskPath], {
-            env: {
-                ...process.env,
-                OPENCODE_BIN: fakeBin,
-                OPENCODE_ARGS_PATH: argsPath,
-                OPENCODE_TITLE_PATH: titlePath,
-                OPENCODE_PROJECT_DIR: projectDir,
-                PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
-                PLOINKY_WORKSPACE_ROOT: projectDir,
-                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
-            },
-            stdio: ['pipe', 'pipe', 'pipe'],
-        });
-
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', (chunk) => {
-            stdout += chunk.toString('utf8');
-        });
-        child.stderr.on('data', (chunk) => {
-            stderr += chunk.toString('utf8');
-        });
-        child.on('error', reject);
-        child.on('close', (code) => {
-            resolve({ code, stdout, stderr });
-        });
-        child.stdin.end(JSON.stringify({
-            input: {
-                prompt: 'Run MCP task.',
-                projectDir,
-                model: 'xai/grok-4.3',
-            },
-        }));
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Run MCP task.',
+        projectDir,
+        model: 'xai/grok-4.3',
+    }, {
+        OPENCODE_BIN: fakeBin,
+        OPENCODE_ARGS_PATH: argsPath,
+        OPENCODE_TITLE_PATH: titlePath,
+        OPENCODE_PROJECT_DIR: projectDir,
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
     });
 
     assert.equal(result.code, 0, result.stderr);
@@ -202,7 +257,7 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
     assert.doesNotMatch(result.stderr, /\[opencode|start projectDir|exit code/);
 
     const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.equal(args[args.indexOf('--dir') + 1], projectDir);
+    assert.equal(args[args.indexOf('--dir') + 1], await fs.realpath(projectDir));
     assert.equal(args[args.indexOf('--model') + 1], 'xai/grok-4.3');
     assert.match(args[args.indexOf('--title') + 1], /^ploinky-task-/);
     assert.equal(args.includes('--format'), false);
@@ -211,13 +266,14 @@ test('execute-task MCP wrapper preserves prompt projectDir model input', async (
         'utf8'
     ));
     assert.equal(record.sessionId, 'ses_test_resume');
-    assert.equal(record.projectDir, projectDir);
+    assert.equal(record.projectDir, await fs.realpath(projectDir));
 });
 
 test('failed OpenCode task returns a continuation handle when its session was created', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-agent-failed-task-test-'));
     const projectDir = path.join(tmpDir, 'project');
     const continuationStore = path.join(tmpDir, 'continuations');
+    const titlePath = path.join(tmpDir, 'title.txt');
     await fs.mkdir(projectDir);
     const fakeBin = await makeFakeOpenCodeBin(tmpDir);
 
@@ -227,7 +283,7 @@ test('failed OpenCode task returns a continuation handle when its session was cr
     }, {
         OPENCODE_BIN: fakeBin,
         OPENCODE_ARGS_PATH: path.join(tmpDir, 'args.json'),
-        OPENCODE_TITLE_PATH: path.join(tmpDir, 'title.txt'),
+        OPENCODE_TITLE_PATH: titlePath,
         OPENCODE_PROJECT_DIR: projectDir,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_WORKSPACE_ROOT: projectDir,
@@ -243,13 +299,14 @@ test('failed OpenCode task returns a continuation handle when its session was cr
         'utf8',
     ));
     assert.equal(record.sessionId, 'ses_test_resume');
-    assert.equal(record.projectDir, projectDir);
+    assert.equal(record.projectDir, await fs.realpath(projectDir));
 });
 
 test('cancelled OpenCode task saves the session before the wrapper exits', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode-agent-cancelled-task-test-'));
     const projectDir = path.join(tmpDir, 'project');
     const continuationStore = path.join(tmpDir, 'continuations');
+    const titlePath = path.join(tmpDir, 'title.txt');
     await fs.mkdir(projectDir);
     const fakeBin = await makeFakeOpenCodeBin(tmpDir);
 
@@ -259,12 +316,12 @@ test('cancelled OpenCode task saves the session before the wrapper exits', async
     }, {
         OPENCODE_BIN: fakeBin,
         OPENCODE_ARGS_PATH: path.join(tmpDir, 'args.json'),
-        OPENCODE_TITLE_PATH: path.join(tmpDir, 'title.txt'),
+        OPENCODE_TITLE_PATH: titlePath,
         OPENCODE_PROJECT_DIR: projectDir,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_WORKSPACE_ROOT: projectDir,
         FAKE_OPENCODE_WAIT_MS: '1000',
-    }, { signalAfterMs: 250 });
+    }, { signalAfterPath: titlePath });
 
     assert.equal(result.code, 1);
     const payload = JSON.parse(result.stdout);

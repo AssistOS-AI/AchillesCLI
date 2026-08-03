@@ -135,6 +135,12 @@ Ploinky integration boundary:
     existing generated Ploinky agent credential; it does not add a public HTTP
     service, delegation, or MCP execution tool.
 19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
+    Optional activation is additive: the candidate must be admitted and become
+    ready before routing selection changes, and a failed candidate must leave
+    the active generation plus unrelated Router and Soul Gateway routes
+    continuously available. A launcher surfaces the allowlisted safe lifecycle
+    code returned by that transaction without exposing its command line,
+    environment, credentials, or hidden routing state.
 20. The AchillesCLI background-task observer must persist and forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also use the textual MCP result as separate presentation metadata, never as appended log content. AchillesCLI uses that text only to locate the already emitted final-answer range in its persisted raw log and stores a bounded ordered `finalOutputRanges` entry for each retained completed turn instead of duplicating the text. Continuation preserves all earlier retained entries. Materialization must reconstruct the range list from legacy append-only journal records that contain only `finalOutputOffset` and `finalOutputLength`, so existing task logs require no rewrite. WebChat can then render intermediate output and every retained final answer distinctly.
 21. Async `opencodeAgent`, `piAgent`, and `codexAgent` executions must publish a generic
     continuation capability and an opaque versioned handle once their provider
@@ -279,16 +285,38 @@ Provider launcher discovery:
    may be mounted separately with the minimum required access; the broader
    workspace root and sibling projects must not be mounted. The task sandbox
    shares the existing network namespace so provider API routing continues to
-   work, but unshares user, PID, IPC, and UTS namespaces. It must filter dynamic
-   loader and runtime injection variables, `PLOINKY_MASTER_KEY`, and the raw
-   `PLOINKY_AGENT_SECRET` before starting the provider, while preserving the
-   scoped provider credentials needed for API calls. It must fail closed when
-   Bubblewrap or nested namespace creation is unavailable.
+   work, but unshares user, PID, IPC, and UTS namespaces. Before probing or
+   mutating project/session state, it must verify that outer `/proc/self`
+   represents the worker's current PID namespace, probe private proc first,
+   and try an empty proc directory after any private-mode failure. The selected
+   frozen capability is cached only for a bounded lifetime against the
+   Bubblewrap executable's real path, device, inode, size, and modification
+   time. No task or operator environment value may replace the production
+   Bubblewrap path or select a proc mode.
+   The project path must be authorized against the real workspace before any
+   directory creation. Missing components are created without following
+   symlinks and the final real path is revalidated before launch. The task
+   environment is constructed from an explicit allowlist and excludes
+   `PLOINKY_AGENT_API_KEY`, `PLOINKY_AGENT_PRIVATE_SECRET`,
+   `PLOINKY_AGENT_CLIENT_SECRET`, `PLOINKY_AGENT_SECRET`,
+   `PLOINKY_MASTER_KEY`, invocation/router credentials, and provider secrets.
+   Provider authentication must come from provider-owned persistent state or a
+   separately specified scoped broker; raw Ploinky credentials are not task
+   authority. Capability failure returns
+   `PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE` with status and cause before task or
+   persistent-state mutation. Provider execution has no elapsed timeout and
+   remains active until completion, cancellation, failure, or runtime
+   interruption, while retained stdout, stderr, final output, and diagnostics
+   remain byte bounded.
    The same contract applies when the Ploinky runtime itself is a container or
    a `lite-sandbox` Bubblewrap process: container profiles must permit nested
    namespaces, the installer must install `bubblewrap` only when `bwrap` is not
    already available, and readiness must prove that a nested sandbox can
-   actually start before the agent becomes ready. For initial
+   actually start before the agent becomes ready. The OpenCode and PI
+   privileged manifest declarations remain in place until the same immutable
+   runner candidate passes non-skipping private/empty, UID/GID/home, writable
+   path, readiness, and real-task proof in the exact unprivileged Box.
+   For initial
    PI tasks, the provider owns model selection. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,
    read the effective `defaultProvider`, `defaultModel`, and valid
@@ -328,6 +356,12 @@ Provider launcher discovery:
    `--model`, so the Codex configuration active for the new turn remains the
    model authority. Both initial and resumed execution place Codex's global
    `--sandbox workspace-write --ask-for-approval never` options before `exec`.
+   In generated-local Ploinky mode they also select a fixed custom provider at
+   the Router's local Soul Gateway Responses endpoint, reference the generated
+   `PLOINKY_AGENT_API_KEY` by environment-variable name, and use the `fast`
+   tier as a one-run config default without persisting credentials or provider
+   state in the workspace. Partial generated provenance fails before spawn,
+   while non-generated invocations retain normal Codex authentication.
    The selected project directory is writable, broader filesystem writes fail
    without prompting, and the wrapper must not bypass Codex's sandbox. On
    controlled cancellation the wrapper aborts Codex and preserves a
@@ -348,6 +382,10 @@ Provider launcher discovery:
    as running. When activation is required, both requests use explicit
    `global` mode; the research MCP call must wait until both runtimes are
    ready.
+   The shared runner image used by `GPTResearcher` is accepted only by immutable
+   digest after native-platform image inspection plus cold install, readiness,
+   and minimal task proof against that exact digest. A mutable tag or an image
+   merely present in a local daemon is not rollout or rollback identity.
 
 ## Decisions & Questions
 

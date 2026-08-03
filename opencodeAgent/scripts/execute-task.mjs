@@ -34,7 +34,14 @@ function parseInput(raw) {
     }
 }
 
-async function main() {
+function safeErrorText(result, fallback) {
+    const message = result?.error || fallback;
+    return result?.code && !String(message).includes(result.code)
+        ? `${result.code}: ${message}`
+        : message;
+}
+
+export async function main({ sandboxDependencies } = {}) {
     const cancellation = new AbortController();
     process.on('SIGTERM', () => cancellation.abort());
     const stdinData = await readStdin();
@@ -67,25 +74,41 @@ async function main() {
         captureSession: true,
         createProjectDir: true,
         signal: cancellation.signal,
+        sandboxDependencies,
     });
 
     if (!result.sessionId) {
-        process.stderr.write(`${result.error || 'OpenCode did not report a resumable session id.'}\n`);
+        process.stdout.write(JSON.stringify({
+            ok: false,
+            outputText: result.outputText || '',
+            error: result.error,
+            code: result.code,
+            status: result.status,
+            cause: result.cause,
+        }));
+        process.stderr.write(`${safeErrorText(result, 'OpenCode did not report a resumable session id.')}\n`);
         process.exitCode = 1;
         return;
     }
     const handle = createContinuationHandle();
     writeContinuationRecord(handle, {
         sessionId: result.sessionId,
-        projectDir: projectDir.trim(),
+        projectDir: result.effectiveProjectDir,
     });
     const payload = {
         outputText: result.outputText || '',
         continuation: continuationDescriptor(handle),
+        ...(!result.ok ? {
+            ok: false,
+            error: result.error,
+            code: result.code,
+            status: result.status,
+            cause: result.cause,
+        } : {}),
     };
     process.stdout.write(JSON.stringify(payload));
     if (!result.ok) {
-        process.stderr.write(`${result.error || 'OpenCode task failed.'}\n`);
+        process.stderr.write(`${safeErrorText(result, 'OpenCode task failed.')}\n`);
         process.exitCode = 1;
     }
 }

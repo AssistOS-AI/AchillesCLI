@@ -110,6 +110,40 @@ test('action reports failed async task as plain text', async () => {
     assert.equal(result, 'PI task failed: pi failed in queue\n\n[pi stderr] details');
 });
 
+test('action surfaces allowlisted lifecycle codes without diagnostic leakage', async () => {
+    const result = await action({
+        promptText: 'create a script',
+        agentClient: {
+            callToolWithoutWait: async () => ({
+                ok: false,
+                code: 'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE',
+                error: 'probe failed: command --secret provider-token',
+                logTail: 'PLOINKY_MASTER_KEY=hidden',
+            }),
+        },
+    });
+
+    assert.equal(
+        result,
+        'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE: The delegated task sandbox capability is unavailable.',
+    );
+    assert.doesNotMatch(result, /secret|provider-token|MASTER_KEY/);
+});
+
+test('action surfaces a safe code reconstructed on a thrown lifecycle error', async () => {
+    const error = new Error('internal runtime detail');
+    error.code = 'PLOINKY_BOX_RUNTIME_CAPABILITY_UNSUPPORTED';
+    const result = await action({
+        promptText: 'create a script',
+        agentClient: { callToolWithoutWait: async () => { throw error; } },
+    });
+
+    assert.equal(
+        result,
+        'PI task failed: PLOINKY_BOX_RUNTIME_CAPABILITY_UNSUPPORTED: The Box runtime does not support the required capability.',
+    );
+});
+
 test('action returns plain text for missing prompt', async () => {
     const result = await action({ promptText: '   ' });
 

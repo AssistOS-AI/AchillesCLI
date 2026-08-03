@@ -1,4 +1,5 @@
 import { callToolWhenReady, ensureAgentsRunning } from '../../../lib/ploinkyAgentRuntime.mjs';
+import { formatSafeLifecycleError } from '../../../lib/safeLifecycleError.mjs';
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -96,6 +97,8 @@ function resolveProjectDir(invocation = {}) {
 }
 
 function formatFailurePayload(payload) {
+    const safeLifecycleError = formatSafeLifecycleError(payload);
+    if (safeLifecycleError) return safeLifecycleError;
     const errorText = trim(payload.error);
     const outputText = trim(payload.outputText || payload.logTail);
     if (!errorText) {
@@ -118,7 +121,7 @@ function normalizeAnswer(payload) {
     if (trim(payload?.metadata?.taskId || payload?.result?.metadata?.taskId)) {
         return 'Task started.';
     }
-    if (payload.ok === false && payload.error) {
+    if (payload.ok === false) {
         return formatFailurePayload(payload);
     }
     const outputText = trim(payload.outputText);
@@ -147,6 +150,8 @@ export async function action(invocation = {}) {
         }));
         return normalizeAnswer(result);
     } catch (error) {
+        const safeLifecycleError = formatSafeLifecycleError(error?.task || error);
+        if (safeLifecycleError) return `PI task failed: ${safeLifecycleError}`;
         if (error?.task) {
             const failed = parseTaskResult(error.task);
             return `PI task failed: ${formatFailurePayload(failed)}`;

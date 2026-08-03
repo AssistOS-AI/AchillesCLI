@@ -170,6 +170,40 @@ test('action reports failed async opencode task errors', async () => {
     assert.equal(result, 'OpenCode task failed: opencode failed in queue\n\n[opencode stderr] details');
 });
 
+test('action surfaces allowlisted lifecycle codes without diagnostic leakage', async () => {
+    const result = await action({
+        promptText: 'build artifacts',
+        agentClient: {
+            callToolWithoutWait: async () => ({
+                ok: false,
+                code: 'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE',
+                error: 'probe failed: command --secret provider-token',
+                logTail: 'PLOINKY_MASTER_KEY=hidden',
+            }),
+        },
+    });
+
+    assert.equal(
+        result,
+        'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE: The delegated task sandbox capability is unavailable.',
+    );
+    assert.doesNotMatch(result, /secret|provider-token|MASTER_KEY/);
+});
+
+test('action surfaces a safe code reconstructed on a thrown lifecycle error', async () => {
+    const error = new Error('internal runtime detail');
+    error.code = 'PLOINKY_MANIFEST_SECURITY_INVALID';
+    const result = await action({
+        promptText: 'build artifacts',
+        agentClient: { callToolWithoutWait: async () => { throw error; } },
+    });
+
+    assert.equal(
+        result,
+        'OpenCode task failed: PLOINKY_MANIFEST_SECURITY_INVALID: The agent manifest security declaration is invalid.',
+    );
+});
+
 test('action uses process cwd only without mainAgent.startDir', async () => {
     const calls = [];
     await action({

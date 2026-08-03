@@ -5,7 +5,13 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import test from 'node:test';
 
-import { buildCodexArgs, eventLogText } from '../scripts/codex-runner.mjs';
+import {
+    buildCodexArgs,
+    eventLogText,
+    resolveManagedSoulProvider,
+} from '../scripts/codex-runner.mjs';
+
+const UNMANAGED_ENV = Object.freeze({});
 
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
 const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
@@ -64,7 +70,7 @@ test('Codex initial arguments persist a thread and allow an explicit initial mod
     assert.deepEqual(buildCodexArgs({
         prompt: 'Build this.',
         model: 'gpt-initial',
-    }), [
+    }, UNMANAGED_ENV), [
         '--sandbox',
         'workspace-write',
         '--ask-for-approval',
@@ -83,7 +89,7 @@ test('Codex resume arguments apply an explicit task model', () => {
         prompt: 'Continue.',
         model: 'must-not-be-used',
         threadId: 'thread-1',
-    });
+    }, UNMANAGED_ENV);
     assert.deepEqual(args, [
         '--sandbox',
         'workspace-write',
@@ -99,6 +105,70 @@ test('Codex resume arguments apply an explicit task model', () => {
         'Continue.',
     ]);
     assert.equal(args.includes('--model'), true);
+});
+
+test('managed Codex uses generated Soul identity, local Router, and fast tier by default', () => {
+    const env = {
+        PLOINKY_ROUTER_URL: 'http://host.containers.internal:8080',
+        PLOINKY_AGENT_API_KEY: 'generated-agent-identity',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+    };
+    assert.deepEqual(resolveManagedSoulProvider(env), {
+        provider: 'ploinky_soul',
+        baseUrl: 'http://host.containers.internal:8080/base-agent-additional-server/soul-gateway/7000/v1',
+        model: 'fast',
+    });
+    const args = buildCodexArgs({ prompt: 'Build this.' }, env);
+    assert.deepEqual(args.slice(0, 4), [
+        '--sandbox',
+        'workspace-write',
+        '--ask-for-approval',
+        'never',
+    ]);
+    assert.ok(args.includes('model_provider="ploinky_soul"'));
+    assert.ok(args.includes('model_providers.ploinky_soul.env_key="PLOINKY_AGENT_API_KEY"'));
+    assert.ok(args.includes('model_providers.ploinky_soul.wire_api="responses"'));
+    assert.ok(args.includes('model_providers.ploinky_soul.requires_openai_auth=false'));
+    assert.ok(args.includes('shell_environment_policy.ignore_default_excludes=false'));
+    assert.ok(args.includes('model_providers.ploinky_soul.base_url="http://host.containers.internal:8080/base-agent-additional-server/soul-gateway/7000/v1"'));
+    assert.ok(args.includes('model="fast"'));
+    assert.equal(args.includes('--model'), false);
+    assert.equal(args.includes('generated-agent-identity'), false);
+
+    const resumed = buildCodexArgs({
+        prompt: 'Continue.',
+        threadId: 'thread-1',
+    }, env);
+    assert.ok(resumed.includes('model="fast"'));
+    assert.ok(resumed.includes('model_provider="ploinky_soul"'));
+    assert.equal(resumed.includes('--model'), false);
+
+    const explicit = buildCodexArgs({
+        prompt: 'Build this.',
+        model: 'direct-model',
+    }, env);
+    assert.equal(explicit.includes('model="fast"'), false);
+    assert.equal(explicit[explicit.indexOf('--model') + 1], 'direct-model');
+});
+
+test('managed Codex fails closed when Router identity configuration is partial', () => {
+    assert.throws(
+        () => buildCodexArgs({ prompt: 'Build this.' }, {
+            PLOINKY_ROUTER_URL: 'http://router.test',
+            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+            PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+        }),
+        /requires both PLOINKY_ROUTER_URL and PLOINKY_AGENT_API_KEY/,
+    );
+    assert.throws(
+        () => buildCodexArgs({ prompt: 'Build this.' }, {
+            PLOINKY_AGENT_API_KEY: 'identity',
+            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+            PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+        }),
+        /requires both PLOINKY_ROUTER_URL and PLOINKY_AGENT_API_KEY/,
+    );
 });
 
 test('eventLogText exposes provider text without synthetic decoration', () => {
@@ -256,7 +326,7 @@ test('cancelled Codex execution saves the observed thread before exiting', async
         CODEX_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         FAKE_CODEX_WAIT_MS: '1000',
-    }, { signalAfterMs: 100 });
+    }, { signalAfterMs: 700 });
 
     assert.equal(result.code, 1);
     const payload = JSON.parse(result.stdout);

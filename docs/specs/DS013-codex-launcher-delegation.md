@@ -70,6 +70,21 @@ the wrapper must not disable the Codex sandbox.
 An optional initial model remains available to direct internal MCP callers,
 but `launch-codex` never sends it.
 
+When Ploinky marks both `PLOINKY_ROUTER_URL` and
+`PLOINKY_AGENT_API_KEY` as generated, the wrapper configures one fixed Codex
+custom provider for the local Router path
+`/base-agent-additional-server/soul-gateway/7000/v1`. The provider uses the
+Responses wire API, reads only the generated agent key named by `env_key`, and
+sets `requires_openai_auth=false`. The managed default is the Soul Gateway
+`fast` tier through a one-run `model="fast"` config override; a direct internal
+model argument remains authoritative. Initial and resumed executions receive
+the same provider overrides. Partial generated provenance, a missing generated
+key or Router URL, or an invalid Router URL fails before Codex is spawned.
+Outside generated-local mode the existing Codex login or `OPENAI_API_KEY`
+behavior is unchanged. The wrapper retains Codex's default secret-name
+exclusions for child shell commands so provider credentials remain available
+to Codex itself but are not inherited by commands Codex launches.
+
 Codex stdout is JSONL control data. The wrapper parses it incrementally,
 captures `thread.started.thread_id`, forwards completed agent-message text and
 completed command-output text immediately to the AgentServer log stream, and

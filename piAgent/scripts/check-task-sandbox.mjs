@@ -6,6 +6,7 @@ try {
     const result = probeNestedBubblewrap();
     process.stdout.write(`nested-bwrap-ok proc=${result.procMode}\n`);
 } catch (error) {
-    process.stderr.write(`${error?.message || error}\n`);
+    const code = typeof error?.code === 'string' ? `${error.code}: ` : '';
+    process.stderr.write(`${code}${error?.message || error}\n`);
     process.exitCode = 1;
 }

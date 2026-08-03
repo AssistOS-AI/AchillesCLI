@@ -36,6 +36,9 @@ The skill returns plain text only. Successful runs return `PI task completed.`
 and append the bounded `outputText` returned by `piAgent.execute-task` when that
 field is non-empty. Failed runs return the agent error text or an MCP failure
 message.
+Allowlisted lifecycle failures surface their stable code with a fixed safe
+description. The launcher must not include command lines, environment values,
+credentials, hidden routing state, or raw diagnostic tails with such a code.
 
 The call path uses `AgentMcpClient` directly via `createAgentClient` and invokes
 `callToolWithoutWait`. Before the MCP call, it checks Marketplace status for

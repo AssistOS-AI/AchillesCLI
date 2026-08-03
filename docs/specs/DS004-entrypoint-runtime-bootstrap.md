@@ -54,6 +54,11 @@ Runtime wiring:
    starting Bubblewrap, the trusted entrypoint must also verify that `/proc/self`
    identifies its own process id and that its own PID namespace handle is visible.
    A proc filesystem inherited from a parent PID namespace is a startup error.
+   Optional OpenCode and PI task workers apply the same outer-proc identity
+   prerequisite before their own nested-Bubblewrap probe or any project/session
+   mutation. They probe a private proc mount first and an empty proc directory
+   after any private-mode failure; task input and environment cannot choose or
+   loosen that trusted selection.
 10. The Unix socket protocol must preserve its response half after the client finishes writing a request, because broker handlers may complete asynchronously.
 11. In webchat mode, structured interaction responses received on stdin must be demultiplexed before ordinary prompt processing and forwarded through the trusted broker control channel.
 12. A successful `/permissions` change must update the trusted Broker before the confirmed mode is written atomically to the workspace settings file.

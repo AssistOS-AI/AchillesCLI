@@ -3,15 +3,29 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { buildTaskSandboxLaunch } from './task-sandbox.mjs';
+import {
+    buildTaskSandboxLaunch,
+    prepareTaskSandbox,
+} from './task-sandbox.mjs';
 const DEFAULT_OPENCODE_HOME = '/root';
 const LOG_TAIL_LIMIT = 16 * 1024;
+const CONTROL_OUTPUT_LIMIT = 1024 * 1024;
 const SEMANTIC_FAILURE_PATTERNS = [
     /permission requested:\s*external_directory/i,
     /auto-rejecting/i,
     /the user rejected permission/i,
     /read \. failed/i,
 ];
+
+function serializeCause(cause, depth = 0) {
+    if (!cause || depth >= 4) return undefined;
+    if (typeof cause !== 'object') return { message: String(cause) };
+    return {
+        ...(typeof cause.code === 'string' ? { code: cause.code } : {}),
+        ...(typeof cause.message === 'string' ? { message: cause.message } : {}),
+        ...(cause.cause ? { cause: serializeCause(cause.cause, depth + 1) } : {}),
+    };
+}
 
 export function resolveOpenCodeBin(env = process.env) {
     const home = String(env.HOME || DEFAULT_OPENCODE_HOME);
@@ -30,6 +44,7 @@ function spawnSandboxedOpenCode({
     projectDir,
     env,
     stdio = ['ignore', 'pipe', 'pipe'],
+    sandboxDependencies,
 }) {
     const childEnv = {
         ...process.env,
@@ -50,6 +65,7 @@ function spawnSandboxedOpenCode({
             '/root/.local/share/opencode',
             '/root/.local/state/opencode',
         ]),
+        dependencies: sandboxDependencies,
     });
     return spawn(launch.command, launch.args, {
         cwd: launch.cwd,
@@ -74,11 +90,13 @@ export function logLine(logStream, message) {
 }
 
 function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
-    const next = `${current}${chunk}`;
-    if (next.length <= limit) {
-        return next;
-    }
-    return next.slice(next.length - limit);
+    const next = Buffer.concat([
+        Buffer.from(String(current || ''), 'utf8'),
+        Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk || ''), 'utf8'),
+    ]);
+    let start = Math.max(0, next.length - limit);
+    while (start < next.length && (next[start] & 0xc0) === 0x80) start += 1;
+    return next.subarray(start).toString('utf8');
 }
 
 export async function readRecentOpenCodeModel(env = process.env) {
@@ -110,7 +128,7 @@ export async function readRecentOpenCodeModel(env = process.env) {
     }
 }
 
-function listOpenCodeSessions({ opencodeBin, projectDir, env }) {
+function listOpenCodeSessions({ opencodeBin, projectDir, env, sandboxDependencies }) {
     return new Promise((resolve, reject) => {
         const child = spawnSandboxedOpenCode({
             opencodeBin,
@@ -124,20 +142,25 @@ function listOpenCodeSessions({ opencodeBin, projectDir, env }) {
             ],
             projectDir,
             env,
+            sandboxDependencies,
         });
-        const stdout = [];
-        const stderr = [];
-        child.stdout.on('data', (chunk) => stdout.push(chunk));
-        child.stderr.on('data', (chunk) => stderr.push(chunk));
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+            stdout = appendBoundedTail(stdout, chunk, CONTROL_OUTPUT_LIMIT);
+        });
+        child.stderr.on('data', (chunk) => {
+            stderr = appendBoundedTail(stderr, chunk, LOG_TAIL_LIMIT);
+        });
         child.on('error', reject);
         child.on('close', (code) => {
             if (code !== 0) {
-                reject(new Error(Buffer.concat(stderr).toString('utf8').trim()
+                reject(new Error(stderr.trim()
                     || `Unable to list OpenCode sessions (exit ${code}).`));
                 return;
             }
             try {
-                resolve(JSON.parse(Buffer.concat(stdout).toString('utf8')));
+                resolve(JSON.parse(stdout));
             } catch {
                 reject(new Error('OpenCode returned an invalid session list.'));
             }
@@ -145,8 +168,13 @@ function listOpenCodeSessions({ opencodeBin, projectDir, env }) {
     });
 }
 
-async function findSessionId({ opencodeBin, projectDir, env, title }) {
-    const sessions = await listOpenCodeSessions({ opencodeBin, projectDir, env });
+async function findSessionId({ opencodeBin, projectDir, env, title, sandboxDependencies }) {
+    const sessions = await listOpenCodeSessions({
+        opencodeBin,
+        projectDir,
+        env,
+        sandboxDependencies,
+    });
     if (!Array.isArray(sessions)) return '';
     const expectedDirectory = path.resolve(projectDir);
     const match = sessions.find((session) => (
@@ -156,26 +184,31 @@ async function findSessionId({ opencodeBin, projectDir, env, title }) {
     return String(match?.id || '').trim();
 }
 
-function exportSession({ opencodeBin, projectDir, env, sessionId }) {
+function exportSession({ opencodeBin, projectDir, env, sessionId, sandboxDependencies }) {
     return new Promise((resolve, reject) => {
         const child = spawnSandboxedOpenCode({
             opencodeBin,
             args: ['export', sessionId],
             projectDir,
             env,
+            sandboxDependencies,
         });
-        const stdout = [];
-        const stderr = [];
-        child.stdout.on('data', (chunk) => stdout.push(chunk));
-        child.stderr.on('data', (chunk) => stderr.push(chunk));
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+            stdout = appendBoundedTail(stdout, chunk, CONTROL_OUTPUT_LIMIT);
+        });
+        child.stderr.on('data', (chunk) => {
+            stderr = appendBoundedTail(stderr, chunk, LOG_TAIL_LIMIT);
+        });
         child.on('error', reject);
         child.on('close', (code) => {
             if (code !== 0) {
-                reject(new Error(Buffer.concat(stderr).toString('utf8').trim()
+                reject(new Error(stderr.trim()
                     || `Unable to export OpenCode session (exit ${code}).`));
                 return;
             }
-            const raw = Buffer.concat(stdout).toString('utf8');
+            const raw = stdout;
             const jsonStart = raw.indexOf('{');
             if (jsonStart < 0) {
                 reject(new Error('OpenCode returned an invalid session export.'));
@@ -190,15 +223,27 @@ function exportSession({ opencodeBin, projectDir, env, sessionId }) {
     });
 }
 
-async function finalSessionText({ opencodeBin, projectDir, env, sessionId }) {
-    const exported = await exportSession({ opencodeBin, projectDir, env, sessionId });
+async function finalSessionText({
+    opencodeBin,
+    projectDir,
+    env,
+    sessionId,
+    sandboxDependencies,
+}) {
+    const exported = await exportSession({
+        opencodeBin,
+        projectDir,
+        env,
+        sessionId,
+        sandboxDependencies,
+    });
     const messages = Array.isArray(exported?.messages) ? exported.messages : [];
     const assistant = messages.findLast((message) => message?.info?.role === 'assistant');
     if (!assistant || !Array.isArray(assistant.parts)) return '';
-    return assistant.parts
+    return appendBoundedTail('', assistant.parts
         .filter((part) => part?.type === 'text' && typeof part.text === 'string')
         .map((part) => part.text)
-        .join('');
+        .join(''));
 }
 
 export function runOpenCode({
@@ -212,6 +257,7 @@ export function runOpenCode({
     env = process.env,
     opencodeBin = env.OPENCODE_BIN || resolveOpenCodeBin(env),
     signal,
+    sandboxDependencies,
 }) {
     return new Promise((resolve, reject) => {
         const startedAt = Date.now();
@@ -242,6 +288,7 @@ export function runOpenCode({
             args,
             projectDir,
             env,
+            sandboxDependencies,
         });
         const abort = () => {
             try { child.kill('SIGTERM'); } catch (_) { }
@@ -253,14 +300,12 @@ export function runOpenCode({
         let stderrTail = '';
 
         child.stdout.on('data', (chunk) => {
-            const text = chunk.toString('utf8');
-            stdoutTail = appendBoundedTail(stdoutTail, text);
+            stdoutTail = appendBoundedTail(stdoutTail, chunk);
             logStream.write(chunk);
         });
 
         child.stderr.on('data', (chunk) => {
-            const text = chunk.toString('utf8');
-            stderrTail = appendBoundedTail(stderrTail, text);
+            stderrTail = appendBoundedTail(stderrTail, chunk);
             logStream.write(chunk);
         });
 
@@ -279,6 +324,7 @@ export function runOpenCode({
                         projectDir,
                         env,
                         title: sessionTitle,
+                        sandboxDependencies,
                     });
                 } catch (error) {
                     reject(error);
@@ -293,6 +339,7 @@ export function runOpenCode({
                         projectDir,
                         env,
                         sessionId: resolvedSessionId,
+                        sandboxDependencies,
                     }) || stdoutTail;
                 } catch {
                     outputText = stdoutTail;
@@ -338,6 +385,7 @@ export async function executeOpenCodeTask({
     env = process.env,
     createProjectDir = true,
     signal,
+    sandboxDependencies,
 }) {
     const resolvedProjectDir = path.resolve(projectDir);
     let effectiveProjectDir = resolvedProjectDir;
@@ -345,25 +393,21 @@ export async function executeOpenCodeTask({
     const resolvedVariant = typeof variant === 'string' ? variant.trim() : '';
     const taskPrompt = String(prompt || '').trim();
 
-    if (createProjectDir) {
-        try {
-            await fs.mkdir(effectiveProjectDir, { recursive: true });
-        } catch (error) {
-            return {
-                ok: false,
-                error: `Failed to create project directory: ${error.message}`,
-                projectDir: resolvedProjectDir,
-                effectiveProjectDir,
-                model: resolvedModel,
-            };
-        }
-    }
     try {
-        effectiveProjectDir = await fs.realpath(resolvedProjectDir);
+        const prepared = prepareTaskSandbox({
+            projectDir: resolvedProjectDir,
+            env,
+            createProjectDir,
+            dependencies: sandboxDependencies,
+        });
+        effectiveProjectDir = prepared.projectDir;
     } catch (error) {
         return {
             ok: false,
-            error: `Failed to resolve project directory: ${error.message}`,
+            code: error?.code,
+            status: error?.status,
+            cause: serializeCause(error?.cause),
+            error: error?.message || String(error),
             projectDir: resolvedProjectDir,
             effectiveProjectDir,
             model: resolvedModel,
@@ -382,6 +426,7 @@ export async function executeOpenCodeTask({
             env,
             opencodeBin: env.OPENCODE_BIN || resolveOpenCodeBin(env),
             signal,
+            sandboxDependencies,
         });
 
         const semanticFailure = detectSemanticFailure(result);
@@ -412,6 +457,9 @@ export async function executeOpenCodeTask({
     } catch (error) {
         return {
             ok: false,
+            code: error?.code,
+            status: error?.status,
+            cause: serializeCause(error?.cause),
             error: `OpenCode task failed: ${error.message}`,
             projectDir: resolvedProjectDir,
             effectiveProjectDir,
@@ -419,3 +467,9 @@ export async function executeOpenCodeTask({
         };
     }
 }
+
+export const __testables = {
+    CONTROL_OUTPUT_LIMIT,
+    LOG_TAIL_LIMIT,
+    appendBoundedTail,
+};

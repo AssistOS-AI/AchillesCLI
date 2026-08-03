@@ -153,9 +153,23 @@ runtime are read-only, while only the OpenCode configuration, cache, data, and
 state directories needed for normal operation are mounted separately writable.
 The wrapper must reject missing, external, or symlink-escaped project
 directories, share networking for provider calls, filter loader/runtime
-injection variables and raw Ploinky master/agent secrets, and fail closed if
-nested Bubblewrap cannot start. The scoped `PLOINKY_AGENT_API_KEY` remains
-available for the configured Soul Gateway provider.
+injection variables, all raw Ploinky agent/private/client/master credentials,
+invocation/router credentials, and provider secrets, and fail closed if nested
+Bubblewrap cannot start. Provider authentication for delegated work comes from
+provider-owned persistent state or a separately specified scoped broker; the
+configured Soul Gateway template does not authorize exposing
+`PLOINKY_AGENT_API_KEY` to a delegated task.
+Before probing Bubblewrap or mutating project/session state, the wrapper must
+verify that outer `/proc/self` represents its current PID namespace. It probes
+private proc first and an empty proc directory after any private failure; task
+input and environment cannot choose the mode or replace `/usr/bin/bwrap`.
+Project authorization occurs before directory creation, missing components are
+created without following symlinks, and the final real path is revalidated.
+Capability failure is structured with status `422` and code
+`PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE`; the launcher surfaces only allowlisted
+safe lifecycle codes and never command lines, environment, credentials, or
+hidden routing state. Execution remains unbounded until completion or
+cancellation, while retained output and diagnostics are byte bounded.
 Container profiles must allow nested user/mount namespaces. The installer must
 reuse an existing `bwrap` binary in a Ploinky host sandbox, install Bubblewrap
 when it is absent in a container, and readiness must execute a nested sandbox
@@ -165,7 +179,9 @@ The installed OpenCode config must add an OpenAI-compatible provider named
 `soul-gateway`. Its base URL must be derived from `PLOINKY_ROUTER_URL`, and its
 API key must reference Ploinky's generated `PLOINKY_AGENT_API_KEY` through
 OpenCode environment substitution; neither resolved value may be written into
-the repository template. The provider must expose `fast`, `deep`, and `plan`
+the repository template. That reference supports explicitly authorized
+non-delegated runtime paths only; delegated Bubblewrap tasks do not inherit the
+raw key. The provider must expose `fast`, `deep`, and `plan`
 as `soul-gateway/fast`, `soul-gateway/deep`, and `soul-gateway/plan`. The config
 must not set `model` or `small_model`, must not allowlist providers, and must
 therefore preserve OpenCode's existing recent-model selection and other

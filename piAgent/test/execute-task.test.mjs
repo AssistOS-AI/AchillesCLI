@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import test from 'node:test';
 
 import {
+    __testables as piRunnerTestables,
     createPiJsonEventParser,
     readCurrentPiModel,
 } from '../scripts/execute-task.mjs';
@@ -13,33 +14,51 @@ import {
 const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
 const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
 const fakeBwrapPath = new URL('../../tests/helpers/fake-bwrap.sh', import.meta.url).pathname;
+const taskHarnessPath = new URL('../../tests/helpers/run-agent-task.mjs', import.meta.url).pathname;
 
-function runTaskScript(scriptPath, input, env, { signalAfterMs = 0 } = {}) {
+function runTaskScript(scriptPath, input, env, { signalAfterMs = 0, signalAfterPath = '' } = {}) {
     return new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [scriptPath], {
+        const child = spawn(process.execPath, [taskHarnessPath, scriptPath], {
             env: {
                 ...process.env,
-                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
+                TEST_TASK_BWRAP_BIN: fakeBwrapPath,
                 ...env,
             },
             stdio: ['pipe', 'pipe', 'pipe'],
         });
         let stdout = '';
         let stderr = '';
+        let closed = false;
         child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
         child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
         child.on('error', reject);
-        child.on('close', (code) => resolve({ code, stdout, stderr }));
+        child.on('close', (code) => {
+            closed = true;
+            resolve({ code, stdout, stderr });
+        });
         child.stdin.end(JSON.stringify({ input }));
         if (signalAfterMs > 0) {
             setTimeout(() => child.kill('SIGTERM'), signalAfterMs);
+        }
+        if (signalAfterPath) {
+            void (async () => {
+                while (!closed) {
+                    try {
+                        await fs.access(signalAfterPath);
+                        child.kill('SIGTERM');
+                        return;
+                    } catch {
+                        await new Promise((wait) => setTimeout(wait, 10));
+                    }
+                }
+            })();
         }
     });
 }
 
 async function makeFakePiBin(directory) {
     const binPath = path.join(directory, 'fake-pi.mjs');
-    await fs.writeFile(binPath, `#!/usr/bin/env node
+    await fs.writeFile(binPath, `#!${process.execPath}
 import fs from 'node:fs';
 
 fs.writeFileSync(process.env.PI_ARGS_PATH, JSON.stringify(process.argv.slice(2)));
@@ -204,6 +223,44 @@ test('PI JSON parser captures assistant errors without leaking diagnostics into 
     assert.equal(parser.getErrorMessage(), 'Authentication failed.');
 });
 
+test('PI retained output is byte bounded without an elapsed task timeout', () => {
+    const retained = piRunnerTestables.appendBoundedTail('', '€'.repeat(20_000));
+    assert.ok(Buffer.byteLength(retained, 'utf8') <= 16 * 1024);
+    assert.match(retained, /€+$/u);
+});
+
+test('PI capability failure returns the stable code before project or session mutation', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-capability-failure-test-'));
+    const workspaceRoot = path.join(temporaryDirectory, 'workspace');
+    const projectDir = path.join(workspaceRoot, 'missing-project');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const sessionRoot = path.join(temporaryDirectory, 'sessions');
+    await fs.mkdir(workspaceRoot);
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'must not run',
+        projectDir,
+    }, {
+        PI_BIN: path.join(temporaryDirectory, 'missing-pi'),
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: workspaceRoot,
+        TEST_TASK_BWRAP_MODE: 'fail',
+    });
+
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE:/);
+    assert.deepEqual(JSON.parse(result.stdout), {
+        ok: false,
+        outputText: '',
+        error: 'PI task sandbox rejected projectDir: nested Bubblewrap capability is unavailable (private: test capability unavailable; empty: test capability unavailable)',
+        code: 'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE',
+        status: 422,
+    });
+    await assert.rejects(fs.access(projectDir));
+    await assert.rejects(fs.access(continuationStore));
+    await assert.rejects(fs.access(sessionRoot));
+});
+
 test('PI wrapper creates a resumable session and returns a continuation handle', async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-test-'));
     const projectDir = path.join(temporaryDirectory, 'project');
@@ -214,28 +271,17 @@ test('PI wrapper creates a resumable session and returns a continuation handle',
     await fs.mkdir(projectDir);
     const piBin = await makeFakePiBin(temporaryDirectory);
 
-    const result = await new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [executeTaskPath], {
-            env: {
-                ...process.env,
-                PI_BIN: piBin,
-                PI_ARGS_PATH: argsPath,
-                PI_ENV_PATH: envPath,
-                PI_CODING_AGENT_DIR: '/root/.pi/agent',
-                PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
-                PLOINKY_PI_SESSION_DIR: sessionRoot,
-                PLOINKY_WORKSPACE_ROOT: projectDir,
-                PLOINKY_TASK_BWRAP_BIN: fakeBwrapPath,
-            },
-            stdio: ['pipe', 'pipe', 'pipe'],
-        });
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
-        child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
-        child.on('error', reject);
-        child.on('close', (code) => resolve({ code, stdout, stderr }));
-        child.stdin.end(JSON.stringify({ input: { prompt: 'Do the task', projectDir } }));
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Do the task',
+        projectDir,
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PI_ENV_PATH: envPath,
+        PI_CODING_AGENT_DIR: '/root/.pi/agent',
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
     });
 
     assert.equal(result.code, 0, result.stderr);
@@ -265,6 +311,7 @@ test('failed PI task returns and persists its continuation handle', async () => 
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-failed-task-test-'));
     const projectDir = path.join(temporaryDirectory, 'project');
     const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
     const sessionRoot = path.join(temporaryDirectory, 'sessions');
     await fs.mkdir(projectDir);
     const piBin = await makeFakePiBin(temporaryDirectory);
@@ -274,7 +321,7 @@ test('failed PI task returns and persists its continuation handle', async () => 
         projectDir,
     }, {
         PI_BIN: piBin,
-        PI_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
+        PI_ARGS_PATH: argsPath,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_PI_SESSION_DIR: sessionRoot,
         PLOINKY_WORKSPACE_ROOT: projectDir,
@@ -290,7 +337,7 @@ test('failed PI task returns and persists its continuation handle', async () => 
         'utf8',
     ));
     assert.equal(record.sessionId, payload.continuation.handle);
-    assert.equal(record.projectDir, projectDir);
+    assert.equal(record.projectDir, await fs.realpath(projectDir));
 });
 
 test('PI assistant error fails the task even when the PI process exits successfully', async () => {
@@ -327,6 +374,7 @@ test('cancelled PI task returns its preallocated continuation handle', async () 
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-cancelled-task-test-'));
     const projectDir = path.join(temporaryDirectory, 'project');
     const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
     await fs.mkdir(projectDir);
     const piBin = await makeFakePiBin(temporaryDirectory);
 
@@ -335,12 +383,12 @@ test('cancelled PI task returns its preallocated continuation handle', async () 
         projectDir,
     }, {
         PI_BIN: piBin,
-        PI_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
+        PI_ARGS_PATH: argsPath,
         PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
         PLOINKY_PI_SESSION_DIR: path.join(temporaryDirectory, 'sessions'),
         PLOINKY_WORKSPACE_ROOT: projectDir,
         FAKE_PI_WAIT_MS: '1000',
-    }, { signalAfterMs: 100 });
+    }, { signalAfterPath: argsPath });
 
     assert.equal(result.code, 1);
     const payload = JSON.parse(result.stdout);

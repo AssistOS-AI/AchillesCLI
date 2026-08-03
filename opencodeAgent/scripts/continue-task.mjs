@@ -9,6 +9,8 @@ import {
     executeOpenCodeTask,
     readRecentOpenCodeModel,
 } from './opencode-runner.mjs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 async function readStdin() {
     process.stdin.setEncoding('utf8');
@@ -26,7 +28,14 @@ function parseInput(raw) {
     }
 }
 
-async function main() {
+function safeErrorText(result, fallback) {
+    const message = result?.error || fallback;
+    return result?.code && !String(message).includes(result.code)
+        ? `${result.code}: ${message}`
+        : message;
+}
+
+export async function main({ sandboxDependencies } = {}) {
     const cancellation = new AbortController();
     process.on('SIGTERM', () => cancellation.abort());
     const input = parseInput(await readStdin());
@@ -46,13 +55,19 @@ async function main() {
         variant: currentModel.variant,
         createProjectDir: false,
         signal: cancellation.signal,
+        sandboxDependencies,
     });
     if (!result.ok) {
         process.stdout.write(JSON.stringify({
+            ok: false,
             outputText: result.outputText || '',
             continuation: continuationDescriptor(handle),
+            error: result.error,
+            code: result.code,
+            status: result.status,
+            cause: result.cause,
         }));
-        process.stderr.write(`${result.error || 'OpenCode continuation failed.'}\n`);
+        process.stderr.write(`${safeErrorText(result, 'OpenCode continuation failed.')}\n`);
         process.exitCode = 1;
         return;
     }
@@ -66,7 +81,10 @@ async function main() {
     }));
 }
 
-main().catch((error) => {
-    process.stderr.write(`${error?.message || error}\n`);
-    process.exitCode = 1;
-});
+const currentFilePath = fileURLToPath(import.meta.url);
+if (process.argv[1] && path.resolve(process.argv[1]) === currentFilePath) {
+    main().catch((error) => {
+        process.stderr.write(`${error?.message || error}\n`);
+        process.exitCode = 1;
+    });
+}
