@@ -319,12 +319,14 @@ Provider launcher discovery:
    namespaces, the installer must install `bubblewrap` only when `bwrap` is not
    already available, and readiness must prove that a nested sandbox can
    actually start before the agent becomes ready. OpenCode and PI do not request
-   privileged containers. Their unprivileged container readiness must pass the
-   same non-skipping private/guarded-inherited proc, UID/GID/home,
-   writable-path, and real task checks used to qualify the exact Box runtime
-   image. Readiness must also launch the provider binary through the selected
-   sandbox mode so a runtime that needs a live proc filesystem cannot pass a
-   trivial command-only probe.
+   privileged containers. Qualification of the exact Box runtime image must
+   separately pass the non-skipping private/guarded-inherited proc,
+   UID/GID/home, writable-path, and real task checks. Until the canonical
+   empty-workspace provider-readiness mode is available, agent readiness is
+   capability-only: it must not execute the provider binary or pass
+   `PLOINKY_WORKSPACE_ROOT` into a task sandbox. The final provider startup
+   check must run only with a private empty workspace, never the real user
+   workspace.
    For initial
    PI tasks outside generated-local mode, the provider owns model selection.
    Generated-local tasks use the scoped Soul `fast` model unless an allowed

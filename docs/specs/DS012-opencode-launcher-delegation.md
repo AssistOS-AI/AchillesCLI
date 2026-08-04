@@ -175,9 +175,11 @@ hidden routing state. Execution remains unbounded until completion or
 cancellation, while retained output and diagnostics are byte bounded.
 Container profiles must allow nested user/mount namespaces. The installer must
 reuse an existing `bwrap` binary in a Ploinky host sandbox, install Bubblewrap
-when it is absent in a container, and readiness must execute both the nested
-sandbox guard and `opencode --version` through the selected sandbox rather
-than checking only for the binary.
+when it is absent in a container, and readiness must execute the nested sandbox
+guard. Until the canonical empty-workspace provider-readiness mode is
+available, readiness is capability-only and must not execute OpenCode or mount
+the real user workspace. The final harmless provider startup check must use a
+private empty workspace that contains no real workspace content.
 
 The installed OpenCode config must add an OpenAI-compatible provider named
 `soul-gateway`. Its base URL must be derived from `PLOINKY_ROUTER_URL`, and its
