@@ -68,7 +68,7 @@ test('installer writes the managed Soul Gateway config without changing provider
     assert.equal(await fs.readFile(authPath, 'utf8'), '{"credential":"keep"}\n');
     assert.match(await fs.readFile(modelPath, 'utf8'), /"modelID":"existing"/);
     assert.equal(resolveOpenCodeBin({ HOME: homeDir }), path.join(homeDir, '.opencode', 'bin', 'opencode'));
-    assert.equal(resolveOpenCodeBin({}), '/root/.opencode/bin/opencode');
+    assert.equal(resolveOpenCodeBin({}), '/home/agent/.opencode/bin/opencode');
 });
 
 test('installer leaves the persistent config untouched when OpenCode download fails', async () => {
@@ -116,6 +116,7 @@ test('config uses only the task-scoped Soul broker credential', async () => {
     assert.ok(!JSON.stringify(config).includes('PLOINKY_AGENT_API_KEY'));
     assert.equal(manifest.profiles.default.install, 'sh /code/scripts/install-opencode.sh');
     assert.equal(manifest.cli, '"$HOME/.opencode/bin/opencode"');
+    assert.equal(manifest.env.includes('PLOINKY_WORKSPACE_ROOT'), false);
     assert.equal(manifest.containerSecurity, undefined);
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
     assert.ok(!JSON.stringify(manifest).includes('PLOINKY_AGENT_API_KEY'));

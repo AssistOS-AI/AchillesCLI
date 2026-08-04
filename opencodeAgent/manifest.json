@@ -31,7 +31,6 @@
     },
     "cli": "\"$HOME/.opencode/bin/opencode\"",
     "env": [
-        "PLOINKY_WORKSPACE_ROOT",
         "OPENCODE_API_KEY",
         "XAI_API_KEY",
         "OPENCODE_API_KEY",

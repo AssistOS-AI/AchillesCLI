@@ -6,8 +6,6 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { resolvePiBinary } from '../scripts/execute-task.mjs';
-
 const agentDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const installScript = path.join(agentDir, 'scripts', 'install-pi.sh');
 const manifestPath = path.join(agentDir, 'manifest.json');
@@ -47,7 +45,6 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
 
     assert.equal(result.status, 0, result.stderr);
     const binaryPath = path.join(homeDir, '.local', 'bin', 'pi');
-    assert.equal(resolvePiBinary({ HOME: homeDir }), binaryPath);
     assert.match(await fs.readFile(binaryPath, 'utf8'), /\$HOME\/\.local\/lib\/node_modules/);
     assert.equal((await fs.stat(binaryPath)).mode & 0o111, 0o111);
 
@@ -55,6 +52,7 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
     assert.equal(manifest.cli, '"$HOME/.local/bin/pi"');
     assert.equal(manifest.containerSecurity, undefined);
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
+    assert.equal(manifest.env.includes('PLOINKY_WORKSPACE_ROOT'), false);
 
     const script = await fs.readFile(installScript, 'utf8');
     assert.match(script, /\/opt\/ploinky-node\/lib\/node_modules\/npm\/bin\/npm-cli\.js/);

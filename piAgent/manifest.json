@@ -25,7 +25,6 @@
     },
     "cli": "\"$HOME/.local/bin/pi\"",
     "env": [
-        "PLOINKY_WORKSPACE_ROOT",
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "GOOGLE_API_KEY",

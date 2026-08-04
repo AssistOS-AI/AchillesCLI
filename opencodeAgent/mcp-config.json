@@ -1,12 +1,18 @@
 {
+    "providerSandbox": {
+        "provider": "opencode",
+        "readiness": true
+    },
     "tools": [
         {
             "name": "execute-task",
             "title": "Execute OpenCode Task",
             "description": "Execute an OpenCode build task from a caller-supplied prompt and model, persist its provider session behind an opaque continuation handle, and write artifacts in the supplied project directory.",
-            "command": "node",
-            "args": ["/code/scripts/execute-task.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "opencode",
+                "module": "/code/scripts/execute-task.mjs",
+                "export": "executeProviderTask"
+            },
             "async": true,
             "taskLogRetention": "full",
             "continuationTool": "continue-task",
@@ -19,7 +25,7 @@
                 },
                 "projectDir": {
                     "type": "string",
-                    "description": "Directory where opencode will run. A .opencode/skills symlink is created here pointing to /code/skills. Task-specific skills may create subdirectories as needed inside this directory.",
+                    "description": "Selected non-root workspace directory where OpenCode may write task artifacts.",
                     "optional": false
                 },
                 "model": {

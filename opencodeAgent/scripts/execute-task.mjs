@@ -1,122 +1,75 @@
-#!/usr/bin/env node
-
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { executeOpenCodeTask } from './opencode-runner.mjs';
 import {
     continuationDescriptor,
     createContinuationHandle,
     writeContinuationRecord,
 } from './continuation-store.mjs';
+import { executeOpenCodeTask } from './opencode-runner.mjs';
 
-async function readStdin() {
-    if (process.stdin.isTTY) {
-        return '';
-    }
-    process.stdin.setEncoding('utf8');
-    let data = '';
-    for await (const chunk of process.stdin) {
-        data += chunk;
-    }
-    return data;
+function invalidInput(error) {
+    return {
+        ok: false,
+        outputText: '',
+        error,
+        code: 'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID',
+    };
 }
 
-function parseInput(raw) {
-    const trimmed = String(raw ?? '').trim();
-    if (!trimmed) {
-        return null;
+async function executeProviderTaskWithStore(
+    payload,
+    { providerRuntime, signal } = {},
+    continuationStore = { writeContinuationRecord },
+) {
+    const input = payload?.input;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return invalidInput('Invalid or missing input. Expected prompt and projectDir.');
     }
-    try {
-        const parsed = JSON.parse(trimmed);
-        return parsed.input && typeof parsed.input === 'object' ? parsed.input : parsed;
-    } catch {
-        return null;
-    }
-}
-
-function safeErrorText(result, fallback) {
-    const message = result?.error || fallback;
-    return result?.code && !String(message).includes(result.code)
-        ? `${result.code}: ${message}`
-        : message;
-}
-
-export async function main({ sandboxDependencies } = {}) {
-    const cancellation = new AbortController();
-    process.on('SIGTERM', () => cancellation.abort());
-    const stdinData = await readStdin();
-    const input = parseInput(stdinData);
-
-    if (!input) {
-        process.stderr.write('Invalid or missing input. Expected JSON with prompt and projectDir.\n');
-        process.exitCode = 1;
-        return;
-    }
-
     const { prompt, projectDir, model } = input;
-
     if (typeof prompt !== 'string' || !prompt.trim()) {
-        process.stderr.write('prompt is required and must be a non-empty string.\n');
-        process.exitCode = 1;
-        return;
+        return invalidInput('prompt is required and must be a non-empty string.');
+    }
+    if (typeof projectDir !== 'string' || !projectDir.trim()) {
+        return invalidInput('projectDir is required and must be a non-empty string.');
+    }
+    if (signal !== undefined && !(signal instanceof AbortSignal)) {
+        return invalidInput('signal must be an AbortSignal.');
     }
 
-    if (!projectDir || typeof projectDir !== 'string' || !projectDir.trim()) {
-        process.stderr.write('projectDir is required and must be a non-empty string.\n');
-        process.exitCode = 1;
-        return;
-    }
-
+    const handle = createContinuationHandle();
     const result = await executeOpenCodeTask({
         prompt,
         projectDir: projectDir.trim(),
         model,
         captureSession: true,
-        createProjectDir: true,
-        signal: cancellation.signal,
-        sandboxDependencies,
+        continuationHandle: handle,
+        continuationStore,
+        providerRuntime,
     });
-
-    if (!result.sessionId) {
-        process.stdout.write(JSON.stringify({
+    if (!result.sessionId || !result.continuationPersisted) {
+        return {
             ok: false,
             outputText: result.outputText || '',
             error: result.error,
             code: result.code,
             status: result.status,
             cause: result.cause,
-        }));
-        process.stderr.write(`${safeErrorText(result, 'OpenCode did not report a resumable session id.')}\n`);
-        process.exitCode = 1;
-        return;
+        };
     }
-    const handle = createContinuationHandle();
-    writeContinuationRecord(handle, {
-        sessionId: result.sessionId,
-        projectDir: result.effectiveProjectDir,
-    });
-    const payload = {
+
+    return {
+        ok: result.ok === true,
         outputText: result.outputText || '',
         continuation: continuationDescriptor(handle),
         ...(!result.ok ? {
-            ok: false,
             error: result.error,
             code: result.code,
             status: result.status,
             cause: result.cause,
         } : {}),
     };
-    process.stdout.write(JSON.stringify(payload));
-    if (!result.ok) {
-        process.stderr.write(`${safeErrorText(result, 'OpenCode task failed.')}\n`);
-        process.exitCode = 1;
-    }
 }
 
-const currentFilePath = fileURLToPath(import.meta.url);
-if (process.argv[1] && path.resolve(process.argv[1]) === currentFilePath) {
-    main().catch((error) => {
-        process.stderr.write(`${error.message}\n`);
-        process.exitCode = 1;
-    });
+export function executeProviderTask(payload, context) {
+    return executeProviderTaskWithStore(payload, context);
 }
+
+export const __testables = Object.freeze({ executeProviderTaskWithStore });

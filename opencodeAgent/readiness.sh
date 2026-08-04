@@ -1,5 +1,6 @@
 #!/bin/sh
-test -n "${HOME:-}" \
+test "${HOME:-}" = "/home/agent" \
     && test -x "$HOME/.opencode/bin/opencode" \
     && test -r "$HOME/.config/opencode/opencode.json" \
-    && node /code/scripts/check-task-sandbox.mjs >/dev/null
+    && test -x /opt/ploinky-node/bin/node \
+    && test -x /usr/local/libexec/ploinky-bwrap-launch

@@ -1,4 +1,4 @@
 #!/bin/sh
-test -n "${HOME:-}" \
-    && test -x "$HOME/.local/bin/pi" \
-    && node /code/scripts/check-task-sandbox.mjs >/dev/null
+test "${HOME:-}" = "/home/agent" \
+    && test -x "/home/agent/.local/bin/pi" \
+    && test -d "/home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent"
