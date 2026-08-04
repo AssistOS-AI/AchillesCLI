@@ -252,7 +252,7 @@ test('PI capability failure returns the stable code before project or session mu
     assert.deepEqual(JSON.parse(result.stdout), {
         ok: false,
         outputText: '',
-        error: 'PI task sandbox rejected projectDir: nested Bubblewrap capability is unavailable (private: test capability unavailable; empty: test capability unavailable)',
+        error: 'PI task sandbox rejected projectDir: nested Bubblewrap capability is unavailable (private: test capability unavailable; inherited: test capability unavailable)',
         code: 'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE',
         status: 422,
     });

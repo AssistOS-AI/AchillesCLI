@@ -161,8 +161,11 @@ configured Soul Gateway template does not authorize exposing
 `PLOINKY_AGENT_API_KEY` to a delegated task.
 Before probing Bubblewrap or mutating project/session state, the wrapper must
 verify that outer `/proc/self` represents its current PID namespace. It probes
-private proc first and an empty proc directory after any private failure; task
-input and environment cannot choose the mode or replace `/usr/bin/bwrap`.
+private proc first. After a private failure, it may bind the existing proc
+filesystem read-only only when an in-sandbox guard proves dynamic self-process
+data and denies access to the parent worker's environment, root, working
+directory, and file descriptors; task input and environment cannot choose the
+mode or replace `/usr/bin/bwrap`.
 Project authorization occurs before directory creation, missing components are
 created without following symlinks, and the final real path is revalidated.
 Capability failure is structured with status `422` and code
@@ -172,8 +175,9 @@ hidden routing state. Execution remains unbounded until completion or
 cancellation, while retained output and diagnostics are byte bounded.
 Container profiles must allow nested user/mount namespaces. The installer must
 reuse an existing `bwrap` binary in a Ploinky host sandbox, install Bubblewrap
-when it is absent in a container, and readiness must execute a nested sandbox
-probe rather than checking only for the binary.
+when it is absent in a container, and readiness must execute both the nested
+sandbox guard and `opencode --version` through the selected sandbox rather
+than checking only for the binary.
 
 The installed OpenCode config must add an OpenAI-compatible provider named
 `soul-gateway`. Its base URL must be derived from `PLOINKY_ROUTER_URL`, and its

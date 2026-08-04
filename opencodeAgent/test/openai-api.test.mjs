@@ -204,7 +204,7 @@ test('OpenCode capability failure returns the stable code before project or sess
     assert.deepEqual(JSON.parse(result.stdout), {
         ok: false,
         outputText: '',
-        error: 'nested Bubblewrap capability is unavailable (private: test capability unavailable; empty: test capability unavailable)',
+        error: 'nested Bubblewrap capability is unavailable (private: test capability unavailable; inherited: test capability unavailable)',
         code: 'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE',
         status: 422,
     });

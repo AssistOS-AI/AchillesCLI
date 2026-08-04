@@ -286,8 +286,11 @@ Provider launcher discovery:
    shares the existing network namespace so provider API routing continues to
    work, but unshares user, PID, IPC, and UTS namespaces. Before probing or
    mutating project/session state, it must verify that outer `/proc/self`
-   represents the worker's current PID namespace, probe private proc first,
-   and try an empty proc directory after any private-mode failure. The selected
+   represents the worker's current PID namespace and probe private proc first.
+   After a private-mode failure, it may bind the existing proc filesystem
+   read-only only when an in-sandbox guard proves dynamic self-process data and
+   denies access to the parent worker's environment, root, working directory,
+   and file descriptors. The selected
    frozen capability is cached only for a bounded lifetime against the
    Bubblewrap executable's real path, device, inode, size, and modification
    time. No task or operator environment value may replace the production
@@ -317,8 +320,11 @@ Provider launcher discovery:
    already available, and readiness must prove that a nested sandbox can
    actually start before the agent becomes ready. OpenCode and PI do not request
    privileged containers. Their unprivileged container readiness must pass the
-   same non-skipping private/empty proc, UID/GID/home, writable-path, and real
-   task checks used to qualify the exact Box runtime image.
+   same non-skipping private/guarded-inherited proc, UID/GID/home,
+   writable-path, and real task checks used to qualify the exact Box runtime
+   image. Readiness must also launch the provider binary through the selected
+   sandbox mode so a runtime that needs a live proc filesystem cannot pass a
+   trivial command-only probe.
    For initial
    PI tasks outside generated-local mode, the provider owns model selection.
    Generated-local tasks use the scoped Soul `fast` model unless an allowed

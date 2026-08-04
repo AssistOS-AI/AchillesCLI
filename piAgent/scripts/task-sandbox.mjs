@@ -99,7 +99,29 @@ function systemMountArgs() {
     return args;
 }
 
-function minimalProbeArgs(procMode) {
+function inheritedProcGuardCommand(outerPid) {
+    const shellPath = fs.realpathSync('/bin/sh');
+    return [
+        '/bin/sh',
+        '-c',
+        `outer_pid=$1
+expected_exe=$2
+IFS= read -r first_map < /proc/self/maps || exit 90
+case "$first_map" in *" $expected_exe") ;; *) exit 90 ;; esac
+command -v cat >/dev/null 2>&1 || exit 95
+command -v readlink >/dev/null 2>&1 || exit 95
+if cat "/proc/$outer_pid/environ" >/dev/null 2>&1; then exit 91; fi
+if readlink "/proc/$outer_pid/root" >/dev/null 2>&1; then exit 92; fi
+if readlink "/proc/$outer_pid/cwd" >/dev/null 2>&1; then exit 93; fi
+if readlink "/proc/$outer_pid/fd/0" >/dev/null 2>&1; then exit 94; fi
+exit 0`,
+        'inherited-proc-guard',
+        String(outerPid),
+        shellPath,
+    ];
+}
+
+function minimalProbeArgs(procMode, outerPid = process.pid) {
     const args = [
         '--die-with-parent',
         '--unshare-user',
@@ -109,7 +131,13 @@ function minimalProbeArgs(procMode) {
         '--share-net',
         ...systemMountArgs(),
     ];
-    args.push(procMode === 'private' ? '--proc' : '--dir', '/proc');
+    if (procMode === 'private') {
+        args.push('--proc', '/proc');
+    } else if (procMode === 'inherited') {
+        args.push('--ro-bind', '/proc', '/proc');
+    } else {
+        throw new Error(`unsupported proc mode: ${procMode}`);
+    }
     args.push(
         '--dev',
         '/dev',
@@ -118,7 +146,9 @@ function minimalProbeArgs(procMode) {
         '--remount-ro',
         '/',
         '--',
-        '/usr/bin/true',
+        ...(procMode === 'private'
+            ? ['/usr/bin/true']
+            : inheritedProcGuardCommand(outerPid)),
     );
     return args;
 }
@@ -283,7 +313,7 @@ export function probeNestedBubblewrap({ dependencies = {} } = {}) {
     if (cached && cached.expiresAt > now) return cached.value;
 
     const attempts = [];
-    for (const procMode of ['private', 'empty']) {
+    for (const procMode of ['private', 'inherited']) {
         let result;
         try {
             result = resolved.spawnSyncImpl(identity.realpath, minimalProbeArgs(procMode), {
@@ -442,7 +472,11 @@ export function buildTaskSandboxLaunch({
         '--clearenv',
         ...systemMountArgs(),
     ];
-    sandboxArgs.push(procMode === 'private' ? '--proc' : '--dir', '/proc');
+    sandboxArgs.push(
+        procMode === 'private' ? '--proc' : '--ro-bind',
+        '/proc',
+        ...(procMode === 'private' ? [] : ['/proc']),
+    );
     sandboxArgs.push('--dev', '/dev', '--tmpfs', '/tmp');
 
     for (const candidate of [resolvedCommand, ...readOnlyPaths]) {

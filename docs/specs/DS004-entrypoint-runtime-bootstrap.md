@@ -56,9 +56,13 @@ Runtime wiring:
    A proc filesystem inherited from a parent PID namespace is a startup error.
    Optional OpenCode and PI task workers apply the same outer-proc identity
    prerequisite before their own nested-Bubblewrap probe or any project/session
-   mutation. They probe a private proc mount first and an empty proc directory
-   after any private-mode failure; task input and environment cannot choose or
-   loosen that trusted selection.
+   mutation. They probe a private proc mount first. When the container runtime
+   rejects that mount, they may use the existing proc filesystem read-only only
+   after a guard running inside the same user and PID namespaces proves that
+   `/proc/self/maps` describes the sandbox command and that the parent worker's
+   environment, root, working directory, and file descriptors remain
+   inaccessible. Task input and environment cannot choose or loosen that
+   trusted selection, and a failed guard is a capability failure.
 10. The Unix socket protocol must preserve its response half after the client finishes writing a request, because broker handlers may complete asynchronously.
 11. In webchat mode, structured interaction responses received on stdin must be demultiplexed before ordinary prompt processing and forwarded through the trusted broker control channel.
 12. A successful `/permissions` change must update the trusted Broker before the confirmed mode is written atomically to the workspace settings file.
@@ -81,10 +85,10 @@ The working-directory settings file is owned by AchillesCLI and is not part of P
 Response:
 MainAgent must reach configured LLM services and router-mediated agents during normal operation. The implemented security boundary addresses workspace filesystem confinement; network policy remains an independent runtime concern and is not broadened by a Bash approval.
 
-### Question #3: Why can a nested container use an empty `/proc`?
+### Question #3: Why can a task worker use inherited `/proc` when a private mount is blocked?
 
 Response:
-Bubblewrap must probe whether the current runtime permits mounting a private proc filesystem. Native host execution uses a private `/proc` when supported. A nested unprivileged container that rejects the proc mount must receive an empty `/proc` directory instead; it must never bind the outer container's `/proc`, because that would expose process-root paths across the filesystem boundary. The agent container's pre-sandbox `/proc` must itself represent the agent PID namespace, because Bubblewrap resolves its namespace child through that proc filesystem before it constructs the sandbox root.
+Bubblewrap first probes whether the runtime permits mounting a private proc filesystem. Native host execution uses that mode when supported. Bun-based task providers such as OpenCode require a live `/proc`, so an empty directory is not a viable fallback in a nested unprivileged container. The worker may instead bind its existing proc filesystem read-only while retaining Bubblewrap's user and PID namespace isolation. A guard executed through that exact sandbox path must prove that `/proc/self` is dynamic for the sandbox command and that proc magic links and process data cannot cross back into the parent worker; otherwise startup fails closed. The agent container's pre-sandbox `/proc` must itself represent the agent PID namespace, because Bubblewrap resolves its namespace child through that proc filesystem before it constructs the sandbox root.
 
 ### Question #4: Why is one runtime descriptor visible inside the filesystem sandbox?
 
