@@ -2,162 +2,220 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { PassThrough } from 'node:stream';
+import { spawn } from 'node:child_process';
 import test from 'node:test';
 
 import {
     __testables as piRunnerTestables,
     createPiJsonEventParser,
-    executeProviderTask,
     readCurrentPiModel,
 } from '../scripts/execute-task.mjs';
-import {
-    createContinuationStoreFixture,
-} from './continuation-store-fixture.mjs';
-import { spawnTaskSandbox } from '../scripts/task-sandbox.mjs';
 
-function assistantEvents({ error = '' } = {}) {
-    if (error) {
-        return `${JSON.stringify({
-            type: 'message_end',
-            message: {
-                role: 'assistant',
-                content: [],
-                stopReason: 'error',
-                errorMessage: error,
-                diagnostics: [{ error: { message: 'hidden transport detail' } }],
-            },
-        })}\n`;
-    }
-    return [
-        { type: 'session', id: 'hidden-session-metadata' },
-        { type: 'message_start', message: { role: 'assistant', content: [] } },
-        {
-            type: 'message_update',
-            assistantMessageEvent: { type: 'text_delta', delta: 'Pi ' },
-        },
-        {
-            type: 'message_update',
-            assistantMessageEvent: { type: 'text_delta', delta: 'answer' },
-        },
-        {
-            type: 'message_end',
-            message: {
-                role: 'assistant',
-                content: [{ type: 'text', text: 'Pi answer', textSignature: 'hidden' }],
-            },
-        },
-    ].map((event) => JSON.stringify(event)).join('\n') + '\n';
-}
+const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
+const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
+const fakeBwrapPath = new URL('../../tests/helpers/fake-bwrap.sh', import.meta.url).pathname;
+const taskHarnessPath = new URL('../../tests/helpers/run-agent-task.mjs', import.meta.url).pathname;
 
-function runtimeHarness({
-    stdout = assistantEvents(),
-    stderr = '',
-    completion = { code: 0, signal: null },
-    spawnError = null,
-    beforeAfterExit = () => {},
-    completeBeforeReturn = false,
-} = {}) {
-    const calls = [];
-    const state = { afterExitCalls: 0, completionResolved: false, leaseHeld: false };
-    const providerRuntime = {
-        async spawnWith(adapter, input, lifecycle) {
-            calls.push({ adapter, input, lifecycle });
-            if (spawnError) throw spawnError;
-            const childStdout = new PassThrough();
-            const childStderr = new PassThrough();
-            let settle;
-            const completionPromise = new Promise((resolve, reject) => {
-                settle = async () => {
-                    if (completion instanceof Error) {
-                        state.leaseHeld = false;
-                        state.completionResolved = true;
-                        reject(completion);
-                        return;
-                    }
+function runTaskScript(scriptPath, input, env, { signalAfterMs = 0, signalAfterPath = '' } = {}) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [taskHarnessPath, scriptPath], {
+            env: {
+                ...process.env,
+                TEST_TASK_BWRAP_BIN: fakeBwrapPath,
+                ...env,
+            },
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        let closed = false;
+        child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+        child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+        child.on('error', reject);
+        child.on('close', (code) => {
+            closed = true;
+            resolve({ code, stdout, stderr });
+        });
+        child.stdin.end(JSON.stringify({ input }));
+        if (signalAfterMs > 0) {
+            setTimeout(() => child.kill('SIGTERM'), signalAfterMs);
+        }
+        if (signalAfterPath) {
+            void (async () => {
+                while (!closed) {
                     try {
-                        beforeAfterExit();
-                        const afterExit = lifecycle.afterExit
-                            ? await lifecycle.afterExit({
-                                code: completion.code,
-                                signal: completion.signal,
-                                launch: { workdir: input.workdir },
-                            })
-                            : undefined;
-                        if (lifecycle.afterExit) state.afterExitCalls += 1;
-                        state.leaseHeld = false;
-                        state.completionResolved = true;
-                        resolve({ ...completion, ...(lifecycle.afterExit ? { afterExit } : {}) });
-                    } catch (error) {
-                        state.leaseHeld = false;
-                        state.completionResolved = true;
-                        reject(error);
+                        await fs.access(signalAfterPath);
+                        child.kill('SIGTERM');
+                        return;
+                    } catch {
+                        await new Promise((wait) => setTimeout(wait, 10));
                     }
-                };
-            });
-            state.leaseHeld = true;
-            const complete = async () => {
-                childStdout.end(stdout);
-                childStderr.end(stderr);
-                await settle();
-            };
-            if (completeBeforeReturn) await complete();
-            else setImmediate(complete);
-            return Object.freeze({
-                child: Object.freeze({ stdout: childStdout, stderr: childStderr }),
-                launch: Object.freeze({ workdir: input.workdir }),
-                completion: completionPromise,
-            });
+                }
+            })();
+        }
+    });
+}
+
+async function makeFakePiBin(directory) {
+    const binPath = path.join(directory, 'fake-pi.mjs');
+    await fs.writeFile(binPath, `#!${process.execPath}
+import fs from 'node:fs';
+
+fs.writeFileSync(process.env.PI_ARGS_PATH, JSON.stringify(process.argv.slice(2)));
+if (process.env.PI_ENV_PATH) {
+    fs.writeFileSync(process.env.PI_ENV_PATH, JSON.stringify({
+        home: process.env.HOME,
+        agentDir: process.env.PI_CODING_AGENT_DIR || null,
+    }));
+}
+const emit = (event) => fs.writeSync(1, JSON.stringify(event) + '\\n');
+emit({ type: 'session', id: 'ignored-session-metadata' });
+if (process.env.FAKE_PI_ASSISTANT_ERROR === '1') {
+    emit({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    emit({
+        type: 'message_end',
+        message: {
+            role: 'assistant',
+            content: [],
+            stopReason: 'error',
+            errorMessage: 'Your authentication token has been invalidated. Please try signing in again.',
+            diagnostics: [{
+                type: 'provider_transport_failure',
+                error: { message: 'WebSocket error', stack: 'hidden provider stack' },
+            }],
         },
-    };
-    return { calls, providerRuntime, state };
+    });
+    process.exit(0);
+}
+emit({ type: 'message_start', message: { role: 'assistant', content: [] } });
+emit({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', delta: 'Pi ' },
+});
+await new Promise((resolve) => setTimeout(
+    resolve,
+    Number(process.env.FAKE_PI_WAIT_MS || 25),
+));
+emit({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', delta: 'answer' },
+});
+emit({
+    type: 'message_end',
+    message: {
+        role: 'assistant',
+        content: [{
+            type: 'text',
+            text: 'Pi answer',
+            textSignature: 'ignored-text-signature',
+        }],
+    },
+});
+emit({
+    type: 'agent_end',
+    messages: [{
+        role: 'assistant',
+        content: [{
+            type: 'thinking',
+            thinking: 'ignored thinking',
+            thinkingSignature: { encrypted_content: 'ignored-encrypted-content' },
+        }, { type: 'text', text: 'Pi answer' }],
+    }],
+});
+if (process.env.FAKE_PI_FAIL === '1') {
+    fs.writeSync(2, 'insufficient credits');
+    process.exitCode = 1;
+}
+`, 'utf8');
+    await fs.chmod(binPath, 0o755);
+    return binPath;
 }
 
-async function temporaryStore(t) {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-provider-task-test-'));
-    t.after(() => fs.rm(directory, { recursive: true, force: true }));
-    const homeRoot = path.join(directory, 'home');
-    const storeRoot = path.join(homeRoot, '.ploinky', 'continuations');
-    const sessionRoot = path.join(homeRoot, '.ploinky', 'sessions');
-    await fs.mkdir(homeRoot);
-    return {
-        directory,
-        sessionRoot,
-        storeRoot,
-        store: createContinuationStoreFixture({ homeRoot, storeRoot, sessionRoot }),
-    };
-}
-
-test('PI JSON parser emits readable text without lifecycle metadata or duplicates', () => {
+test('PI JSON parser emits readable live text without lifecycle metadata or duplicates', () => {
     let visible = '';
-    const parser = createPiJsonEventParser({ onText: (text) => { visible += text; } });
+    const parser = createPiJsonEventParser({
+        onText(text) {
+            visible += text;
+        },
+    });
     const lines = [
+        JSON.stringify({ type: 'session', secret: 'hidden-session-value' }),
         JSON.stringify({
             type: 'tool_execution_update',
             toolCallId: 'tool-1',
             partialResult: { content: [{ type: 'text', text: 'first' }] },
         }),
         JSON.stringify({
+            type: 'tool_execution_update',
+            toolCallId: 'tool-1',
+            partialResult: { content: [{ type: 'text', text: 'first\nsecond\n' }] },
+        }),
+        JSON.stringify({
             type: 'tool_execution_end',
             toolCallId: 'tool-1',
             result: { content: [{ type: 'text', text: 'first\nsecond\n' }] },
         }),
-        assistantEvents().trim(),
+        JSON.stringify({
+            type: 'message_start',
+            message: { role: 'assistant', content: [] },
+        }),
+        JSON.stringify({
+            type: 'message_update',
+            assistantMessageEvent: { type: 'thinking_delta', delta: 'hidden reasoning' },
+        }),
+        JSON.stringify({
+            type: 'message_update',
+            assistantMessageEvent: { type: 'text_delta', delta: 'Final ' },
+        }),
+        JSON.stringify({
+            type: 'message_update',
+            assistantMessageEvent: { type: 'text_delta', delta: 'answer' },
+        }),
+        JSON.stringify({
+            type: 'message_end',
+            message: {
+                role: 'assistant',
+                content: [{ type: 'text', text: 'Final answer', textSignature: 'hidden' }],
+            },
+        }),
+        JSON.stringify({
+            type: 'turn_end',
+            message: {
+                role: 'assistant',
+                content: [{
+                    type: 'thinking',
+                    thinkingSignature: { encrypted_content: 'hidden-encrypted-content' },
+                }],
+            },
+        }),
     ].join('\n') + '\n';
-    const splitAt = lines.indexOf('first') + 2;
+    const splitAt = lines.indexOf('"first') + 4;
     parser.push(Buffer.from(lines.slice(0, splitAt)));
     parser.push(Buffer.from(lines.slice(splitAt)));
     parser.finish();
 
-    assert.equal(visible, 'first\nsecond\nPi answer');
-    assert.equal(parser.getFinalOutputText(), 'Pi answer');
-    assert.doesNotMatch(visible, /hidden|session|signature/i);
+    assert.equal(visible, 'first\nsecond\nFinal answer');
+    assert.equal(parser.getFinalOutputText(), 'Final answer');
+    assert.doesNotMatch(visible, /hidden|session|thinking|signature/i);
 });
 
-test('PI JSON parser captures assistant errors without leaking diagnostics', () => {
+test('PI JSON parser captures assistant errors without leaking diagnostics into live output', () => {
     let visible = '';
-    const parser = createPiJsonEventParser({ onText: (text) => { visible += text; } });
-    parser.push(Buffer.from(assistantEvents({ error: 'Authentication failed.' })));
+    const parser = createPiJsonEventParser({
+        onText(text) {
+            visible += text;
+        },
+    });
+    parser.push(Buffer.from(`${JSON.stringify({
+        type: 'message_end',
+        message: {
+            role: 'assistant',
+            content: [],
+            stopReason: 'error',
+            errorMessage: 'Authentication failed.',
+            diagnostics: [{ error: { message: 'transport failed', stack: 'hidden stack' } }],
+        },
+    })}\n`));
     parser.finish();
 
     assert.equal(visible, '');
@@ -165,167 +223,228 @@ test('PI JSON parser captures assistant errors without leaking diagnostics', () 
     assert.equal(parser.getErrorMessage(), 'Authentication failed.');
 });
 
-test('PI retained output is byte bounded', () => {
+test('PI retained output is byte bounded without an elapsed task timeout', () => {
     const retained = piRunnerTestables.appendBoundedTail('', '€'.repeat(20_000));
     assert.ok(Buffer.byteLength(retained, 'utf8') <= 16 * 1024);
     assert.match(retained, /€+$/u);
 });
 
-test('PI provider task launches only through the trusted runtime and preserves result shape', async (t) => {
-    const { sessionRoot, store } = await temporaryStore(t);
-    let continuationWrites = 0;
-    const { calls, providerRuntime, state } = runtimeHarness({
-        beforeAfterExit() {
-            assert.equal(
-                continuationWrites,
-                0,
-                'untrusted PI must exit before trusted continuation state is accessed',
-            );
-        },
+test('PI capability failure returns the stable code before project or session mutation', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-capability-failure-test-'));
+    const workspaceRoot = path.join(temporaryDirectory, 'workspace');
+    const projectDir = path.join(workspaceRoot, 'missing-project');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const sessionRoot = path.join(temporaryDirectory, 'sessions');
+    await fs.mkdir(workspaceRoot);
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'must not run',
+        projectDir,
+    }, {
+        PI_BIN: path.join(temporaryDirectory, 'missing-pi'),
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: workspaceRoot,
+        TEST_TASK_BWRAP_MODE: 'fail',
     });
-    const signal = new AbortController().signal;
-    const leaseCheckedStore = {
-        writeContinuationRecord(...args) {
-            assert.equal(state.leaseHeld, true, 'continuation state must be accessed under HOME lease');
-            continuationWrites += 1;
-            return store.writeContinuationRecord(...args);
-        },
-    };
 
-    const result = await piRunnerTestables.executeProviderTaskWithStore({
-        tool: 'execute-task',
-        taskId: 'task-1',
-        input: {
-            prompt: 'Do the task',
-            projectDir: 'project with spaces',
-            model: 'deep',
-        },
-    }, { providerRuntime, signal }, leaseCheckedStore);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /^PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE:/);
+    assert.deepEqual(JSON.parse(result.stdout), {
+        ok: false,
+        outputText: '',
+        error: 'PI task sandbox rejected projectDir: nested Bubblewrap capability is unavailable (private: test capability unavailable; inherited: test capability unavailable)',
+        code: 'PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE',
+        status: 422,
+    });
+    await assert.rejects(fs.access(projectDir));
+    await assert.rejects(fs.access(continuationStore));
+    await assert.rejects(fs.access(sessionRoot));
+});
 
-    assert.equal(result.ok, true);
-    assert.equal(result.outputText, 'Pi answer');
-    assert.equal(result.continuation.toolName, 'continue-task');
-    assert.match(result.continuation.handle, /^[0-9a-f-]{36}$/i);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].adapter, spawnTaskSandbox);
-    assert.deepEqual(Object.keys(calls[0].input).sort(), ['args', 'workdir']);
-    assert.equal(calls[0].input.workdir, 'project with spaces');
-    const args = calls[0].input.args;
-    assert.deepEqual(args.slice(0, 6), [
+test('PI wrapper creates a resumable session and returns a continuation handle', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
+    const envPath = path.join(temporaryDirectory, 'env.json');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const sessionRoot = path.join(temporaryDirectory, 'sessions');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Do the task',
+        projectDir,
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PI_ENV_PATH: envPath,
+        PI_CODING_AGENT_DIR: '/root/.pi/agent',
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.outputText, 'Pi answer');
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    assert.match(payload.continuation.handle, /^[0-9a-f-]{36}$/i);
+    assert.equal(result.stderr, 'Pi answer');
+    assert.doesNotMatch(result.stderr, /\[pi|start projectDir|exit code/);
+
+    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.deepEqual(args.slice(0, 5), [
         '--mode',
         'json',
         '--session-id',
-        result.continuation.handle,
+        payload.continuation.handle,
         '--session-dir',
-        `/home/agent/.ploinky/pi-sessions/${result.continuation.handle}`,
     ]);
-    assert.equal(args[args.indexOf('--extension') + 1], '/code/extensions/ploinky-soul.mjs');
+    assert.equal(args[5], path.join(sessionRoot, payload.continuation.handle));
+    assert.deepEqual(JSON.parse(await fs.readFile(envPath, 'utf8')), {
+        home: '/root',
+        agentDir: '/root/.pi/agent',
+    });
+});
+
+test('generated-local PI tasks load the scoped Soul provider extension', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-soul-task-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Use Soul.',
+        projectDir,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PLOINKY_CONTINUATION_STORE_DIR: path.join(temporaryDirectory, 'continuations'),
+        PLOINKY_PI_SESSION_DIR: path.join(temporaryDirectory, 'sessions'),
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        PLOINKY_ROUTER_URL: 'http://127.0.0.1:9',
+        PLOINKY_ROUTER_REQUEST_AUTHORITY: '127.0.0.1:9',
+        PLOINKY_AGENT_API_KEY: 'outer-only-key',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
+        PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
     assert.equal(args[args.indexOf('--provider') + 1], 'ploinky-soul');
-    assert.equal(args[args.indexOf('--model') + 1], 'deep');
-    assert.equal(args.at(-1), 'Do the task');
-    assert.equal(typeof calls[0].lifecycle.afterExit, 'function');
-    assert.deepEqual(calls[0].lifecycle.environment, {
-        PLOINKY_PROVIDER_MODEL: 'deep',
-        PLOINKY_PROVIDER_SESSION_ID: result.continuation.handle,
+    assert.equal(args[args.indexOf('--model') + 1], 'fast');
+    assert.match(args[args.indexOf('--extension') + 1], /ploinky-soul\.mjs$/);
+});
+
+test('failed PI task returns and persists its continuation handle', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-failed-task-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
+    const sessionRoot = path.join(temporaryDirectory, 'sessions');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Use exhausted model',
+        projectDir,
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        FAKE_PI_FAIL: '1',
     });
-    assert.deepEqual(calls[0].lifecycle.stdio, ['ignore', 'pipe', 'pipe']);
-    assert.equal(state.afterExitCalls, 1);
-    assert.equal(continuationWrites, 1);
-    assert.equal(state.completionResolved, true);
-    assert.equal(state.leaseHeld, false);
-    const record = store.readContinuationRecord(result.continuation.handle);
-    assert.equal(record.projectDir, '/workspace/project with spaces');
-    assert.equal(record.sessionDir, path.join(sessionRoot, result.continuation.handle));
+
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    assert.match(payload.continuation.handle, /^[0-9a-f-]{36}$/i);
+    const record = JSON.parse(await fs.readFile(
+        path.join(continuationStore, `${payload.continuation.handle}.json`),
+        'utf8',
+    ));
+    assert.equal(record.sessionId, payload.continuation.handle);
+    assert.equal(record.projectDir, await fs.realpath(projectDir));
 });
 
-test('PI fast exit persists continuation before the canonical handle is returned', async (t) => {
-    const { store } = await temporaryStore(t);
-    const harness = runtimeHarness({ completeBeforeReturn: true });
-    const result = await piRunnerTestables.executeProviderTaskWithStore({
-        input: { prompt: 'Finish immediately', projectDir: 'project' },
-    }, { providerRuntime: harness.providerRuntime }, store);
+test('PI assistant error fails the task even when the PI process exits successfully', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-assistant-error-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
 
-    assert.equal(result.ok, true);
-    assert.equal(harness.state.afterExitCalls, 1);
-    assert.equal(store.readContinuationRecord(result.continuation.handle).projectDir, '/workspace/project');
-});
-
-test('PI provider failures and cancellation keep the preallocated continuation', async (t) => {
-    for (const fixture of [
-        {
-            harness: runtimeHarness({ stderr: 'insufficient credits', completion: { code: 1, signal: null } }),
-            error: /exit code 1/,
-            outputText: 'insufficient credits',
-        },
-        {
-            harness: runtimeHarness({ completion: { code: null, signal: 'SIGTERM' } }),
-            error: /signal SIGTERM/,
-            outputText: 'Pi answer',
-        },
-        {
-            harness: runtimeHarness({
-                stdout: assistantEvents({ error: 'Authentication failed.' }),
-                completion: { code: 0, signal: null },
-            }),
-            error: /Authentication failed/,
-            outputText: '',
-        },
-    ]) {
-        const { store } = await temporaryStore(t);
-        const result = await piRunnerTestables.executeProviderTaskWithStore({
-            input: { prompt: 'Try provider', projectDir: 'project' },
-        }, { providerRuntime: fixture.harness.providerRuntime }, store);
-        assert.equal(result.ok, false);
-        assert.match(result.error, fixture.error);
-        assert.equal(result.outputText, fixture.outputText);
-        assert.equal(store.readContinuationRecord(result.continuation.handle).projectDir, '/workspace/project');
-    }
-});
-
-test('PI task rejects untrusted grammar and spawn failure before continuation mutation', async (t) => {
-    const { store, storeRoot, sessionRoot } = await temporaryStore(t);
-    const spawnError = Object.assign(new Error('helper unavailable'), {
-        code: 'PLOINKY_PROVIDER_HELPER_UNAVAILABLE',
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Use invalid authentication',
+        projectDir,
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: path.join(temporaryDirectory, 'sessions'),
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        FAKE_PI_ASSISTANT_ERROR: '1',
     });
-    const failed = runtimeHarness({ spawnError });
-    const spawnResult = await piRunnerTestables.executeProviderTaskWithStore({
-        input: { prompt: 'Do not run', projectDir: 'project' },
-    }, { providerRuntime: failed.providerRuntime }, store);
-    assert.equal(spawnResult.ok, false);
-    assert.equal(spawnResult.code, 'PLOINKY_PROVIDER_HELPER_UNAVAILABLE');
-    assert.equal(Object.hasOwn(spawnResult, 'continuation'), false);
-    await assert.rejects(fs.access(storeRoot));
-    await assert.rejects(fs.access(sessionRoot));
 
-    for (const input of [
-        null,
-        {},
-        { prompt: 'task', projectDir: 'project', provider: 'anthropic' },
-        { prompt: 'task', projectDir: ' project ' },
-        { prompt: 'task', projectDir: 'project', model: 3 },
-    ]) {
-        const harness = runtimeHarness();
-        const result = await piRunnerTestables.executeProviderTaskWithStore(
-            { input },
-            { providerRuntime: harness.providerRuntime },
-            store,
-        );
-        assert.equal(result.ok, false);
-        assert.equal(result.code, 'PLOINKY_PROVIDER_INPUT_INVALID');
-        assert.equal(harness.calls.length, 0);
-    }
-    const missingRuntime = await executeProviderTask({
-        input: { prompt: 'task', projectDir: 'project' },
-    });
-    assert.equal(missingRuntime.ok, false);
-    assert.equal(missingRuntime.code, 'PLOINKY_PROVIDER_RUNTIME_REQUIRED');
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.outputText, '');
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    assert.equal(
+        result.stderr,
+        'Your authentication token has been invalidated. Please try signing in again.\n',
+    );
+    assert.doesNotMatch(result.stderr, /WebSocket|hidden provider stack/);
 });
 
-test('PI model lookup uses project settings over the fixed clean HOME', async (t) => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-settings-test-'));
-    t.after(() => fs.rm(directory, { recursive: true, force: true }));
-    const home = path.join(directory, 'home');
-    const projectDir = path.join(directory, 'project');
+test('cancelled PI task returns its preallocated continuation handle', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-cancelled-task-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
+    await fs.mkdir(projectDir);
+    const piBin = await makeFakePiBin(temporaryDirectory);
+
+    const result = await runTaskScript(executeTaskPath, {
+        prompt: 'Stop PI',
+        projectDir,
+    }, {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: path.join(temporaryDirectory, 'sessions'),
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        FAKE_PI_WAIT_MS: '1000',
+    }, { signalAfterPath: argsPath });
+
+    assert.equal(result.code, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.continuation.toolName, 'continue-task');
+    const record = JSON.parse(await fs.readFile(
+        path.join(continuationStore, `${payload.continuation.handle}.json`),
+        'utf8',
+    ));
+    assert.equal(record.sessionId, payload.continuation.handle);
+});
+
+test('PI model lookup uses project settings over persistent global settings', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-settings-test-'));
+    const home = path.join(temporaryDirectory, 'home');
+    const projectDir = path.join(temporaryDirectory, 'project');
+    assert.deepEqual(readCurrentPiModel({
+        projectDir,
+        env: { HOME: path.join(temporaryDirectory, 'missing-home') },
+    }), {
+        provider: '',
+        model: '',
+        thinking: '',
+    });
     await fs.mkdir(path.join(home, '.pi', 'agent'), { recursive: true });
     await fs.mkdir(path.join(projectDir, '.pi'), { recursive: true });
     await fs.writeFile(path.join(home, '.pi', 'agent', 'settings.json'), JSON.stringify({
@@ -344,40 +463,69 @@ test('PI model lookup uses project settings over the fixed clean HOME', async (t
         model: 'gpt-5.4-mini',
         thinking: 'high',
     });
-    assert.equal(piRunnerTestables.PI_HOME, '/home/agent');
 });
 
-test('PI task entry and MCP config have no shell, broker, env, or legacy fallback', async () => {
-    const source = await fs.readFile(new URL('../scripts/execute-task.mjs', import.meta.url), 'utf8');
-    for (const forbidden of [
-        '/root',
-        'node:child_process',
-        'startScopedSoulBroker',
-        'prepareTaskSandbox',
-        'buildTaskSandboxLaunch',
-        'process.env',
-        'PI_BIN',
-        'sandboxDependencies',
-        'readStdin',
-        'createProjectDir',
-    ]) {
-        assert.equal(source.includes(forbidden), false, forbidden);
-    }
-    assert.match(
-        source,
-        /providerRuntime\.spawnWith\(\s*spawnTaskSandbox,\s*\{ workdir: input\.workdir, args \},/s,
-    );
+test('PI continuation reuses the exact session id and session directory', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-resume-test-'));
+    const projectDir = path.join(temporaryDirectory, 'project');
+    const argsPath = path.join(temporaryDirectory, 'args.json');
+    const continuationStore = path.join(temporaryDirectory, 'continuations');
+    const sessionRoot = path.join(temporaryDirectory, 'sessions');
+    const home = path.join(temporaryDirectory, 'home');
+    await fs.mkdir(projectDir);
+    await fs.mkdir(path.join(home, '.pi', 'agent'), { recursive: true });
+    await fs.writeFile(path.join(home, '.pi', 'agent', 'settings.json'), JSON.stringify({
+        defaultProvider: 'openai',
+        defaultModel: 'gpt-5.4-mini',
+        defaultThinkingLevel: 'high',
+    }));
+    const piBin = await makeFakePiBin(temporaryDirectory);
+    const env = {
+        PI_BIN: piBin,
+        PI_ARGS_PATH: argsPath,
+        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+        PLOINKY_PI_SESSION_DIR: sessionRoot,
+        PLOINKY_WORKSPACE_ROOT: projectDir,
+        HOME: home,
+    };
+    const initial = await runTaskScript(executeTaskPath, {
+        prompt: 'Initial task',
+        projectDir,
+    }, env);
+    assert.equal(initial.code, 0, initial.stderr);
+    const firstPayload = JSON.parse(initial.stdout);
 
-    const config = JSON.parse(await fs.readFile(new URL('../mcp-config.json', import.meta.url), 'utf8'));
-    assert.deepEqual(config.providerSandbox, { provider: 'pi', readiness: true });
-    const execute = config.tools.find((tool) => tool.name === 'execute-task');
-    assert.deepEqual(execute.providerExecution, {
-        provider: 'pi',
-        module: '/code/scripts/execute-task.mjs',
-        export: 'executeProviderTask',
-    });
-    assert.equal(execute.async, true);
-    for (const field of ['command', 'args', 'cwd', 'env']) {
-        assert.equal(Object.hasOwn(execute, field), false, field);
-    }
+    const resumed = await runTaskScript(continueTaskPath, {
+        handle: firstPayload.continuation.handle,
+        prompt: 'Continue same PI session',
+    }, env);
+    assert.equal(resumed.code, 0, resumed.stderr);
+    const resumedPayload = JSON.parse(resumed.stdout);
+    assert.equal(resumedPayload.continuation.handle, firstPayload.continuation.handle);
+    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.deepEqual(args.slice(0, 6), [
+        '--mode',
+        'json',
+        '--session-id',
+        firstPayload.continuation.handle,
+        '--session-dir',
+        path.join(sessionRoot, firstPayload.continuation.handle),
+    ]);
+    assert.equal(args[args.indexOf('--provider') + 1], 'openai');
+    assert.equal(args[args.indexOf('--model') + 1], 'gpt-5.4-mini');
+    assert.equal(args[args.indexOf('--thinking') + 1], 'high');
+    assert.equal(args.at(-1), 'Continue same PI session');
+
+    const overridden = await runTaskScript(continueTaskPath, {
+        handle: firstPayload.continuation.handle,
+        prompt: 'Continue with selected PI model',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+    }, env);
+    assert.equal(overridden.code, 0, overridden.stderr);
+    const overrideArgs = JSON.parse(await fs.readFile(argsPath, 'utf8'));
+    assert.equal(overrideArgs[overrideArgs.indexOf('--provider') + 1], 'anthropic');
+    assert.equal(overrideArgs[overrideArgs.indexOf('--model') + 1], 'claude-sonnet-4-5');
+    assert.equal(overrideArgs.includes('--thinking'), false);
+    assert.equal(overrideArgs.at(-1), 'Continue with selected PI model');
 });

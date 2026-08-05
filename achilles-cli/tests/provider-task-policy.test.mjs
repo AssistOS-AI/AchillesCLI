@@ -11,18 +11,6 @@ const taskRunnerByAgent = {
     piAgent: 'scripts/execute-task.mjs',
     codexAgent: 'scripts/codex-runner.mjs',
 };
-const providerExecutionByAgent = {
-    opencodeAgent: {
-        provider: 'opencode',
-        module: '/code/scripts/execute-task.mjs',
-        export: 'executeProviderTask',
-    },
-    piAgent: {
-        provider: 'pi',
-        module: '/code/scripts/execute-task.mjs',
-        export: 'executeProviderTask',
-    },
-};
 
 for (const agent of ['opencodeAgent', 'piAgent', 'codexAgent']) {
     test(`${agent} keeps task tools internal and without elapsed-time limits`, () => {
@@ -40,17 +28,7 @@ for (const agent of ['opencodeAgent', 'piAgent', 'codexAgent']) {
         const loginStore = path.join(repositoryRoot, agent, 'scripts/login-flow-store.mjs');
 
         assert.deepEqual(tools.get('execute-task')?.tags, ['internal']);
-        if (providerExecutionByAgent[agent]) {
-            assert.deepEqual(
-                tools.get('execute-task')?.providerExecution,
-                providerExecutionByAgent[agent],
-            );
-            for (const field of ['command', 'args', 'cwd', 'env']) {
-                assert.equal(Object.hasOwn(tools.get('execute-task'), field), false, field);
-            }
-        } else {
-            assert.equal(tools.get('execute-task')?.command, 'node');
-        }
+        assert.equal(tools.get('execute-task')?.command, 'node');
         assert.equal(tools.get('execute-task')?.continuationTool, 'continue-task');
         assert.equal(Object.hasOwn(tools.get('execute-task'), 'timeoutMs'), false);
         assert.deepEqual(tools.get('continue-task')?.tags, ['internal']);

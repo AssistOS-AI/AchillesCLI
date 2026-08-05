@@ -4,11 +4,9 @@
             "name": "execute-task",
             "title": "Execute PI Task",
             "description": "Execute a PI coding task from a caller-supplied prompt and model and persist its provider session behind an opaque continuation handle.",
-            "providerExecution": {
-                "provider": "pi",
-                "module": "/code/scripts/execute-task.mjs",
-                "export": "executeProviderTask"
-            },
+            "command": "node",
+            "args": ["/code/scripts/execute-task.mjs"],
+            "cwd": "/code",
             "async": true,
             "taskLogRetention": "full",
             "continuationTool": "continue-task",
@@ -84,9 +82,5 @@
                 "secretResponse": { "type": "string", "optional": true }
             }
         }
-    ],
-    "providerSandbox": {
-        "provider": "pi",
-        "readiness": true
-    }
+    ]
 }

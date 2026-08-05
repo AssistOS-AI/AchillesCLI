@@ -1,71 +1,46 @@
-const PROVIDER = 'opencode';
+#!/usr/bin/env node
 
-function assertPlainObject(value, label) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError(`${label} must be a plain object`);
-    }
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-        throw new TypeError(`${label} must be a plain object`);
-    }
-}
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
-function assertProviderSandboxModule(module) {
-    if (!module || typeof module !== 'object'
-        || typeof module.spawnProviderSandbox !== 'function'
-        || module.PROVIDER_SANDBOX_MODES?.READINESS !== 'readiness') {
-        throw new TypeError('canonical Ploinky provider sandbox module is invalid');
-    }
-    return module;
-}
+import { resolveOpenCodeBin } from './opencode-runner.mjs';
+import {
+    buildTaskSandboxLaunch,
+    probeNestedBubblewrap,
+} from './task-sandbox.mjs';
 
-async function loadProviderSandboxModule(providerSandboxModule) {
-    if (providerSandboxModule !== undefined) {
-        return assertProviderSandboxModule(providerSandboxModule);
-    }
-    return assertProviderSandboxModule(await import('/Agent/lib/providerSandbox.mjs'));
-}
-
-function readinessError(result) {
-    const error = new Error(
-        `sandboxed OpenCode readiness failed (${result.signal
-            ? `signal ${result.signal}`
-            : `exit ${result.code ?? 'unknown'}`})`,
-    );
-    error.code = 'PLOINKY_PROVIDER_READINESS_FAILED';
-    return error;
-}
-
-export async function checkTaskSandboxReadiness(
-    input,
-    dependencies = {},
-) {
-    assertPlainObject(input, 'OpenCode readiness input');
-    const inputKeys = Object.keys(input);
-    if (inputKeys.length !== 1 || inputKeys[0] !== 'credentialContext') {
-        throw new TypeError('OpenCode readiness input requires only credentialContext');
-    }
-    assertPlainObject(dependencies, 'OpenCode readiness dependencies');
-    for (const key of Object.keys(dependencies)) {
-        if (key !== 'providerSandboxModule' && key !== 'providerSpawnDependencies') {
-            throw new TypeError(`OpenCode readiness dependencies contains unknown field ${key}`);
-        }
-    }
-    const module = await loadProviderSandboxModule(dependencies.providerSandboxModule);
-    const run = await module.spawnProviderSandbox({
-        mode: module.PROVIDER_SANDBOX_MODES.READINESS,
-        provider: PROVIDER,
-        credentialContext: input.credentialContext,
-    }, {
-        stdio: ['ignore', 'ignore', 'ignore'],
-        leaseMetadata: { purpose: 'provider-readiness' },
-    }, dependencies.providerSpawnDependencies);
-    const result = await run.completion;
-    if (result.code !== 0 || result.signal) throw readinessError(result);
-    return Object.freeze({
-        mode: module.PROVIDER_SANDBOX_MODES.READINESS,
-        provider: PROVIDER,
-        code: result.code,
-        signal: result.signal,
+try {
+    const result = probeNestedBubblewrap();
+    const env = { ...process.env, HOME: '/root' };
+    const opencodeBin = resolveOpenCodeBin(env);
+    const launch = buildTaskSandboxLaunch({
+        projectDir: process.env.PLOINKY_WORKSPACE_ROOT,
+        command: opencodeBin,
+        args: ['--version'],
+        env,
+        readOnlyPaths: ['/root/.opencode'].filter((candidate) => fs.existsSync(candidate)),
+        writablePaths: [
+            '/root/.config/opencode',
+            '/root/.cache/opencode',
+            '/root/.local/share/opencode',
+            '/root/.local/state/opencode',
+        ].filter((candidate) => fs.existsSync(candidate)),
     });
+    const commandProbe = spawnSync(launch.command, launch.args, {
+        cwd: launch.cwd,
+        env,
+        encoding: 'utf8',
+        timeout: 10_000,
+    });
+    if (commandProbe.status !== 0 || commandProbe.error) {
+        const outcome = commandProbe.error?.code
+            || commandProbe.signal
+            || `exit ${commandProbe.status ?? 'unknown'}`;
+        throw new Error(`sandboxed OpenCode startup probe failed (${outcome})`);
+    }
+    process.stdout.write(`nested-bwrap-ok proc=${result.procMode} opencode=ok\n`);
+} catch (error) {
+    const code = typeof error?.code === 'string' ? `${error.code}: ` : '';
+    process.stderr.write(`${code}${error?.message || error}\n`);
+    process.exitCode = 1;
 }

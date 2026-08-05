@@ -1,70 +1,46 @@
-const PROVIDER_SANDBOX_MODULE = '/Agent/lib/providerSandbox.mjs';
-const PROVIDER = 'pi';
+#!/usr/bin/env node
 
-let providerSandboxPromise;
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
-function assertProviderSandbox(module) {
-    if (!module || typeof module !== 'object'
-        || module.PROVIDER_SANDBOX_MODES?.READINESS !== 'readiness'
-        || typeof module.spawnProviderSandbox !== 'function') {
-        throw new TypeError('the canonical provider sandbox readiness API is unavailable');
+import { resolvePiBinary } from './execute-task.mjs';
+import {
+    buildTaskSandboxLaunch,
+    probeNestedBubblewrap,
+} from './task-sandbox.mjs';
+
+try {
+    const result = probeNestedBubblewrap();
+    const env = {
+        ...process.env,
+        HOME: '/root',
+        PI_OFFLINE: '1',
+        PI_SKIP_VERSION_CHECK: '1',
+    };
+    const piBinary = resolvePiBinary(env);
+    const launch = buildTaskSandboxLaunch({
+        projectDir: process.env.PLOINKY_WORKSPACE_ROOT,
+        command: piBinary,
+        args: ['--version'],
+        env,
+        readOnlyPaths: ['/root/.local'].filter((candidate) => fs.existsSync(candidate)),
+        writablePaths: ['/root/.pi/agent'].filter((candidate) => fs.existsSync(candidate)),
+    });
+    const commandProbe = spawnSync(launch.command, launch.args, {
+        cwd: launch.cwd,
+        env,
+        encoding: 'utf8',
+        timeout: 10_000,
+    });
+    if (commandProbe.status !== 0 || commandProbe.error) {
+        const outcome = commandProbe.error?.code
+            || commandProbe.signal
+            || `exit ${commandProbe.status ?? 'unknown'}`;
+        throw new Error(`sandboxed PI startup probe failed (${outcome})`);
     }
-    return module;
+    process.stdout.write(`nested-bwrap-ok proc=${result.procMode} pi=ok\n`);
+} catch (error) {
+    const code = typeof error?.code === 'string' ? `${error.code}: ` : '';
+    process.stderr.write(`${code}${error?.message || error}\n`);
+    process.exitCode = 1;
 }
-
-async function loadProviderSandbox(dependencies = {}) {
-    if (!dependencies || typeof dependencies !== 'object' || Array.isArray(dependencies)) {
-        throw new TypeError('provider readiness dependencies must be an object');
-    }
-    const prototype = Object.getPrototypeOf(dependencies);
-    if (prototype !== Object.prototype && prototype !== null) {
-        throw new TypeError('provider readiness dependencies must be a plain object');
-    }
-    for (const name of Reflect.ownKeys(dependencies)) {
-        if (name !== 'providerSandbox') {
-            throw new TypeError(`unsupported provider readiness dependency ${String(name)}`);
-        }
-    }
-    if (Object.hasOwn(dependencies, 'providerSandbox')) {
-        const descriptor = Object.getOwnPropertyDescriptor(dependencies, 'providerSandbox');
-        if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
-            throw new TypeError('providerSandbox dependency must be a data property');
-        }
-        return assertProviderSandbox(descriptor.value);
-    }
-    providerSandboxPromise ||= import('/Agent/lib/providerSandbox.mjs');
-    return assertProviderSandbox(await providerSandboxPromise);
-}
-
-function readinessFailure(result) {
-    const signal = result?.signal ? ` signal ${result.signal}` : '';
-    const error = new Error(
-        `PI provider readiness failed with exit code ${result?.code ?? 'unknown'}${signal}`,
-    );
-    error.code = 'PLOINKY_PROVIDER_READINESS_FAILED';
-    return error;
-}
-
-export async function checkTaskSandboxReadiness({
-    credentialContext,
-    lifecycle = {},
-    dependencies = {},
-} = {}) {
-    if (credentialContext === null || credentialContext === undefined) {
-        throw new TypeError('PI provider readiness requires credentialContext');
-    }
-    const providerSandbox = await loadProviderSandbox(dependencies);
-    const runtime = await providerSandbox.spawnProviderSandbox({
-        mode: providerSandbox.PROVIDER_SANDBOX_MODES.READINESS,
-        provider: PROVIDER,
-        credentialContext,
-    }, lifecycle);
-    const result = await runtime.completion;
-    if (result?.code !== 0 || result?.signal) throw readinessFailure(result);
-    return Object.freeze({ launch: runtime.launch, result });
-}
-
-export const __testables = Object.freeze({
-    PROVIDER,
-    PROVIDER_SANDBOX_MODULE,
-});
