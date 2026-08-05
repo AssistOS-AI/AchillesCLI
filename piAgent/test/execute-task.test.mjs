@@ -9,7 +9,6 @@ import {
     __testables as piRunnerTestables,
     createPiJsonEventParser,
     executeProviderTask,
-    readCurrentPiModel,
 } from '../scripts/execute-task.mjs';
 import {
     createContinuationStoreFixture,
@@ -61,6 +60,8 @@ function runtimeHarness({
     const calls = [];
     const state = { afterExitCalls: 0, completionResolved: false, leaseHeld: false };
     const providerRuntime = {
+        provider: 'pi',
+        mode: 'task',
         async spawnWith(adapter, input, lifecycle) {
             calls.push({ adapter, input, lifecycle });
             if (spawnError) throw spawnError;
@@ -321,32 +322,6 @@ test('PI task rejects untrusted grammar and spawn failure before continuation mu
     assert.equal(missingRuntime.code, 'PLOINKY_PROVIDER_RUNTIME_REQUIRED');
 });
 
-test('PI model lookup uses project settings over the fixed clean HOME', async (t) => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-agent-settings-test-'));
-    t.after(() => fs.rm(directory, { recursive: true, force: true }));
-    const home = path.join(directory, 'home');
-    const projectDir = path.join(directory, 'project');
-    await fs.mkdir(path.join(home, '.pi', 'agent'), { recursive: true });
-    await fs.mkdir(path.join(projectDir, '.pi'), { recursive: true });
-    await fs.writeFile(path.join(home, '.pi', 'agent', 'settings.json'), JSON.stringify({
-        defaultProvider: 'xai',
-        defaultModel: 'grok-4.5',
-        defaultThinkingLevel: 'medium',
-    }));
-    await fs.writeFile(path.join(projectDir, '.pi', 'settings.json'), JSON.stringify({
-        defaultProvider: 'openai',
-        defaultModel: 'gpt-5.4-mini',
-        defaultThinkingLevel: 'high',
-    }));
-
-    assert.deepEqual(readCurrentPiModel({ projectDir, env: { HOME: home } }), {
-        provider: 'openai',
-        model: 'gpt-5.4-mini',
-        thinking: 'high',
-    });
-    assert.equal(piRunnerTestables.PI_HOME, '/home/agent');
-});
-
 test('PI task entry and MCP config have no shell, broker, env, or legacy fallback', async () => {
     const source = await fs.readFile(new URL('../scripts/execute-task.mjs', import.meta.url), 'utf8');
     for (const forbidden of [
@@ -373,6 +348,7 @@ test('PI task entry and MCP config have no shell, broker, env, or legacy fallbac
     const execute = config.tools.find((tool) => tool.name === 'execute-task');
     assert.deepEqual(execute.providerExecution, {
         provider: 'pi',
+        mode: 'task',
         module: '/code/scripts/execute-task.mjs',
         export: 'executeProviderTask',
     });

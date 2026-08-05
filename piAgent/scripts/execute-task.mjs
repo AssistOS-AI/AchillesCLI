@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import {
@@ -10,12 +8,9 @@ import {
 import { spawnTaskSandbox } from './task-sandbox.mjs';
 
 const LOG_TAIL_LIMIT = 16 * 1024;
-const PI_HOME = '/home/agent';
 const PI_SESSION_ROOT = '/home/agent/.ploinky/pi-sessions';
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
 const SOUL_MODELS = new Set(['fast', 'plan', 'deep']);
 const SOUL_EXTENSION_PATH = '/code/extensions/ploinky-soul.mjs';
-const DEFAULT_PI_ENVIRONMENT = Object.freeze({ HOME: PI_HOME });
 
 function serializeCause(cause, depth = 0) {
     if (!cause || depth >= 4) return undefined;
@@ -168,35 +163,6 @@ export function createPiJsonEventParser({ onText = () => {} } = {}) {
     };
 }
 
-function readJsonFile(filePath) {
-    try {
-        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch {
-        return {};
-    }
-}
-
-export function readCurrentPiModel({ projectDir, env = DEFAULT_PI_ENVIRONMENT } = {}) {
-    const home = String(env.HOME || PI_HOME);
-    const globalSettings = readJsonFile(path.join(home, '.pi', 'agent', 'settings.json'));
-    const projectSettings = typeof projectDir === 'string' && projectDir.trim()
-        ? readJsonFile(path.join(path.resolve(projectDir), '.pi', 'settings.json'))
-        : {};
-    const settings = { ...globalSettings, ...projectSettings };
-    const provider = typeof settings.defaultProvider === 'string'
-        ? settings.defaultProvider.trim()
-        : '';
-    const model = typeof settings.defaultModel === 'string'
-        ? settings.defaultModel.trim()
-        : '';
-    if (!provider || !model) return { provider: '', model: '', thinking: '' };
-    const thinking = typeof settings.defaultThinkingLevel === 'string'
-        && THINKING_LEVELS.has(settings.defaultThinkingLevel.trim())
-        ? settings.defaultThinkingLevel.trim()
-        : '';
-    return { provider, model, thinking };
-}
-
 async function collectPiResult(runtime, { logStream }) {
     const startedAt = Date.now();
     const child = runtime?.child;
@@ -335,6 +301,8 @@ async function executeProviderTaskWithStore(
     stateStore = { writeContinuationRecord },
 ) {
     if (!providerRuntime || typeof providerRuntime !== 'object'
+        || providerRuntime.provider !== 'pi'
+        || providerRuntime.mode !== 'task'
         || typeof providerRuntime.spawnWith !== 'function') {
         return failure(Object.assign(
             new Error('PI task requires the trusted provider runtime'),
@@ -407,8 +375,16 @@ export function executeProviderTask(payload, context) {
     return executeProviderTaskWithStore(payload, context);
 }
 
+export {
+    collectPiResult,
+    createContainerLogStream,
+    failure as piTaskFailure,
+    piArguments,
+    summarizeFailure,
+    summarizeOutput,
+};
+
 export const __testables = Object.freeze({
-    PI_HOME,
     PI_SESSION_ROOT,
     SOUL_EXTENSION_PATH,
     appendBoundedTail,

@@ -6,6 +6,7 @@
             "description": "Execute a PI coding task from a caller-supplied prompt and model and persist its provider session behind an opaque continuation handle.",
             "providerExecution": {
                 "provider": "pi",
+                "mode": "task",
                 "module": "/code/scripts/execute-task.mjs",
                 "export": "executeProviderTask"
             },
@@ -35,9 +36,12 @@
             "name": "continue-task",
             "title": "Continue PI Task",
             "description": "Continue a previously completed or failed PI task through its opaque Ploinky continuation handle.",
-            "command": "node",
-            "args": ["/code/scripts/continue-task.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "pi",
+                "mode": "operation",
+                "module": "/code/scripts/continue-task.mjs",
+                "export": "continueProviderTask"
+            },
             "async": true,
             "taskLogRetention": "full",
             "tags": ["internal"],
@@ -52,11 +56,6 @@
                     "description": "New user message to execute in the existing PI session.",
                     "optional": false
                 },
-                "provider": {
-                    "type": "string",
-                    "description": "Optional task-specific PI provider override.",
-                    "optional": true
-                },
                 "model": {
                     "type": "string",
                     "description": "Optional task-specific PI model override.",
@@ -68,20 +67,25 @@
             "name": "task-session-control",
             "title": "Control PI Task Session",
             "description": "Run typed provider authentication operations for a PI task session.",
-            "command": "node",
-            "args": ["/code/scripts/task-session-control.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "pi",
+                "mode": "operation",
+                "module": "/code/scripts/task-session-control.mjs",
+                "export": "executeTaskSessionControl"
+            },
             "tags": ["internal"],
             "inputSchema": {
                 "operation": { "type": "string", "optional": false },
-                "handle": { "type": "string", "optional": false },
+                "handle": { "type": "string", "optional": true },
                 "provider": { "type": "string", "optional": true },
                 "method": { "type": "string", "optional": true },
                 "flowId": { "type": "string", "optional": true },
+                "continuationHandle": { "type": "string", "optional": true },
+                "seq": { "type": "number", "optional": true },
+                "nonce": { "type": "string", "optional": true },
                 "response": { "type": "string", "optional": true },
                 "apiKey": { "type": "string", "optional": true },
-                "inputs": { "type": "object", "additionalProperties": true, "optional": true },
-                "secretResponse": { "type": "string", "optional": true }
+                "additionalProperties": false
             }
         }
     ],

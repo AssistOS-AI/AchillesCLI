@@ -35,7 +35,7 @@ if [ -z "${NPM_CLI:-}" ] || [ ! -f "$NPM_CLI" ]; then
     echo "install-pi: npm CLI was not found in the container or bwrap Node runtime." >&2
     exit 1
 fi
-node "$NPM_CLI" install -g --prefix "$INSTALL_PREFIX" --ignore-scripts --min-release-age=0 --no-fund --no-audit --loglevel=error --progress=false @earendil-works/pi-coding-agent
+node "$NPM_CLI" install -g --prefix "$INSTALL_PREFIX" --ignore-scripts --min-release-age=0 --no-fund --no-audit --loglevel=error --progress=false @earendil-works/pi-coding-agent@0.83.0
 
 if [ ! -f "$PACKAGE_ENTRY" ]; then
     echo "install-pi: package entry was not installed at $PACKAGE_ENTRY." >&2

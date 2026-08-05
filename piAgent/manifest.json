@@ -19,19 +19,13 @@
     },
     "endpoints": {
         "models": {
-            "command": "node",
-            "args": ["/code/openai-api/models.mjs"],
-            "cwd": "/code"
+            "providerExecution": {
+                "provider": "pi",
+                "mode": "operation",
+                "module": "/code/openai-api/models.mjs",
+                "export": "executePiModels"
+            }
         }
     },
-    "cli": "\"$HOME/.local/bin/pi\"",
-    "env": [
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "GOOGLE_API_KEY",
-        "XAI_API_KEY",
-        "OPENCODE_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENAI_API_KEY"
-    ]
+    "cli": "\"$HOME/.local/bin/pi\""
 }

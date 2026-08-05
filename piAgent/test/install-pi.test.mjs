@@ -43,7 +43,7 @@ cat <<'EOF'
 EOF
 `, { mode: 0o755 });
     await fs.writeFile(helperPath, `#!/bin/sh
-printf '%s\n' 'ploinky-bwrap-launch-v1 source-sha=${'a'.repeat(40)} protocol=1 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data preexec-barrier=R/G credential-bound=4096'
+printf '%s\n' 'ploinky-bwrap-launch-v2 source-sha=${'a'.repeat(40)} protocol=2 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data home-sources=sandbox-workspace-v2,container-native home-marker=ploinky-home-v2-schema-2 home-revalidation=post-barrier-G preexec-barrier=R/G credential-bound=4096'
 `, { mode: 0o755 });
     const ensureSource = (await fs.readFile(ensureScript, 'utf8'))
         .replaceAll('/usr/bin/bwrap', bwrapPath)
@@ -85,10 +85,12 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
     assert.equal(manifest.cli, '"$HOME/.local/bin/pi"');
     assert.equal(manifest.containerSecurity, undefined);
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
-    assert.equal(manifest.env.includes('PLOINKY_WORKSPACE_ROOT'), false);
+    assert.equal(manifest.env, undefined);
 
     const script = await fs.readFile(installScript, 'utf8');
     assert.match(script, /\/opt\/ploinky-node\/lib\/node_modules\/npm\/bin\/npm-cli\.js/);
     assert.match(script, /\/usr\/local\/lib\/node_modules\/npm\/bin\/npm-cli\.js/);
+    assert.match(script, /@earendil-works\/pi-coding-agent@0\.83\.0/);
+    assert.doesNotMatch(script, /@earendil-works\/pi-coding-agent(?:\s|$)/m);
     assert.doesNotMatch(script, /^\s*npm install/m);
 });

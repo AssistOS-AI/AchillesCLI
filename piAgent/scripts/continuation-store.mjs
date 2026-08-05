@@ -301,6 +301,15 @@ const continuationStore = createContinuationStore({
     sessionRoot: SESSION_DIRECTORY,
 });
 
+export function continuationStoreForHome(homeRoot) {
+    const fixedHomeRoot = assertRoot(homeRoot, 'provider_home');
+    return createContinuationStore({
+        homeRoot: fixedHomeRoot,
+        storeRoot: path.join(fixedHomeRoot, '.ploinky', 'task-sessions'),
+        sessionRoot: path.join(fixedHomeRoot, '.ploinky', 'pi-sessions'),
+    });
+}
+
 export function createContinuationHandle() {
     return crypto.randomUUID();
 }

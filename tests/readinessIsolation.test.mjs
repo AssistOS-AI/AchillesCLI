@@ -13,12 +13,15 @@ const REQUIRED_BWRAP_OPTIONS = Object.freeze([
 ]);
 
 const REQUIRED_HELPER_CAPABILITIES = Object.freeze([
-    `ploinky-bwrap-launch-v1 source-sha=${'a'.repeat(40)}`,
-    'protocol=1 descriptor-fd=3',
+    `ploinky-bwrap-launch-v2 source-sha=${'a'.repeat(40)}`,
+    'protocol=2 descriptor-fd=3',
     'path-resolution=openat2-beneath-no-magiclinks-no-symlinks',
     'bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms',
     'typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file',
     'ro-data-path-hardening=sealed-memfd-ro-bind-data',
+    'home-sources=sandbox-workspace-v2,container-native',
+    'home-marker=ploinky-home-v2-schema-2',
+    'home-revalidation=post-barrier-G',
     'preexec-barrier=R/G',
     'credential-bound=4096',
 ]);

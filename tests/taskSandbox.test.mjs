@@ -127,7 +127,7 @@ for (const implementation of implementations) {
         assert.equal(launch.helper, providerSandboxModule.PROVIDER_SANDBOX_HELPER);
         assert.deepEqual(launch.args, []);
         assert.ok(Buffer.isBuffer(launch.descriptor));
-        assert.equal(launch.descriptor.subarray(0, 8).toString('ascii'), 'PLBWLP01');
+        assert.equal(launch.descriptor.subarray(0, 8).toString('ascii'), 'PLBWLP02');
         assert.equal(launch.command[0], implementation.executable);
     });
 
