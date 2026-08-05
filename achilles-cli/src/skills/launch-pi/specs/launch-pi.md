@@ -9,7 +9,10 @@ launcher contract.
 
 The skill maps the task text into the `prompt` argument required by
 `piAgent.execute-task`. It resolves `projectDir` from `invocation.mainAgent.startDir`,
-does not parse JSON or prefixed field syntax, and does not inherit or forward
+requires that explicit directory to be non-root, and never substitutes the
+process current directory or workspace root. The target provider boundary owns
+the authoritative existing-directory validation. The launcher does not parse
+JSON or prefixed field syntax, and does not inherit or forward
 the AchillesCLI session model. `piAgent` owns model selection.
 
 The payload sent to the delegated tool contains only `prompt` and `projectDir`.
@@ -20,9 +23,11 @@ messages. The final assistant `message_end` text becomes the structured task
 result. Lifecycle events, thinking content, signatures, encrypted content, and
 usage metadata are omitted; non-JSON diagnostics and provider stderr remain
 visible.
-The provider task runner keeps `HOME=/root` and does not override
-`PI_CODING_AGENT_DIR`; PI therefore uses its persistent default agent
-configuration for interactive CLI sessions, initial tasks, and continuations.
+The provider task runner derives HOME only from the selected trusted runtime
+context (`/home/agent` in sandbox service mode and the native container HOME in
+container mode) and does not override `PI_CODING_AGENT_DIR`; PI therefore uses
+the mode-separated persistent provider configuration for interactive CLI
+sessions, initial tasks, and continuations.
 OAuth credentials created through the interactive `/login` flow and persistent
 provider settings are shared by all three paths.
 Continuation remains provider-owned: `piAgent` reads its persistent global PI

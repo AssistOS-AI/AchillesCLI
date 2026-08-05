@@ -183,6 +183,60 @@ test('OpenCode spawn adapter forwards lifecycle through the canonical spawner', 
     assert.equal(captured[0].dependencies, providerSpawnDependencies);
 });
 
+test('OpenCode spawn adapter does not load the provider sandbox after cancellation', async () => {
+    const controller = new AbortController();
+    const abortReason = new Error('cancelled before provider sandbox loading');
+    let loaderCalls = 0;
+    const deferredModule = {
+        then() {
+            loaderCalls += 1;
+        },
+    };
+    controller.abort(abortReason);
+
+    await assert.rejects(
+        spawnTaskSandbox(taskInput(), { signal: controller.signal }, {
+            providerSandboxModule: deferredModule,
+        }),
+        (error) => error === abortReason,
+    );
+    assert.equal(loaderCalls, 0);
+});
+
+test('OpenCode spawn adapter does not spawn after cancellation during provider sandbox loading', async () => {
+    const controller = new AbortController();
+    const abortReason = new Error('cancelled during provider sandbox loading');
+    let resolveModule;
+    let markLoaderStarted;
+    let spawnCalls = 0;
+    const loaderStarted = new Promise((resolve) => {
+        markLoaderStarted = resolve;
+    });
+    const deferredModule = {
+        then(resolve) {
+            resolveModule = resolve;
+            markLoaderStarted();
+        },
+    };
+    const injectedModule = {
+        ...providerSandboxModule,
+        spawnProviderSandbox() {
+            spawnCalls += 1;
+            return { completion: Promise.resolve({ code: 0, signal: null }) };
+        },
+    };
+
+    const spawnPromise = spawnTaskSandbox(taskInput(), { signal: controller.signal }, {
+        providerSandboxModule: deferredModule,
+    });
+    await loaderStarted;
+    controller.abort(abortReason);
+    resolveModule(injectedModule);
+
+    await assert.rejects(spawnPromise, (error) => error === abortReason);
+    assert.equal(spawnCalls, 0);
+});
+
 test('OpenCode readiness launches harmless startup in the canonical empty workspace', async () => {
     let readinessPolicy = null;
     let readinessLifecycle = null;

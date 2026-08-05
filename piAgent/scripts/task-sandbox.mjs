@@ -73,10 +73,14 @@ async function loadProviderSandbox(dependencies = {}) {
         if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
             throw new TypeError('providerSandbox dependency must be a data property');
         }
-        return assertProviderSandbox(descriptor.value);
+        return assertProviderSandbox(await descriptor.value);
     }
     providerSandboxPromise ||= import('/Agent/lib/providerSandbox.mjs');
     return assertProviderSandbox(await providerSandboxPromise);
+}
+
+function throwIfAborted(lifecycle) {
+    lifecycle?.signal?.throwIfAborted();
 }
 
 function taskInput(input, providerSandbox) {
@@ -103,7 +107,9 @@ export async function buildTaskSandboxLaunch(input, dependencies = {}) {
 
 export async function spawnTaskSandbox(input, lifecycle = {}, dependencies = {}) {
     const checkedInput = assertInput(input, 'PI task sandbox');
+    throwIfAborted(lifecycle);
     const providerSandbox = await loadProviderSandbox(dependencies);
+    throwIfAborted(lifecycle);
     return providerSandbox.spawnProviderSandbox(
         taskInput(checkedInput, providerSandbox),
         lifecycle,

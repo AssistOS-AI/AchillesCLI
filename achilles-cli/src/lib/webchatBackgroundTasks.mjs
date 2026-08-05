@@ -9,6 +9,7 @@ import {
     readWorkspaceTasks,
     setTaskModel as persistTaskModel,
 } from './workspaceTasks.mjs';
+import { formatSafeLifecycleError, safeLifecycleCode } from './safeLifecycleError.mjs';
 
 const TASK_POLL_INTERVAL_MS = 2000;
 const DESCRIPTION_LIMIT = 240;
@@ -46,6 +47,15 @@ function normalizeStatus(status) {
     if (value === 'cancelled') return 'stopped';
     if (value === 'failed' || value === 'not_found') return 'error';
     return 'ongoing';
+}
+
+function structuredTaskError(value, fallback = '') {
+    const errorCode = safeLifecycleCode(value);
+    const safeMessage = formatSafeLifecycleError(value);
+    return {
+        error: safeMessage || trim(fallback),
+        ...(errorCode ? { errorCode } : {}),
+    };
 }
 
 function normalizeContinuation(raw, targetAgent, fallbackTool = '') {
@@ -171,6 +181,7 @@ export async function createWebchatBackgroundTaskManager({
             if (resultContinuation?.handle) record.continuation = resultContinuation;
             if (changed) {
                 const finalOutput = status === 'ongoing' ? '' : taskResultText(task);
+                const taskError = structuredTaskError(task, task?.error);
                 publish({
                     event: 'update',
                     task: {
@@ -185,7 +196,7 @@ export async function createWebchatBackgroundTaskManager({
                         updatedAt: task?.updatedAt || new Date().toISOString(),
                         executionStartedAt: record.executionStartedAt,
                         turn: record.turn,
-                        error: trim(task?.error),
+                        ...taskError,
                         ...(record.continuation ? { continuation: record.continuation } : {}),
                         ...(record.logRetention === 'full' ? { logRetention: 'full' } : {}),
                     },
@@ -203,6 +214,32 @@ export async function createWebchatBackgroundTaskManager({
                 return;
             }
         } catch (error) {
+            const lifecycleError = structuredTaskError(error);
+            if (lifecycleError.errorCode) {
+                record.status = 'error';
+                record.terminal = true;
+                active.delete(record.id);
+                publish({
+                    event: 'update',
+                    task: {
+                        id: record.id,
+                        targetAgent: record.targetAgent,
+                        remoteTaskId: record.remoteTaskId,
+                        toolName: record.toolName,
+                        description: record.description,
+                        status: 'error',
+                        remoteStatus: 'failed',
+                        createdAt: record.createdAt,
+                        updatedAt: new Date().toISOString(),
+                        executionStartedAt: record.executionStartedAt,
+                        turn: record.turn,
+                        ...lifecycleError,
+                        ...(record.continuation ? { continuation: record.continuation } : {}),
+                        ...(record.logRetention === 'full' ? { logRetention: 'full' } : {}),
+                    },
+                });
+                return;
+            }
             const message = trim(error?.message).toLowerCase();
             if (message.includes('not_found') || message.includes('task not found') || message.includes('status 404')) {
                 record.status = 'error';
@@ -522,6 +559,7 @@ export const __testables = {
     localTaskId,
     normalizeStatus,
     normalizeContinuation,
+    structuredTaskError,
     taskResultText,
     presentTask,
     readOngoingTasks,

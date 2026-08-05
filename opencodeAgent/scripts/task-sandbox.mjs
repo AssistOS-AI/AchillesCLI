@@ -44,7 +44,7 @@ function assertProviderSandboxModule(module) {
 async function loadProviderSandboxModule(dependencies) {
     const normalized = normalizeDependencies(dependencies);
     if (normalized.providerSandboxModule !== undefined) {
-        return assertProviderSandboxModule(normalized.providerSandboxModule);
+        return assertProviderSandboxModule(await normalized.providerSandboxModule);
     }
     return assertProviderSandboxModule(await import('/Agent/lib/providerSandbox.mjs'));
 }
@@ -88,12 +88,15 @@ export async function buildTaskSandboxLaunch(input, dependencies = {}) {
 
 export async function spawnTaskSandbox(input, lifecycle = {}, dependencies = {}) {
     assertPlainObject(lifecycle, 'OpenCode task sandbox lifecycle');
+    const { signal } = lifecycle;
+    signal?.throwIfAborted();
     const normalized = normalizeDependencies(dependencies, { spawn: true });
     const module = await loadProviderSandboxModule({
         ...(normalized.providerSandboxModule === undefined
             ? {}
             : { providerSandboxModule: normalized.providerSandboxModule }),
     });
+    signal?.throwIfAborted();
     return module.spawnProviderSandbox(
         canonicalTaskInput(module, input),
         lifecycle,

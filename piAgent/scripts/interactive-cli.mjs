@@ -31,15 +31,22 @@ function signalError(name) {
 }
 
 function throwIfAborted(signal) {
-    if (signal?.aborted) signal.throwIfAborted();
+    if (!signal?.aborted) return;
+    if (signal.reason instanceof Error) throw signal.reason;
+    const error = codedError(
+        'PLOINKY_PROVIDER_RUNTIME_ABORTED',
+        'interactive provider was aborted before spawn',
+    );
+    error.cause = signal.reason;
+    throw error;
 }
 
 function causeChainIncludes(error, target) {
     const seen = new Set();
     let current = error;
-    while (current && (typeof current === 'object' || typeof current === 'function')) {
+    while (current && (typeof current === 'object' || typeof current === 'function')
+        && !seen.has(current)) {
         if (current === target) return true;
-        if (seen.has(current)) return false;
         seen.add(current);
         current = current.cause;
     }
@@ -48,10 +55,7 @@ function causeChainIncludes(error, target) {
 
 function validateInteractiveWorkdir(value) {
     if (value === '/workspace') {
-        throw codedError(
-            'PLOINKY_WORKDIR_ROOT_FORBIDDEN',
-            'the workspace root cannot be selected writable',
-        );
+        throw codedError('PLOINKY_WORKDIR_ROOT_FORBIDDEN', 'the workspace root cannot be selected writable');
     }
     if (typeof value !== 'string' || !value || value.includes('\0')
         || Buffer.byteLength(value, 'utf8') > MAX_WORKDIR_BYTES) {
@@ -73,10 +77,7 @@ function validateInteractiveWorkdir(value) {
 }
 
 function parseInteractiveArguments(argv) {
-    if (!Array.isArray(argv)
-        || argv.length < 3
-        || argv[0] !== '--workdir'
-        || argv[2] !== '--') {
+    if (!Array.isArray(argv) || argv.length < 3 || argv[0] !== '--workdir' || argv[2] !== '--') {
         throw inputError('usage: --workdir <path> -- <provider argv>');
     }
     const workdir = validateInteractiveWorkdir(argv[1]);
@@ -118,16 +119,8 @@ function assertDependencies(dependencies) {
 async function closeInteractiveOwnership(providerRuntime, brokerRegistry) {
     let runtimeError = null;
     let brokerError = null;
-    try {
-        await providerRuntime?.close();
-    } catch (error) {
-        runtimeError = error;
-    }
-    try {
-        await brokerRegistry?.close();
-    } catch (error) {
-        brokerError = error;
-    }
+    try { await providerRuntime?.close(); } catch (error) { runtimeError = error; }
+    try { await brokerRegistry?.close(); } catch (error) { brokerError = error; }
     if (runtimeError && brokerError) {
         const combined = new AggregateError(
             [runtimeError, brokerError],
@@ -182,9 +175,9 @@ export async function runInteractiveCli(argv, env, options = {}) {
             credentialContext,
             brokerRegistry,
             mode: 'task',
-            provider: 'opencode',
+            provider: 'pi',
             taskId: `interactive:${dependencies.randomUUID()}`,
-            audience: 'interactive:opencode',
+            audience: 'interactive:pi',
             signal,
         });
         const handle = await providerRuntime.spawnWith(
@@ -192,7 +185,7 @@ export async function runInteractiveCli(argv, env, options = {}) {
             { workdir: input.workdir, args: [...input.args] },
             {
                 environment: terminalEnvironment(env),
-                leaseMetadata: { purpose: 'opencode-interactive' },
+                leaseMetadata: { purpose: 'pi-interactive' },
                 stdio: ['inherit', 'inherit', 'inherit'],
             },
         );
@@ -235,9 +228,9 @@ export async function runInteractiveMain(
         });
         runtimeProcess.exitCode = exitCodeForCompletion(completion);
     } catch (error) {
-        const reason = controller.signal.reason;
-        if (controller.signal.aborted && causeChainIncludes(error, reason)) {
-            runtimeProcess.exitCode = reason.exitCode;
+        if (controller.signal.aborted
+            && causeChainIncludes(error, controller.signal.reason)) {
+            runtimeProcess.exitCode = controller.signal.reason.exitCode;
             return;
         }
         throw error;
@@ -254,9 +247,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 }
 
 export const __testables = Object.freeze({
+    causeChainIncludes,
     closeInteractiveOwnership,
     exitCodeForCompletion,
     parseInteractiveArguments,
+    signalError,
     terminalEnvironment,
+    throwIfAborted,
     validateInteractiveWorkdir,
 });

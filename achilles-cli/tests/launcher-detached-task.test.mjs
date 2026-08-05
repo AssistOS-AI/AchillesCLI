@@ -18,10 +18,12 @@ function detachedClient(description) {
     };
 }
 
+const explicitWorkdir = Object.freeze({ mainAgent: Object.freeze({ startDir: '/workspace/project' }) });
+
 test('agent launchers report detached WebChat work as started', async () => {
-    assert.equal(await launchCodex({ promptText: 'build feature', agentClient: detachedClient('build feature') }), 'Task started.');
-    assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient: detachedClient('build artifacts') }), 'Task started.');
-    assert.equal(await launchPi({ promptText: 'run tests', agentClient: detachedClient('run tests') }), 'Task started.');
+    assert.equal(await launchCodex({ ...explicitWorkdir, promptText: 'build feature', agentClient: detachedClient('build feature') }), 'Task started.');
+    assert.equal(await launchOpenCode({ ...explicitWorkdir, promptText: 'build artifacts', agentClient: detachedClient('build artifacts') }), 'Task started.');
+    assert.equal(await launchPi({ ...explicitWorkdir, promptText: 'run tests', agentClient: detachedClient('run tests') }), 'Task started.');
     assert.equal(await launchResearch({ promptText: 'research topic', agentClient: detachedClient('research topic') }), 'Task started.');
 });
 
@@ -32,9 +34,9 @@ test('agent launchers report unclaimed asynchronous work as started', async () =
         }),
     };
 
-    assert.equal(await launchCodex({ promptText: 'build feature', agentClient }), 'Task started.');
-    assert.equal(await launchOpenCode({ promptText: 'build artifacts', agentClient }), 'Task started.');
-    assert.equal(await launchPi({ promptText: 'run tests', agentClient }), 'Task started.');
+    assert.equal(await launchCodex({ ...explicitWorkdir, promptText: 'build feature', agentClient }), 'Task started.');
+    assert.equal(await launchOpenCode({ ...explicitWorkdir, promptText: 'build artifacts', agentClient }), 'Task started.');
+    assert.equal(await launchPi({ ...explicitWorkdir, promptText: 'run tests', agentClient }), 'Task started.');
     assert.equal(await launchResearch({ promptText: 'research topic', agentClient }), 'Task started.');
 });
 

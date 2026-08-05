@@ -11,7 +11,10 @@ not a generic agent-dispatch utility.
 The skill maps the task text into the `prompt` argument required by
 `opencodeAgent.execute-task`. It resolves `projectDir` from
 `invocation.mainAgent.startDir`, which is the AchillesCLI session working
-directory. The resulting MCP payload contains only `prompt` and `projectDir`.
+directory. That directory is required and exact `/workspace` is rejected; the
+launcher never substitutes `process.cwd()` or a workspace-root default. The
+resulting MCP payload contains only `prompt` and `projectDir`, and the target
+provider boundary performs the authoritative existing-directory validation.
 The launcher does not parse structured input, inherit the AchillesCLI session
 model, or forward a model override; `opencodeAgent` owns model selection.
 

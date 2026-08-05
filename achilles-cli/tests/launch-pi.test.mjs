@@ -39,6 +39,7 @@ test('action treats JSON-shaped text as the literal task', async () => {
     });
     const result = await action({
         promptText: task,
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
                 assert.equal(toolName, 'execute-task');
@@ -57,6 +58,7 @@ test('action treats model-shaped text as the literal task and ignores invocation
     const result = await action({
         promptText: 'model: claude-test task: build a component: keep it small',
         model: 'fast',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
@@ -75,6 +77,7 @@ test('action uses the non-blocking client path without callback polling', async 
     let capturedOptions = null;
     const result = await action({
         promptText: 'create a script',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async (_toolName, _payload, options) => {
                 capturedOptions = options;
@@ -100,6 +103,7 @@ test('action reports failed async task as plain text', async () => {
 
     const result = await action({
         promptText: 'create a script',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async () => {
                 throw failed;
@@ -113,6 +117,7 @@ test('action reports failed async task as plain text', async () => {
 test('action surfaces allowlisted lifecycle codes without diagnostic leakage', async () => {
     const result = await action({
         promptText: 'create a script',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async () => ({
                 ok: false,
@@ -135,6 +140,7 @@ test('action surfaces a safe code reconstructed on a thrown lifecycle error', as
     error.code = 'PLOINKY_BOX_RUNTIME_CAPABILITY_UNSUPPORTED';
     const result = await action({
         promptText: 'create a script',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: { callToolWithoutWait: async () => { throw error; } },
     });
 
@@ -142,6 +148,22 @@ test('action surfaces a safe code reconstructed on a thrown lifecycle error', as
         result,
         'PI task failed: PLOINKY_BOX_RUNTIME_CAPABILITY_UNSUPPORTED: The Box runtime does not support the required capability.',
     );
+});
+
+test('action requires an explicit non-root workdir before target-agent side effects', async () => {
+    for (const [mainAgent, expectedCode] of [
+        [undefined, 'PLOINKY_WORKDIR_REQUIRED'],
+        [{ startDir: '/workspace' }, 'PLOINKY_WORKDIR_ROOT_FORBIDDEN'],
+    ]) {
+        let called = false;
+        const result = await action({
+            promptText: 'build',
+            mainAgent,
+            agentClient: { callToolWithoutWait: async () => { called = true; } },
+        });
+        assert.match(result, new RegExp(`PI task failed: ${expectedCode}:`));
+        assert.equal(called, false);
+    }
 });
 
 test('action returns plain text for missing prompt', async () => {

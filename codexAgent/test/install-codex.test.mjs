@@ -66,7 +66,7 @@ test('Codex installs its executable under the persistent agent HOME', async (t) 
     assert.equal((await fs.stat(binaryPath)).mode & 0o111, 0o111);
 
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-    assert.equal(manifest.cli, '"$HOME/.local/bin/codex"');
+    assert.equal(manifest.cli, 'node /code/scripts/interactive-cli.mjs');
 
     const script = await fs.readFile(installScript, 'utf8');
     assert.match(script, /\/opt\/ploinky-node\/lib\/node_modules\/npm\/bin\/npm-cli\.js/);

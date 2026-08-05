@@ -477,3 +477,72 @@ test('reattachment starts a manual target agent before polling its task', async 
         fs.rmSync(workspace, { recursive: true, force: true });
     }
 });
+
+test('background polling treats safe provider lifecycle failures as terminal and redacts diagnostics', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-lifecycle-error-'));
+    let observer = null;
+    const published = [];
+    const agentClientModule = {
+        setAgentTaskObserver(next) {
+            observer = next;
+            return () => { observer = null; };
+        },
+        async createAgentClient() {
+            return {
+                async ensureAgentRunning() {},
+                async getTaskStatus() { throw new Error('unexpected reattach'); },
+            };
+        },
+    };
+
+    try {
+        const manager = await createWebchatBackgroundTaskManager({
+            workingDir: workspace,
+            emitProtocol: false,
+            onPublish: (event) => published.push(event),
+            agentClientModule,
+        });
+        try {
+            const failure = new Error('pid=923 secret-token PLOINKY_MASTER_KEY=hidden');
+            failure.code = 'PLOINKY_PROVIDER_RUNTIME_TERMINATION_UNPROVEN';
+            await observer({
+                agentName: 'codexAgent',
+                taskId: 'remote-lifecycle-failure',
+                toolName: 'execute-task',
+                arguments: { prompt: 'build safely' },
+                metadata: { status: 'queued' },
+                getTaskStatus: async () => { throw failure; },
+            });
+
+            const localId = __testables.localTaskId('codexAgent', 'remote-lifecycle-failure');
+            let stored = getTask(workspace, localId);
+            const deadline = Date.now() + 500;
+            while (stored?.status !== 'error' && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                stored = getTask(workspace, localId);
+            }
+
+            assert.equal(stored.status, 'error');
+            assert.equal(stored.errorCode, 'PLOINKY_PROVIDER_RUNTIME_TERMINATION_UNPROVEN');
+            assert.equal(
+                stored.error,
+                'PLOINKY_PROVIDER_RUNTIME_TERMINATION_UNPROVEN: Provider runtime cleanup could not be proven.',
+            );
+            assert.doesNotMatch(JSON.stringify(published), /923|secret-token|MASTER_KEY/);
+        } finally {
+            manager.close();
+        }
+    } finally {
+        fs.rmSync(workspace, { recursive: true, force: true });
+    }
+});
+
+test('persisted safe lifecycle errorCode remains recognizable without raw error details', () => {
+    assert.deepEqual(__testables.structuredTaskError({
+        errorCode: 'PLOINKY_WORKDIR_ROOT_FORBIDDEN',
+        error: 'host path and secret detail must not survive',
+    }), {
+        errorCode: 'PLOINKY_WORKDIR_ROOT_FORBIDDEN',
+        error: 'PLOINKY_WORKDIR_ROOT_FORBIDDEN: The workspace root cannot be selected writable.',
+    });
+});

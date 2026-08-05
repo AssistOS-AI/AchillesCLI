@@ -27,5 +27,5 @@
             }
         }
     },
-    "cli": "\"$HOME/.local/bin/pi\""
+    "cli": "node /code/scripts/interactive-cli.mjs"
 }

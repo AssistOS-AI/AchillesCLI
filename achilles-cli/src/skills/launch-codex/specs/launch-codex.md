@@ -9,7 +9,10 @@ not part of the launcher contract.
 
 The skill maps task text to `prompt` and resolves `projectDir` from
 `invocation.mainAgent.startDir`. The delegated payload contains only those two
-fields. The launcher does not inherit or forward AchillesCLI's selected model;
+fields. An explicit non-root directory is required, with no current-directory
+or workspace-root fallback; the target provider boundary performs the
+authoritative existing-directory validation. The launcher does not inherit or
+forward AchillesCLI's selected model;
 Codex resolves its current configuration inside the provider runtime.
 
 The provider starts `codex exec --json` without ephemeral mode, persists the
@@ -51,9 +54,10 @@ The current Codex configuration is the authority for a new turn. The private
 continuation record stores only the provider thread id and original project
 directory, so a historical model choice cannot leak back into resumed work.
 
-### Question #2: Why is Codex run with bypassed approvals and sandboxing?
+### Question #2: Why does Codex retain its native sandbox flags?
 
 Response:
-The Codex process already runs inside the isolated Ploinky agent container.
-Non-interactive WebChat tasks cannot answer approval prompts, so the provider
-uses Codex's explicit automation flag and documents that trust boundary.
+The Codex process always runs inside Ploinky's narrower canonical provider
+sandbox in either selected service runtime. Codex still receives
+`--sandbox workspace-write --ask-for-approval never` before its subcommand as
+defense in depth and so non-interactive WebChat tasks never wait for a prompt.

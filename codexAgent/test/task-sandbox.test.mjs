@@ -23,6 +23,16 @@ function canonicalModule() {
     };
 }
 
+function deferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, reject, resolve };
+}
+
 const input = Object.freeze({
     args: ['--sandbox', 'workspace-write', 'exec', '--json', 'Task'],
     credentialContext,
@@ -56,6 +66,49 @@ test('Codex adapter delegates spawn and lifecycle to canonical Ploinky policy', 
     assert.equal(result.lifecycle, lifecycle);
     assert.equal(result.input.provider, 'codex');
     assert.equal(result.input.mode, 'task');
+});
+
+test('Codex adapter rejects an already-aborted lifecycle before module loading', async () => {
+    const controller = new AbortController();
+    const reason = new Error('cancel before provider module load');
+    const providerSandbox = canonicalModule();
+    let loadCount = 0;
+    const providerSandboxLoader = {
+        then(resolve) {
+            loadCount += 1;
+            resolve(providerSandbox);
+        },
+    };
+    controller.abort(reason);
+
+    await assert.rejects(
+        spawnTaskSandbox(
+            input,
+            { signal: controller.signal },
+            { providerSandbox: providerSandboxLoader },
+        ),
+        (error) => error === reason,
+    );
+    assert.equal(loadCount, 0);
+    assert.deepEqual(providerSandbox.calls, []);
+});
+
+test('Codex adapter does not spawn after cancellation during module loading', async () => {
+    const controller = new AbortController();
+    const reason = new Error('cancel while provider module loads');
+    const providerSandbox = canonicalModule();
+    const loading = deferred();
+
+    const spawnPromise = spawnTaskSandbox(
+        input,
+        { signal: controller.signal },
+        { providerSandbox: loading.promise },
+    );
+    controller.abort(reason);
+    loading.resolve(providerSandbox);
+
+    await assert.rejects(spawnPromise, (error) => error === reason);
+    assert.deepEqual(providerSandbox.calls, []);
 });
 
 test('Codex adapter rejects policy widening and missing credential context', async () => {

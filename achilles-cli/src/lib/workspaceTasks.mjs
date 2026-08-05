@@ -198,6 +198,9 @@ function normalizeTask(raw) {
         executionStartedAt: validTimestamp(raw.executionStartedAt) || createdAt,
         turn: Number.isSafeInteger(raw.turn) && raw.turn > 0 ? raw.turn : 1,
         error: String(raw.error || '').trim().slice(0, 1000),
+        ...(typeof raw.errorCode === 'string' && /^[A-Z0-9_]{1,120}$/u.test(raw.errorCode)
+            ? { errorCode: raw.errorCode }
+            : {}),
         finalOutputOffset: Number.isSafeInteger(raw.finalOutputOffset) && raw.finalOutputOffset >= 0
             ? raw.finalOutputOffset
             : null,

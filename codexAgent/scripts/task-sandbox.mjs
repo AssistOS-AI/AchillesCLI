@@ -72,10 +72,20 @@ async function loadProviderSandbox(dependencies = {}) {
         if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
             throw new TypeError('providerSandbox dependency must be a data property');
         }
-        return assertProviderSandbox(descriptor.value);
+        return assertProviderSandbox(await descriptor.value);
     }
     providerSandboxPromise ||= import(PROVIDER_SANDBOX_MODULE);
     return assertProviderSandbox(await providerSandboxPromise);
+}
+
+function throwIfLifecycleAborted(lifecycle) {
+    if (lifecycle.signal === undefined) {
+        return;
+    }
+    if (!(lifecycle.signal instanceof AbortSignal)) {
+        throw new TypeError('Codex task sandbox lifecycle signal must be an AbortSignal');
+    }
+    lifecycle.signal.throwIfAborted();
 }
 
 function taskInput(input, providerSandbox) {
@@ -102,7 +112,9 @@ export async function buildTaskSandboxLaunch(input, dependencies = {}) {
 
 export async function spawnTaskSandbox(input, lifecycle = {}, dependencies = {}) {
     assertPlainObject(lifecycle, 'Codex task sandbox lifecycle');
+    throwIfLifecycleAborted(lifecycle);
     const providerSandbox = await loadProviderSandbox(dependencies);
+    throwIfLifecycleAborted(lifecycle);
     return providerSandbox.spawnProviderSandbox(
         taskInput(input, providerSandbox),
         lifecycle,

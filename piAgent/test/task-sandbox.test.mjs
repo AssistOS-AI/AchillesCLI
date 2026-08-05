@@ -42,6 +42,14 @@ function taskInput() {
     };
 }
 
+function deferred() {
+    let resolve;
+    const promise = new Promise((resolvePromise) => {
+        resolve = resolvePromise;
+    });
+    return { promise, resolve };
+}
+
 test('PI policy and launch adapters delegate exact task inputs to the canonical API', async () => {
     const { calls, providerSandbox } = canonicalStub();
     const input = taskInput();
@@ -86,6 +94,49 @@ test('PI spawn adapter delegates lifecycle without exposing helper dependencies'
     assert.equal(calls[0].input.mode, 'task');
     assert.equal(calls[0].lifecycle, lifecycle);
     assert.equal(calls[0].input.credentialContext, input.credentialContext);
+});
+
+test('PI spawn adapter rejects an already-aborted lifecycle before module loading', async () => {
+    const { providerSandbox } = canonicalStub();
+    const controller = new AbortController();
+    const reason = new Error('cancel before PI provider bootstrap');
+    controller.abort(reason);
+    let moduleLoads = 0;
+    const pendingModule = {
+        then(resolve) {
+            moduleLoads += 1;
+            resolve(providerSandbox);
+        },
+    };
+
+    await assert.rejects(
+        spawnTaskSandbox(
+            taskInput(),
+            { signal: controller.signal },
+            { providerSandbox: pendingModule },
+        ),
+        (error) => error === reason,
+    );
+    assert.equal(moduleLoads, 0);
+});
+
+test('PI spawn adapter does not launch after cancellation during module loading', async () => {
+    const { calls, providerSandbox } = canonicalStub();
+    const moduleLoad = deferred();
+    const controller = new AbortController();
+    const reason = new Error('cancel during PI provider bootstrap');
+
+    const pendingSpawn = spawnTaskSandbox(
+        taskInput(),
+        { signal: controller.signal },
+        { providerSandbox: moduleLoad.promise },
+    );
+    await Promise.resolve();
+    controller.abort(reason);
+    moduleLoad.resolve(providerSandbox);
+
+    await assert.rejects(pendingSpawn, (error) => error === reason);
+    assert.deepEqual(calls, []);
 });
 
 test('PI task adapter fails closed without context or with policy override attempts', async () => {

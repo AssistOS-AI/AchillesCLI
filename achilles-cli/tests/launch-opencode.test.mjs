@@ -65,6 +65,7 @@ test('action treats JSON-shaped text as the literal task', async () => {
     });
     await action({
         promptText: task,
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
                 calls.push({ toolName, payload });
@@ -160,6 +161,7 @@ test('action reports failed async opencode task errors', async () => {
 
     const result = await action({
         promptText: 'build artifacts',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async () => {
                 throw error;
@@ -173,6 +175,7 @@ test('action reports failed async opencode task errors', async () => {
 test('action surfaces allowlisted lifecycle codes without diagnostic leakage', async () => {
     const result = await action({
         promptText: 'build artifacts',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async () => ({
                 ok: false,
@@ -195,6 +198,7 @@ test('action surfaces a safe code reconstructed on a thrown lifecycle error', as
     error.code = 'PLOINKY_MANIFEST_SECURITY_INVALID';
     const result = await action({
         promptText: 'build artifacts',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: { callToolWithoutWait: async () => { throw error; } },
     });
 
@@ -204,9 +208,9 @@ test('action surfaces a safe code reconstructed on a thrown lifecycle error', as
     );
 });
 
-test('action uses process cwd only without mainAgent.startDir', async () => {
+test('action rejects a missing explicit workdir without contacting the target agent', async () => {
     const calls = [];
-    await action({
+    const result = await action({
         promptText: 'run checks',
         agentClient: {
             callToolWithoutWait: async (toolName, payload) => {
@@ -216,7 +220,26 @@ test('action uses process cwd only without mainAgent.startDir', async () => {
         },
     });
 
-    assert.equal(calls[0].payload.projectDir, process.cwd());
+    assert.equal(
+        result,
+        'OpenCode task failed: PLOINKY_WORKDIR_REQUIRED: A non-root project directory is required.',
+    );
+    assert.equal(calls.length, 0);
+});
+
+test('action rejects the workspace root before contacting the target agent', async () => {
+    let called = false;
+    const result = await action({
+        promptText: 'run checks',
+        mainAgent: { startDir: '/workspace' },
+        agentClient: { callToolWithoutWait: async () => { called = true; } },
+    });
+
+    assert.equal(
+        result,
+        'OpenCode task failed: PLOINKY_WORKDIR_ROOT_FORBIDDEN: The workspace root cannot be selected writable.',
+    );
+    assert.equal(called, false);
 });
 
 test('action returns plain text for missing prompt', async () => {
@@ -228,6 +251,7 @@ test('action returns plain text for missing prompt', async () => {
 test('action returns plain agent error text', async () => {
     const result = await action({
         promptText: 'build artifacts',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async () => ({ ok: false, error: 'opencode failed' }),
         },
@@ -239,6 +263,7 @@ test('action returns plain agent error text', async () => {
 test('action returns plain MCP exception text', async () => {
     const result = await action({
         promptText: 'build artifacts',
+        mainAgent: { startDir: '/workspace/project' },
         agentClient: {
             callToolWithoutWait: async () => {
                 throw new Error('router unavailable');

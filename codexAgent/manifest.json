@@ -18,7 +18,7 @@
             "install": "sh /code/scripts/install-codex.sh"
         }
     },
-    "cli": "\"$HOME/.local/bin/codex\"",
+    "cli": "node /code/scripts/interactive-cli.mjs",
     "env": {
         "OPENAI_API_KEY": {
             "name": "OPENAI_API_KEY"

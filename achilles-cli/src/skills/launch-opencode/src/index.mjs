@@ -94,7 +94,18 @@ function normalizePrompt(invocation = {}) {
 }
 
 function resolveProjectDir(invocation = {}) {
-    return trim(invocation.mainAgent?.startDir) || process.cwd();
+    const projectDir = trim(invocation.mainAgent?.startDir);
+    if (!projectDir) {
+        const error = new Error('a non-root project directory is required');
+        error.code = 'PLOINKY_WORKDIR_REQUIRED';
+        throw error;
+    }
+    if (projectDir === '/workspace' || projectDir === '.') {
+        const error = new Error('the workspace root cannot be selected writable');
+        error.code = 'PLOINKY_WORKDIR_ROOT_FORBIDDEN';
+        throw error;
+    }
+    return projectDir;
 }
 
 function formatFailurePayload(payload) {
@@ -138,12 +149,11 @@ export async function action(invocation = {}) {
         return 'OpenCode needs a natural-language task to run.';
     }
 
-    const payload = {
-        prompt,
-        projectDir: resolveProjectDir(invocation),
-    };
-
     try {
+        const payload = {
+            prompt,
+            projectDir: resolveProjectDir(invocation),
+        };
         const result = parseTaskResult(await callAgentTool(TARGET_AGENT, TOOL_NAME, payload, {
             agentClient: invocation.agentClient,
             userDelegationToken: invocation.userDelegationToken,

@@ -1,4 +1,5 @@
 import { callToolWhenReady, ensureAgentsRunning } from '../../../lib/ploinkyAgentRuntime.mjs';
+import { formatSafeLifecycleError } from '../../../lib/safeLifecycleError.mjs';
 
 function trim(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -70,10 +71,23 @@ function normalizePrompt(invocation = {}) {
 }
 
 function resolveProjectDir(invocation = {}) {
-    return trim(invocation.mainAgent?.startDir) || process.cwd();
+    const projectDir = trim(invocation.mainAgent?.startDir);
+    if (!projectDir) {
+        const error = new Error('a non-root project directory is required');
+        error.code = 'PLOINKY_WORKDIR_REQUIRED';
+        throw error;
+    }
+    if (projectDir === '/workspace' || projectDir === '.') {
+        const error = new Error('the workspace root cannot be selected writable');
+        error.code = 'PLOINKY_WORKDIR_ROOT_FORBIDDEN';
+        throw error;
+    }
+    return projectDir;
 }
 
 function formatFailurePayload(payload) {
+    const safeLifecycleError = formatSafeLifecycleError(payload);
+    if (safeLifecycleError) return safeLifecycleError;
     const errorText = trim(payload.error);
     const outputText = trim(payload.outputText || payload.logTail);
     if (!errorText) return outputText || 'Codex task failed.';
@@ -87,7 +101,7 @@ function normalizeAnswer(payload) {
     }
     if (payload?.metadata?.backgroundTask?.detached) return 'Task started.';
     if (trim(payload?.metadata?.taskId || payload?.result?.metadata?.taskId)) return 'Task started.';
-    if (payload.ok === false && payload.error) return formatFailurePayload(payload);
+    if (payload.ok === false) return formatFailurePayload(payload);
     const outputText = trim(payload.outputText);
     return outputText ? `Codex task completed.\n\n${outputText}` : 'Codex task completed.';
 }
@@ -95,11 +109,11 @@ function normalizeAnswer(payload) {
 export async function action(invocation = {}) {
     const prompt = normalizePrompt(invocation);
     if (!prompt) return 'Codex needs a natural-language task to run.';
-    const payload = {
-        prompt,
-        projectDir: resolveProjectDir(invocation),
-    };
     try {
+        const payload = {
+            prompt,
+            projectDir: resolveProjectDir(invocation),
+        };
         const result = parseTaskResult(await callAgentTool(TARGET_AGENT, TOOL_NAME, payload, {
             agentClient: invocation.agentClient,
             userDelegationToken: invocation.userDelegationToken,
@@ -107,6 +121,8 @@ export async function action(invocation = {}) {
         }));
         return normalizeAnswer(result);
     } catch (error) {
+        const safeLifecycleError = formatSafeLifecycleError(error?.task || error);
+        if (safeLifecycleError) return `Codex task failed: ${safeLifecycleError}`;
         if (error?.task) {
             return `Codex task failed: ${formatFailurePayload(parseTaskResult(error.task))}`;
         }

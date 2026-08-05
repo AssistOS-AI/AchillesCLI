@@ -8,6 +8,12 @@ import { spawnTaskSandbox } from './task-sandbox.mjs';
 
 const TERMINAL_ENVIRONMENT = Object.freeze(['TERM', 'COLORTERM', 'NO_COLOR', 'FORCE_COLOR']);
 const SIGNAL_EXIT_CODES = Object.freeze({ SIGHUP: 129, SIGINT: 130, SIGTERM: 143 });
+const CODEX_DEFENSE_ARGUMENTS = Object.freeze([
+    '--sandbox',
+    'workspace-write',
+    '--ask-for-approval',
+    'never',
+]);
 const MAX_WORKDIR_BYTES = 4095;
 
 function codedError(code, message) {
@@ -16,42 +22,43 @@ function codedError(code, message) {
     return error;
 }
 
-function inputError(message) {
-    return codedError('PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID', message);
-}
-
 function signalError(name) {
     const error = codedError(
         'PLOINKY_PROVIDER_RUNTIME_SIGNALLED',
         `interactive provider received ${name}`,
     );
     error.signal = name;
-    error.exitCode = SIGNAL_EXIT_CODES[name];
+    error.exitCode = SIGNAL_EXIT_CODES[name] ?? 1;
     return error;
 }
 
 function throwIfAborted(signal) {
-    if (signal?.aborted) signal.throwIfAborted();
+    signal?.throwIfAborted();
 }
 
-function causeChainIncludes(error, target) {
+function hasCause(error, expected) {
+    if (expected === undefined) return false;
+    const pending = [error];
     const seen = new Set();
-    let current = error;
-    while (current && (typeof current === 'object' || typeof current === 'function')) {
-        if (current === target) return true;
-        if (seen.has(current)) return false;
+    while (pending.length > 0) {
+        const current = pending.pop();
+        if (current === expected) return true;
+        if (!current || (typeof current !== 'object' && typeof current !== 'function')
+            || seen.has(current)) continue;
         seen.add(current);
-        current = current.cause;
+        if (current.cause !== undefined) pending.push(current.cause);
+        if (Array.isArray(current.errors)) pending.push(...current.errors);
     }
     return false;
 }
 
+function inputError(message) {
+    return codedError('PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID', message);
+}
+
 function validateInteractiveWorkdir(value) {
     if (value === '/workspace') {
-        throw codedError(
-            'PLOINKY_WORKDIR_ROOT_FORBIDDEN',
-            'the workspace root cannot be selected writable',
-        );
+        throw codedError('PLOINKY_WORKDIR_ROOT_FORBIDDEN', 'the workspace root cannot be selected writable');
     }
     if (typeof value !== 'string' || !value || value.includes('\0')
         || Buffer.byteLength(value, 'utf8') > MAX_WORKDIR_BYTES) {
@@ -73,10 +80,7 @@ function validateInteractiveWorkdir(value) {
 }
 
 function parseInteractiveArguments(argv) {
-    if (!Array.isArray(argv)
-        || argv.length < 3
-        || argv[0] !== '--workdir'
-        || argv[2] !== '--') {
+    if (!Array.isArray(argv) || argv.length < 3 || argv[0] !== '--workdir' || argv[2] !== '--') {
         throw inputError('usage: --workdir <path> -- <provider argv>');
     }
     const workdir = validateInteractiveWorkdir(argv[1]);
@@ -118,16 +122,8 @@ function assertDependencies(dependencies) {
 async function closeInteractiveOwnership(providerRuntime, brokerRegistry) {
     let runtimeError = null;
     let brokerError = null;
-    try {
-        await providerRuntime?.close();
-    } catch (error) {
-        runtimeError = error;
-    }
-    try {
-        await brokerRegistry?.close();
-    } catch (error) {
-        brokerError = error;
-    }
+    try { await providerRuntime?.close(); } catch (error) { runtimeError = error; }
+    try { await brokerRegistry?.close(); } catch (error) { brokerError = error; }
     if (runtimeError && brokerError) {
         const combined = new AggregateError(
             [runtimeError, brokerError],
@@ -169,8 +165,8 @@ export async function runInteractiveCli(argv, env, options = {}) {
     }
     throwIfAborted(signal);
     const input = parseInteractiveArguments(argv);
-    let providerRuntime = null;
     let brokerRegistry = null;
+    let providerRuntime = null;
     let result = null;
     try {
         throwIfAborted(signal);
@@ -182,17 +178,17 @@ export async function runInteractiveCli(argv, env, options = {}) {
             credentialContext,
             brokerRegistry,
             mode: 'task',
-            provider: 'opencode',
+            provider: 'codex',
             taskId: `interactive:${dependencies.randomUUID()}`,
-            audience: 'interactive:opencode',
+            audience: 'interactive:codex',
             signal,
         });
         const handle = await providerRuntime.spawnWith(
             dependencies.spawnTaskSandbox,
-            { workdir: input.workdir, args: [...input.args] },
+            { workdir: input.workdir, args: [...CODEX_DEFENSE_ARGUMENTS, ...input.args] },
             {
                 environment: terminalEnvironment(env),
-                leaseMetadata: { purpose: 'opencode-interactive' },
+                leaseMetadata: { purpose: 'codex-interactive' },
                 stdio: ['inherit', 'inherit', 'inherit'],
             },
         );
@@ -216,10 +212,7 @@ export async function runInteractiveCli(argv, env, options = {}) {
     return result;
 }
 
-export async function runInteractiveMain(
-    runtimeProcess = process,
-    dependencyLoader = loadProductionDependencies,
-) {
+export async function runInteractiveMain(runtimeProcess = process, dependencyLoader = loadProductionDependencies) {
     const controller = new AbortController();
     const handlers = new Map();
     for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
@@ -235,9 +228,9 @@ export async function runInteractiveMain(
         });
         runtimeProcess.exitCode = exitCodeForCompletion(completion);
     } catch (error) {
-        const reason = controller.signal.reason;
-        if (controller.signal.aborted && causeChainIncludes(error, reason)) {
-            runtimeProcess.exitCode = reason.exitCode;
+        const abortReason = controller.signal.reason;
+        if (controller.signal.aborted && hasCause(error, abortReason)) {
+            runtimeProcess.exitCode = abortReason.exitCode;
             return;
         }
         throw error;
@@ -254,9 +247,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 }
 
 export const __testables = Object.freeze({
+    CODEX_DEFENSE_ARGUMENTS,
     closeInteractiveOwnership,
     exitCodeForCompletion,
+    hasCause,
     parseInteractiveArguments,
+    signalError,
     terminalEnvironment,
+    throwIfAborted,
     validateInteractiveWorkdir,
 });
