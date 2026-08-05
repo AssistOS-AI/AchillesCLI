@@ -9,6 +9,9 @@ import {
 import { createWebchatInteractionController } from '../src/lib/webchatInteractionController.mjs';
 
 const TASK_ID = 'task_111111111111111111111111';
+const FLOW_ID = 'login:11111111-2222-4333-8444-555555555555';
+const CONTINUATION_HANDLE = 'c'.repeat(43);
+const PROMPT_NONCE = 'n'.repeat(16);
 
 test('/task model returns the agent endpoint catalog without creating an interaction', async () => {
     const calls = [];
@@ -89,7 +92,13 @@ test('/task login owns provider and secret prompting in AchillesCLI', async () =
                 }],
             };
         }
-        return { status: 'completed', provider: input.provider };
+        return {
+            type: 'login-flow',
+            version: 1,
+            status: 'completed',
+            provider: input.provider,
+            method: input.method,
+        };
     };
     const commands = createTaskControlCommands({
         workingDir: '/work',
@@ -138,17 +147,25 @@ test('/task login renders a structured device-code challenge in the originating 
         }
         if (input.operation === 'login_start') {
             return {
+                type: 'login-flow',
+                version: 1,
                 status: 'running',
-                flowId: 'flow_123',
+                flowId: FLOW_ID,
+                continuationHandle: CONTINUATION_HANDLE,
+                provider: 'openai',
+                method: 'device_code',
                 challenge: {
                     type: 'device_code',
                     verificationUri: 'https://example.com/device',
                     userCode: 'ABCD-EFGH',
-                    expiresInSeconds: 900,
                 },
             };
         }
-        return { status: 'completed', flowId: 'flow_123', provider: 'openai' };
+        return {
+            type: 'login-flow', version: 1, status: 'completed',
+            flowId: FLOW_ID, continuationHandle: CONTINUATION_HANDLE,
+            provider: 'openai', method: 'device_code',
+        };
     };
     const commands = createTaskControlCommands({
         workingDir: '/work',
@@ -167,7 +184,6 @@ test('/task login renders a structured device-code challenge in the originating 
         type: 'device_code',
         verificationUri: 'https://example.com/device',
         userCode: 'ABCD-EFGH',
-        expiresInSeconds: 900,
     });
     assert.equal(challenge.targetTaskId, TASK_ID);
     assert.equal(challenge.targetTabId, 'tab_login');
@@ -182,7 +198,11 @@ test('/task login renders a structured device-code challenge in the originating 
     ]);
     assert.deepEqual(completed, [{
         taskId: TASK_ID,
-        flow: { status: 'completed', flowId: 'flow_123', provider: 'openai' },
+        flow: {
+            type: 'login-flow', version: 1, status: 'completed',
+            flowId: FLOW_ID, continuationHandle: CONTINUATION_HANDLE,
+            provider: 'openai', method: 'device_code',
+        },
     }]);
 });
 
@@ -252,8 +272,13 @@ test('cancelling a browser interaction also cancels an active provider flow', as
             }
             if (input.operation === 'login_start') {
                 return {
+                    type: 'login-flow',
+                    version: 1,
                     status: 'running',
-                    flowId: 'flow_refresh',
+                    flowId: FLOW_ID,
+                    continuationHandle: CONTINUATION_HANDLE,
+                    provider: 'openai',
+                    method: 'device',
                     challenge: {
                         type: 'device_code',
                         verificationUri: 'https://example.com/device',
@@ -262,7 +287,12 @@ test('cancelling a browser interaction also cancels an active provider flow', as
                 };
             }
             if (input.operation === 'login_cancel') {
-                return { status: 'cancelled', flowId: input.flowId };
+                assert.equal(input.continuationHandle, CONTINUATION_HANDLE);
+                return {
+                    type: 'login-flow', version: 1, status: 'cancelled',
+                    flowId: input.flowId, continuationHandle: input.continuationHandle,
+                    provider: 'openai', method: 'device',
+                };
             }
             throw new Error(`unexpected operation: ${input.operation}`);
         },
@@ -273,6 +303,67 @@ test('cancelling a browser interaction also cancels an active provider flow', as
         context: { sourceTabId: 'tab_login', sourcePageInstanceId: 'page_login' },
     }), /interaction_cancelled/);
     assert.deepEqual(operations, ['login_describe', 'login_start', 'login_cancel']);
+});
+
+test('/task login binds every manual response to the returned flow capability and prompt', async () => {
+    const calls = [];
+    const commands = createTaskControlCommands({
+        workingDir: '/work',
+        interactions: {
+            async select() { return 'unused'; },
+            async input(request) {
+                assert.equal(request.type, 'secret');
+                return 'manual-oauth-secret';
+            },
+        },
+        controlTaskSessionImpl: async (input) => {
+            calls.push(input);
+            if (input.operation === 'login_describe') {
+                return {
+                    providers: [{
+                        key: 'anthropic',
+                        methods: [{ key: 'oauth:0', kind: 'manual_oauth_code', label: 'OAuth' }],
+                    }],
+                };
+            }
+            if (input.operation === 'login_start') {
+                return {
+                    type: 'login-flow', version: 1, status: 'waiting',
+                    flowId: FLOW_ID, continuationHandle: CONTINUATION_HANDLE,
+                    provider: 'anthropic', method: 'oauth:0',
+                    prompt: { type: 'manual_code', seq: 7, nonce: PROMPT_NONCE },
+                };
+            }
+            assert.equal(input.operation, 'login_respond');
+            return {
+                type: 'login-flow', version: 1, status: 'completed',
+                flowId: FLOW_ID, continuationHandle: CONTINUATION_HANDLE,
+                provider: 'anthropic', method: 'oauth:0',
+            };
+        },
+    });
+
+    assert.equal((await commands.login(TASK_ID, 'anthropic', 'oauth:0')).status, 'completed');
+    assert.deepEqual(calls.at(-1), {
+        dir: '/work',
+        taskId: TASK_ID,
+        operation: 'login_respond',
+        flowId: FLOW_ID,
+        continuationHandle: CONTINUATION_HANDLE,
+        seq: 7,
+        nonce: PROMPT_NONCE,
+        response: 'manual-oauth-secret',
+    });
+    assert.equal(JSON.stringify(calls).includes('secretResponse'), false);
+});
+
+test('AchillesCLI rejects secret-shaped or unbound provider flow fields', () => {
+    assert.throws(() => normalizeLoginChallenge({
+        type: 'device_code',
+        verificationUri: 'https://example.com/device',
+        userCode: 'ABCD-EFGH',
+        instructions: 'attacker-controlled extra output',
+    }), /invalid_provider_login_challenge/);
 });
 
 test('AchillesCLI drops unknown login methods and rejects local callback challenges', () => {
@@ -288,11 +379,11 @@ test('AchillesCLI drops unknown login methods and rejects local callback challen
     assert.throws(() => normalizeLoginChallenge({
         type: 'auth_url',
         url: 'http://localhost:1455/auth/callback',
-    }), /unsupported_container_login_challenge/);
+    }), /unsupported_provider_login_challenge/);
     assert.throws(() => normalizeLoginChallenge({
         type: 'manual_oauth_code',
         url: 'https://localhost:1455/auth/callback',
-    }), /unsupported_container_login_challenge/);
+    }), /unsupported_provider_login_challenge/);
 });
 
 test('generic interaction controller maps opaque option ids back to Achilles values', async () => {

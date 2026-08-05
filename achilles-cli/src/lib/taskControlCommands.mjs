@@ -1,7 +1,7 @@
 import { controlTaskSession } from './taskSessionControl.mjs';
 
 const TASK_ID_RE = /^task_[0-9a-f]{24}$/;
-const TERMINAL_LOGIN_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+const TERMINAL_LOGIN_STATUSES = new Set(['completed', 'failed', 'cancelled', 'expired']);
 const LOGIN_METHOD_KINDS = new Set([
     'api_key',
     'access_token',
@@ -10,6 +10,16 @@ const LOGIN_METHOD_KINDS = new Set([
     'manual_oauth_code',
 ]);
 const LOGIN_FLOW_STATUSES = new Set(['running', 'waiting', ...TERMINAL_LOGIN_STATUSES]);
+const LOGIN_ERROR_CODES = new Set([
+    'provider_login_failed',
+    'provider_login_output_invalid',
+    'provider_login_completion_failed',
+    'provider_login_response_failed',
+]);
+const FLOW_ID_RE = /^login:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const CONTINUATION_HANDLE_RE = /^[A-Za-z0-9_-]{43}$/;
+const PROMPT_NONCE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+const PROVIDER_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
 function assertTaskId(taskId) {
     const value = String(taskId || '').trim();
@@ -93,47 +103,103 @@ export function normalizeLoginCatalog(raw) {
 }
 
 export function normalizeLoginChallenge(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('invalid_provider_login_challenge');
+    }
+    const keys = Object.keys(raw);
     const type = String(raw.type || '');
     if (type === 'device_code') {
-        const verificationUri = httpUrl(raw.verificationUri || raw.url);
-        const userCode = compactText(raw.userCode, 100);
-        const instructions = compactText(raw.instructions || raw.message, 2000);
-        if (!verificationUri || (!userCode && !instructions)) throw new Error('unsupported_container_login_challenge');
+        if (keys.some((key) => !['type', 'verificationUri', 'userCode'].includes(key))) {
+            throw new Error('invalid_provider_login_challenge');
+        }
+        const verificationUri = httpUrl(raw.verificationUri);
+        const userCode = String(raw.userCode || '');
+        if (!verificationUri || !/^[A-Za-z0-9-]{4,64}$/.test(userCode)) {
+            throw new Error('invalid_provider_login_challenge');
+        }
         return {
             type,
             verificationUri,
-            ...(userCode ? { userCode } : {}),
-            ...(instructions ? { instructions } : {}),
-            ...(Number.isFinite(Number(raw.expiresInSeconds)) ? { expiresInSeconds: Number(raw.expiresInSeconds) } : {}),
-            ...(Number.isFinite(Number(raw.intervalSeconds)) ? { intervalSeconds: Number(raw.intervalSeconds) } : {}),
+            userCode,
         };
     }
-    if (type === 'manual_oauth_code') {
-        const url = httpUrl(raw.url);
-        const instructions = compactText(raw.instructions || raw.message, 2000);
-        if (!url) throw new Error('unsupported_container_login_challenge');
-        return { type, url, ...(instructions ? { instructions } : {}) };
+    if (type === 'authorization_url') {
+        if (keys.some((key) => !['type', 'verificationUri'].includes(key))) {
+            throw new Error('invalid_provider_login_challenge');
+        }
+        const verificationUri = httpUrl(raw.verificationUri);
+        if (!verificationUri) throw new Error('invalid_provider_login_challenge');
+        return { type, verificationUri };
     }
-    throw new Error('unsupported_container_login_challenge');
+    throw new Error('unsupported_provider_login_challenge');
 }
 
-function normalizeLoginFlow(raw) {
-    if (!raw || typeof raw !== 'object' || !LOGIN_FLOW_STATUSES.has(raw.status)) {
+function normalizeLoginPrompt(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+        || Object.keys(raw).some((key) => !['type', 'seq', 'nonce'].includes(key))
+        || (raw.type !== 'manual_code' && raw.type !== 'manual_callback')
+        || !Number.isSafeInteger(raw.seq) || raw.seq < 1
+        || typeof raw.nonce !== 'string' || !PROMPT_NONCE_RE.test(raw.nonce)) {
+        throw new Error('invalid_provider_login_prompt');
+    }
+    return { type: raw.type, seq: raw.seq, nonce: raw.nonce };
+}
+
+export function normalizeLoginFlow(raw) {
+    const allowed = new Set([
+        'type', 'version', 'flowId', 'continuationHandle', 'provider', 'method',
+        'status', 'challenge', 'prompt', 'error',
+    ]);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+        || Object.keys(raw).some((key) => !allowed.has(key))
+        || raw.type !== 'login-flow' || raw.version !== 1
+        || !LOGIN_FLOW_STATUSES.has(raw.status)
+        || typeof raw.provider !== 'string' || !PROVIDER_NAME_RE.test(raw.provider)
+        || typeof raw.method !== 'string' || !PROVIDER_NAME_RE.test(raw.method)) {
         throw new Error('invalid_provider_login_flow');
     }
-    return {
-        ...raw,
-        ...(raw.challenge ? { challenge: normalizeLoginChallenge(raw.challenge) } : {}),
-    };
+    const terminal = TERMINAL_LOGIN_STATUSES.has(raw.status);
+    const hasControl = raw.flowId !== undefined || raw.continuationHandle !== undefined;
+    if ((!terminal || hasControl)
+        && (!FLOW_ID_RE.test(String(raw.flowId || ''))
+            || !CONTINUATION_HANDLE_RE.test(String(raw.continuationHandle || '')))) {
+        throw new Error('invalid_provider_login_flow');
+    }
+    if (terminal && (raw.challenge !== undefined || raw.prompt !== undefined)) {
+        throw new Error('invalid_provider_login_flow');
+    }
+    if (raw.status === 'waiting' && raw.prompt === undefined) {
+        throw new Error('invalid_provider_login_flow');
+    }
+    if (raw.status !== 'waiting' && raw.prompt !== undefined) {
+        throw new Error('invalid_provider_login_flow');
+    }
+    if (raw.status === 'failed') {
+        if (!LOGIN_ERROR_CODES.has(raw.error)) throw new Error('invalid_provider_login_flow');
+    } else if (raw.error !== undefined) {
+        throw new Error('invalid_provider_login_flow');
+    }
+    return Object.freeze({
+        type: 'login-flow',
+        version: 1,
+        ...(hasControl ? {
+            flowId: raw.flowId,
+            continuationHandle: raw.continuationHandle,
+        } : {}),
+        provider: raw.provider,
+        method: raw.method,
+        status: raw.status,
+        ...(raw.challenge !== undefined ? { challenge: normalizeLoginChallenge(raw.challenge) } : {}),
+        ...(raw.prompt !== undefined ? { prompt: normalizeLoginPrompt(raw.prompt) } : {}),
+        ...(raw.error !== undefined ? { error: raw.error } : {}),
+    });
 }
 
 function challengeDetail(flow) {
     const challenge = flow?.challenge || {};
     return [
-        challenge.url || challenge.verificationUri || '',
+        challenge.verificationUri || '',
         challenge.userCode ? `Code: ${challenge.userCode}` : '',
-        challenge.instructions || challenge.message || '',
     ].filter(Boolean).join('\n');
 }
 
@@ -257,7 +323,10 @@ export function createTaskControlCommands({
                 return normalizeLoginFlow(raw);
             } catch (error) {
                 const flowId = String(raw?.flowId || '').trim();
-                if (flowId) await call(taskId, 'login_cancel', { flowId }).catch(() => {});
+                const continuationHandle = String(raw?.continuationHandle || '').trim();
+                if (FLOW_ID_RE.test(flowId) && CONTINUATION_HANDLE_RE.test(continuationHandle)) {
+                    await call(taskId, 'login_cancel', { flowId, continuationHandle }).catch(() => {});
+                }
                 throw error;
             }
         };
@@ -291,11 +360,15 @@ export function createTaskControlCommands({
                     if (next.type === 'interaction-error') throw next.error;
                     if (next.type === 'action') {
                         if (next.action !== 'cancel') throw new Error('invalid_provider_login_action');
-                        return acceptFlow(await call(taskId, 'login_cancel', { flowId: currentFlow.flowId }));
+                        return acceptFlow(await call(taskId, 'login_cancel', {
+                            flowId: currentFlow.flowId,
+                            continuationHandle: currentFlow.continuationHandle,
+                        }));
                     }
                     const previousChallenge = JSON.stringify(currentFlow.challenge || null);
                     currentFlow = await acceptFlow(await call(taskId, 'login_status', {
                         flowId: currentFlow.flowId,
+                        continuationHandle: currentFlow.continuationHandle,
                     }));
                     if (JSON.stringify(currentFlow.challenge || null) !== previousChallenge) {
                         return currentFlow;
@@ -312,30 +385,21 @@ export function createTaskControlCommands({
         while (!TERMINAL_LOGIN_STATUSES.has(flow?.status)) {
             if (flow?.status === 'waiting' && flow.prompt) {
                 const prompt = flow.prompt;
-                const options = Array.isArray(prompt.options) ? prompt.options : [];
-                const response = options.length
-                    ? await ui.select({
-                        title: 'Provider authentication',
-                        message: prompt.message || 'Choose a response.',
-                        detail: challengeDetail(flow),
-                        challenge: flow.challenge || null,
-                        options: options.map((entry) => ({
-                            value: String(entry.value ?? entry.id ?? ''),
-                            label: String(entry.label || entry.value || entry.id || ''),
-                            description: String(entry.description || ''),
-                        })),
-                    }, { signal })
-                    : await ui.input({
-                        title: 'Provider authentication',
-                        message: prompt.message || 'Authentication input required.',
-                        placeholder: prompt.placeholder || '',
-                        type: prompt.type === 'secret' ? 'secret' : 'text',
-                        detail: challengeDetail(flow),
-                        challenge: flow.challenge || null,
-                    }, { signal });
+                const response = await ui.input({
+                    title: 'Provider authentication',
+                    message: prompt.type === 'manual_callback'
+                        ? 'Paste the provider callback response.'
+                        : 'Enter the provider authorization code.',
+                    type: 'secret',
+                    detail: challengeDetail(flow),
+                    challenge: flow.challenge || null,
+                }, { signal });
                 flow = await acceptFlow(await call(taskId, 'login_respond', {
                     flowId: flow.flowId,
-                    ...(prompt.type === 'secret' ? { secretResponse: response } : { response }),
+                    continuationHandle: flow.continuationHandle,
+                    seq: prompt.seq,
+                    nonce: prompt.nonce,
+                    response,
                 }));
                 continue;
             }
@@ -345,7 +409,10 @@ export function createTaskControlCommands({
             } else {
                 await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
             }
-            flow = await acceptFlow(await call(taskId, 'login_status', { flowId: flow.flowId }));
+            flow = await acceptFlow(await call(taskId, 'login_status', {
+                flowId: flow.flowId,
+                continuationHandle: flow.continuationHandle,
+            }));
         }
         return flow;
     }
@@ -365,13 +432,18 @@ export function createTaskControlCommands({
         try {
             completed = await followFlow(taskId, flow, signal, ui);
         } catch (error) {
-            if (error?.message === 'interaction_cancelled' && flow?.flowId) {
-                await call(taskId, 'login_cancel', { flowId: flow.flowId }).catch(() => {});
+            if (error?.message === 'interaction_cancelled'
+                && flow?.flowId && flow?.continuationHandle) {
+                await call(taskId, 'login_cancel', {
+                    flowId: flow.flowId,
+                    continuationHandle: flow.continuationHandle,
+                }).catch(() => {});
             }
             throw error;
         }
         if (completed?.status === 'failed') throw new Error(completed.error || 'provider_login_failed');
         if (completed?.status === 'cancelled') throw new Error('provider_login_cancelled');
+        if (completed?.status === 'expired') throw new Error('provider_login_expired');
         if (completed?.status === 'completed' && typeof onLoginCompleted === 'function') {
             await onLoginCompleted(taskId, completed);
         }

@@ -99,7 +99,7 @@ test('task login starts a stopped target agent before invoking its internal adap
                 return {
                     async ensureAgentRunning(agent, options) { calls.push(['ensure', agent, options]); },
                     async callTool(tool, input) {
-                        calls.push(['tool', tool, input.operation]);
+                        calls.push(['tool', tool, input]);
                         return { content: [{ type: 'text', text: '{"providers":[]}' }] };
                     },
                 };
@@ -109,6 +109,85 @@ test('task login starts a stopped target agent before invoking its internal adap
     assert.deepEqual(result, { providers: [] });
     assert.deepEqual(calls, [
         ['ensure', 'piAgent', { mode: 'global' }],
-        ['tool', 'task-session-control', 'login_describe'],
+        ['tool', 'task-session-control', {
+            operation: 'login_describe',
+            handle: 'opaque-task-handle',
+        }],
     ]);
+});
+
+test('task login controls forward only the exact retained-session capability grammar', async () => {
+    const toolInputs = [];
+    const dependencies = {
+        getTaskImpl: () => TASK,
+        clientModule: {
+            async createAgentClient() {
+                return {
+                    async ensureAgentRunning() {},
+                    async callTool(_tool, input) {
+                        toolInputs.push(input);
+                        return { content: [{ type: 'text', text: '{"status":"running"}' }] };
+                    },
+                };
+            },
+        },
+    };
+    const flowId = 'login:11111111-2222-4333-8444-555555555555';
+    const continuationHandle = 'c'.repeat(43);
+    const nonce = 'n'.repeat(16);
+
+    await controlTaskSession({
+        dir: '/work', taskId: TASK.id, operation: 'login_status',
+        flowId, continuationHandle,
+    }, dependencies);
+    await controlTaskSession({
+        dir: '/work', taskId: TASK.id, operation: 'login_respond',
+        flowId, continuationHandle, seq: 2, nonce, response: 'one-use-code',
+    }, dependencies);
+    await controlTaskSession({
+        dir: '/work', taskId: TASK.id, operation: 'login_cancel',
+        flowId, continuationHandle,
+    }, dependencies);
+
+    assert.deepEqual(toolInputs, [{
+        operation: 'login_status', flowId, continuationHandle,
+    }, {
+        operation: 'login_respond', flowId, continuationHandle,
+        seq: 2, nonce, response: 'one-use-code',
+    }, {
+        operation: 'login_cancel', flowId, continuationHandle,
+    }]);
+    assert.equal(JSON.stringify(toolInputs).includes('opaque-task-handle'), false);
+    assert.equal(JSON.stringify(toolInputs).includes('secretResponse'), false);
+});
+
+test('task login rejects malformed capability and oversized response before target invocation', async () => {
+    let invoked = false;
+    let clientCreated = false;
+    const dependencies = {
+        getTaskImpl: () => TASK,
+        clientModule: {
+            async createAgentClient() {
+                clientCreated = true;
+                return {
+                    async ensureAgentRunning() {},
+                    async callTool() { invoked = true; },
+                };
+            },
+        },
+    };
+    await assert.rejects(controlTaskSession({
+        dir: '/work', taskId: TASK.id, operation: 'login_status',
+        flowId: 'login:not-a-uuid', continuationHandle: 'c'.repeat(43),
+    }, dependencies), /invalid_provider_login_flow/);
+    await assert.rejects(controlTaskSession({
+        dir: '/work', taskId: TASK.id, operation: 'login_respond',
+        flowId: 'login:11111111-2222-4333-8444-555555555555',
+        continuationHandle: 'c'.repeat(43),
+        seq: 1,
+        nonce: 'n'.repeat(16),
+        response: 'x'.repeat((8 * 1024) + 1),
+    }, dependencies), /invalid_provider_login_response/);
+    assert.equal(invoked, false);
+    assert.equal(clientCreated, false);
 });

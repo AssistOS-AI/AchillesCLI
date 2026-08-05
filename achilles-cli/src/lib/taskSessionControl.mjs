@@ -10,6 +10,10 @@ const LOGIN_OPERATIONS = new Set([
     'login_respond',
     'login_cancel',
 ]);
+const FLOW_ID_RE = /^login:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const CONTINUATION_HANDLE_RE = /^[A-Za-z0-9_-]{43}$/;
+const PROMPT_NONCE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+const MAX_LOGIN_RESPONSE_BYTES = 8 * 1024;
 
 function assertControllableTask(dir, taskId) {
     const task = getTask(dir, taskId);
@@ -62,6 +66,52 @@ function normalizeProviderInputs(raw) {
     return normalized;
 }
 
+function retainedControl(input) {
+    const flowId = String(input?.flowId || '').trim();
+    const continuationHandle = String(input?.continuationHandle || '').trim();
+    if (!FLOW_ID_RE.test(flowId) || !CONTINUATION_HANDLE_RE.test(continuationHandle)) {
+        throw new Error('invalid_provider_login_flow');
+    }
+    return { flowId, continuationHandle };
+}
+
+function loginToolInput(operation, input, taskHandle) {
+    if (operation === 'login_describe') {
+        return { operation, handle: taskHandle };
+    }
+    if (operation === 'login_start') {
+        const provider = String(input?.provider || '').trim();
+        const method = String(input?.method || '').trim();
+        if (!provider || !method) throw new Error('provider and method are required');
+        const apiKey = typeof input?.apiKey === 'string' ? input.apiKey : '';
+        const providerInputs = normalizeProviderInputs(input?.inputs);
+        return {
+            operation,
+            handle: taskHandle,
+            provider,
+            method,
+            ...(apiKey ? { apiKey } : {}),
+            ...(Object.keys(providerInputs).length ? { inputs: providerInputs } : {}),
+        };
+    }
+    const control = retainedControl(input);
+    if (operation === 'login_status' || operation === 'login_cancel') {
+        return { operation, ...control };
+    }
+    if (operation === 'login_respond') {
+        const seq = input?.seq;
+        const nonce = String(input?.nonce || '');
+        const response = input?.response;
+        if (!Number.isSafeInteger(seq) || seq < 1 || !PROMPT_NONCE_RE.test(nonce)
+            || typeof response !== 'string' || !response || response.includes('\0')
+            || Buffer.byteLength(response, 'utf8') > MAX_LOGIN_RESPONSE_BYTES) {
+            throw new Error('invalid_provider_login_response');
+        }
+        return { operation, ...control, seq, nonce, response };
+    }
+    throw new Error('unsupported_task_control_operation');
+}
+
 export async function controlTaskSession(input, {
     clientModule = null,
     getTaskImpl = assertControllableTask,
@@ -76,6 +126,9 @@ export async function controlTaskSession(input, {
     if (!modelOperation && !LOGIN_OPERATIONS.has(operation)) {
         throw new Error('unsupported_task_control_operation');
     }
+    const providerToolInput = modelOperation
+        ? null
+        : loginToolInput(operation, input, task.continuation.handle);
     const agents = clientModule || await import('/Agent/client/AgentMcpClient.mjs');
     const client = await agents.createAgentClient(task.targetAgent);
     await client.ensureAgentRunning(task.targetAgent, { mode: 'global' });
@@ -105,22 +158,15 @@ export async function controlTaskSession(input, {
         };
     }
 
-    const providerInputs = normalizeProviderInputs(input?.inputs);
-    const result = await client.callTool('task-session-control', {
-        operation,
-        handle: task.continuation.handle,
-        provider: String(input?.provider || '').trim(),
-        method: String(input?.method || '').trim(),
-        flowId: String(input?.flowId || '').trim(),
-        response: typeof input?.response === 'string' ? input.response : '',
-        secretResponse: typeof input?.secretResponse === 'string' ? input.secretResponse : '',
-        apiKey: typeof input?.apiKey === 'string' ? input.apiKey : '',
-        ...(Object.keys(providerInputs).length ? { inputs: providerInputs } : {}),
-    });
+    const result = await client.callTool(
+        'task-session-control',
+        providerToolInput,
+    );
     return parseToolJson(result);
 }
 
 export const __testables = {
+    loginToolInput,
     normalizeModels,
     normalizeProviderInputs,
 };
