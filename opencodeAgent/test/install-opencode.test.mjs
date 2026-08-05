@@ -47,7 +47,7 @@ cat <<'EOF'
 EOF
 `, { mode: 0o755 });
     await fs.writeFile(helperPath, `#!/bin/sh
-printf '%s\n' 'ploinky-bwrap-launch-v2 source-sha=${'a'.repeat(40)} protocol=2 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data home-sources=sandbox-workspace-v2,container-native home-marker=ploinky-home-v2-schema-2 home-revalidation=post-barrier-G preexec-barrier=R/G credential-bound=4096'
+printf '%s\n' 'ploinky-bwrap-launch-v2 source-sha=${'a'.repeat(40)} protocol=2 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data task-broker-transport=type13-sealed-memfd-ro-bind-data-0400 home-sources=sandbox-workspace-v2,container-native home-marker=ploinky-home-v2-schema-2 home-revalidation=post-barrier-G preexec-barrier=R/G credential-bound=4096'
 `, { mode: 0o755 });
     const ensureSource = (await fs.readFile(ensureScript, 'utf8'))
         .replaceAll('/usr/bin/bwrap', bwrapPath)

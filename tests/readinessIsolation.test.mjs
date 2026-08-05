@@ -19,6 +19,7 @@ const REQUIRED_HELPER_CAPABILITIES = Object.freeze([
     'bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms',
     'typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file',
     'ro-data-path-hardening=sealed-memfd-ro-bind-data',
+    'task-broker-transport=type13-sealed-memfd-ro-bind-data-0400',
     'home-sources=sandbox-workspace-v2,container-native',
     'home-marker=ploinky-home-v2-schema-2',
     'home-revalidation=post-barrier-G',

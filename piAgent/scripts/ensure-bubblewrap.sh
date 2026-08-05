@@ -55,7 +55,7 @@ esac
 if [ "${#SOURCE_SHA}" -ne 40 ]; then
     capability_failure "$BWRAP_HELPER_PATH returned an invalid source SHA."
 fi
-EXPECTED_HELPER_CAPABILITIES="$HELPER_PREFIX$SOURCE_SHA protocol=2 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data home-sources=sandbox-workspace-v2,container-native home-marker=ploinky-home-v2-schema-2 home-revalidation=post-barrier-G preexec-barrier=R/G credential-bound=4096"
+EXPECTED_HELPER_CAPABILITIES="$HELPER_PREFIX$SOURCE_SHA protocol=2 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data task-broker-transport=type13-sealed-memfd-ro-bind-data-0400 home-sources=sandbox-workspace-v2,container-native home-marker=ploinky-home-v2-schema-2 home-revalidation=post-barrier-G preexec-barrier=R/G credential-bound=4096"
 if [ "$HELPER_CAPABILITIES" != "$EXPECTED_HELPER_CAPABILITIES" ]; then
     capability_failure "$BWRAP_HELPER_PATH returned an incompatible capability record."
 fi
