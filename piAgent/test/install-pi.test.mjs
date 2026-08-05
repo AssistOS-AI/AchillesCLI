@@ -20,6 +20,12 @@ if (prefixIndex < 0 || !process.argv[prefixIndex + 1]) process.exit(2);
 const entry = path.join(process.argv[prefixIndex + 1], process.env.FAKE_PACKAGE_ENTRY);
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, '');
+const packageRoot = path.join(process.argv[prefixIndex + 1], 'lib/node_modules/@earendil-works/pi-coding-agent');
+fs.mkdirSync(packageRoot, { recursive: true });
+fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({
+    name: '@earendil-works/pi-coding-agent',
+    version: process.env.FAKE_PACKAGE_VERSION || '0.83.0',
+}));
 `);
     return npmCliPath;
 }
@@ -83,7 +89,7 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
 
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
     assert.equal(manifest.cli, 'node /code/scripts/interactive-cli.mjs');
-    assert.equal(manifest.containerSecurity, undefined);
+    assert.deepEqual(manifest.containerSecurity, { nestedBwrap: true });
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
     assert.equal(manifest.env, undefined);
 
@@ -93,4 +99,27 @@ test('PI installs its executable under the persistent agent HOME', async (t) => 
     assert.match(script, /@earendil-works\/pi-coding-agent@0\.83\.0/);
     assert.doesNotMatch(script, /@earendil-works\/pi-coding-agent(?:\s|$)/m);
     assert.doesNotMatch(script, /^\s*npm install/m);
+});
+
+test('PI install fails closed when installed package metadata differs from the pin', async (t) => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-version-test-'));
+    t.after(() => fs.rm(tempDir, { recursive: true, force: true }));
+    const homeDir = path.join(tempDir, 'home');
+    const fakeBinDir = path.join(tempDir, 'bin');
+    await fs.mkdir(fakeBinDir, { recursive: true });
+    const result = spawnSync('sh', [await materializeInstallFixture(tempDir)], {
+        env: {
+            ...process.env,
+            HOME: homeDir,
+            PATH: `${fakeBinDir}:${process.env.PATH}`,
+            NPM_CLI: await writeFakeNpmCli(tempDir),
+            FAKE_PACKAGE_ENTRY: 'lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
+            FAKE_PACKAGE_VERSION: '9.9.9',
+        },
+        encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /installed package metadata does not match the pinned version/u);
+    await assert.rejects(fs.stat(path.join(homeDir, '.local', 'bin', 'pi')), { code: 'ENOENT' });
 });

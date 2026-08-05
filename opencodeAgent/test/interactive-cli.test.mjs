@@ -65,7 +65,7 @@ test('interactive CLI uses one trusted bootstrap and the canonical task boundary
             brokerRegistry,
             mode: 'task',
             provider: 'opencode',
-            taskId: 'interactive:11111111-1111-4111-8111-111111111111',
+            taskId: 'interactive-11111111-1111-4111-8111-111111111111',
             audience: 'interactive:opencode',
             signal,
         },

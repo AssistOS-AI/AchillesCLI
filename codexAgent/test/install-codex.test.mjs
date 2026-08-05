@@ -28,6 +28,12 @@ if (prefixIndex < 0 || !process.argv[prefixIndex + 1]) process.exit(2);
 const entry = path.join(process.argv[prefixIndex + 1], process.env.FAKE_PACKAGE_ENTRY);
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, '');
+const packageRoot = path.join(process.argv[prefixIndex + 1], 'lib/node_modules/@openai/codex');
+fs.mkdirSync(packageRoot, { recursive: true });
+fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({
+    name: '@openai/codex',
+    version: process.env.FAKE_PACKAGE_VERSION || '0.146.0',
+}));
 `);
     return npmCliPath;
 }
@@ -160,5 +166,26 @@ test('Codex install fails closed when registry integrity differs from the pinned
 
     assert.equal(result.status, 1);
     assert.match(result.stderr, /registry integrity does not match the pinned artifact/u);
+    await assert.rejects(fs.stat(path.join(homeDir, '.local', 'bin', 'codex')), { code: 'ENOENT' });
+});
+
+test('Codex install fails closed when installed package metadata differs from the pin', async (t) => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-version-test-'));
+    t.after(() => fs.rm(tempDir, { recursive: true, force: true }));
+    const homeDir = path.join(tempDir, 'home');
+    const result = spawnSync('sh', [installScript], {
+        env: {
+            ...process.env,
+            HOME: homeDir,
+            NPM_CLI: await writeFakeNpmCli(tempDir),
+            FAKE_PACKAGE_ENTRY: 'lib/node_modules/@openai/codex/bin/codex.js',
+            FAKE_PACKAGE_INTEGRITY: 'sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==',
+            FAKE_PACKAGE_VERSION: '9.9.9',
+        },
+        encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /installed package metadata does not match the pinned version/u);
     await assert.rejects(fs.stat(path.join(homeDir, '.local', 'bin', 'codex')), { code: 'ENOENT' });
 });

@@ -179,7 +179,7 @@ export async function runInteractiveCli(argv, env, options = {}) {
             brokerRegistry,
             mode: 'task',
             provider: 'codex',
-            taskId: `interactive:${dependencies.randomUUID()}`,
+            taskId: `interactive-${dependencies.randomUUID()}`,
             audience: 'interactive:codex',
             signal,
         });

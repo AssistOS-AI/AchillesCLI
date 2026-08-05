@@ -151,7 +151,7 @@ test('config uses only the task-scoped Soul broker credential', async () => {
     assert.equal(manifest.profiles.default.install, 'sh /code/scripts/install-opencode.sh');
     assert.equal(manifest.cli, 'node /code/scripts/interactive-cli.mjs');
     assert.equal(manifest.env, undefined);
-    assert.equal(manifest.containerSecurity, undefined);
+    assert.deepEqual(manifest.containerSecurity, { nestedBwrap: true });
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
     assert.ok(!JSON.stringify(manifest).includes('PLOINKY_AGENT_API_KEY'));
     assert.doesNotMatch(

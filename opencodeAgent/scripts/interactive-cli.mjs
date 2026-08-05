@@ -183,7 +183,7 @@ export async function runInteractiveCli(argv, env, options = {}) {
             brokerRegistry,
             mode: 'task',
             provider: 'opencode',
-            taskId: `interactive:${dependencies.randomUUID()}`,
+            taskId: `interactive-${dependencies.randomUUID()}`,
             audience: 'interactive:opencode',
             signal,
         });

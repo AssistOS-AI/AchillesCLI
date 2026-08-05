@@ -122,6 +122,11 @@ test('required coding agents retain selector-only dual-mode declarations', async
             manifestPath,
         );
         assert.equal(Object.hasOwn(manifest, 'network'), false, manifestPath);
+        assert.deepEqual(
+            manifest.containerSecurity,
+            { nestedBwrap: true },
+            `${manifestPath}: container mode must admit the inner provider bwrap without privilege`,
+        );
 
         assertSelectorContract({ ...manifest, 'lite-sandbox': true }, `${manifestPath}:sandbox`);
         assertSelectorContract({ ...manifest, 'lite-sandbox': false }, `${manifestPath}:container`);
@@ -129,6 +134,14 @@ test('required coding agents retain selector-only dual-mode declarations', async
             Object.fromEntries(Object.entries(manifest).filter(([key]) => key !== 'lite-sandbox')),
             `${manifestPath}:container-default`,
         );
+    }
+});
+
+test('coding interactive task identities use ownership-safe segments', async () => {
+    for (const agent of ['codexAgent', 'opencodeAgent', 'piAgent']) {
+        const source = await fs.readFile(path.join(repoRoot, agent, 'scripts/interactive-cli.mjs'), 'utf8');
+        assert.match(source, /taskId: `interactive-\$\{dependencies\.randomUUID\(\)\}`/);
+        assert.doesNotMatch(source, /taskId: `interactive:/);
     }
 });
 

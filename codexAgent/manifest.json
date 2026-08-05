@@ -2,6 +2,9 @@
     "container": "docker.io/assistos/ploinky-node:24-bookworm-tools",
     "startup": "manual",
     "lite-sandbox": true,
+    "containerSecurity": {
+        "nestedBwrap": true
+    },
     "about": "Codex CLI agent. Installs the official OpenAI Codex CLI, exposes it as a direct Ploinky CLI command, and provides resumable asynchronous MCP task execution.",
     "endpoints": {
         "models": {

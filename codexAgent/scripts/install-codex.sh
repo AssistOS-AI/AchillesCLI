@@ -8,6 +8,7 @@ fi
 
 INSTALL_PREFIX="$HOME/.local"
 PACKAGE_ENTRY="$INSTALL_PREFIX/lib/node_modules/@openai/codex/bin/codex.js"
+PACKAGE_MANIFEST="$INSTALL_PREFIX/lib/node_modules/@openai/codex/package.json"
 BIN_PATH="$INSTALL_PREFIX/bin/codex"
 CODEX_PACKAGE='@openai/codex@0.146.0'
 CODEX_INTEGRITY='sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw=='
@@ -40,6 +41,19 @@ node "$NPM_CLI" install -g --prefix "$INSTALL_PREFIX" --ignore-scripts --min-rel
 
 if [ ! -f "$PACKAGE_ENTRY" ]; then
     echo "install-codex: package entry was not installed at $PACKAGE_ENTRY." >&2
+    exit 1
+fi
+if ! OBSERVED_PACKAGE_ID="$(node -e '
+const fs = require("node:fs");
+const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (typeof manifest.name !== "string" || typeof manifest.version !== "string") process.exit(1);
+process.stdout.write(`${manifest.name}@${manifest.version}`);
+' "$PACKAGE_MANIFEST")"; then
+    echo "install-codex: installed package metadata does not match the pinned version." >&2
+    exit 1
+fi
+if [ "$OBSERVED_PACKAGE_ID" != "$CODEX_PACKAGE" ]; then
+    echo "install-codex: installed package metadata does not match the pinned version." >&2
     exit 1
 fi
 
