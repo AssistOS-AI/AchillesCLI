@@ -10,6 +10,7 @@ import { resolveOpenCodeBin } from '../scripts/opencode-runner.mjs';
 
 const agentDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const installScript = path.join(agentDir, 'scripts', 'install-opencode.sh');
+const ensureScript = path.join(agentDir, 'scripts', 'ensure-bubblewrap.sh');
 const configTemplate = path.join(agentDir, 'opencode.json');
 const manifestPath = path.join(agentDir, 'manifest.json');
 
@@ -26,8 +27,37 @@ INSTALLER
 `, { mode: 0o755 });
 }
 
-async function writeFakeBwrap(binDir) {
-    await fs.writeFile(path.join(binDir, 'bwrap'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+async function materializeInstallFixture(tempDir) {
+    const fixtureAgentDir = path.join(tempDir, 'agent');
+    const fixtureScriptsDir = path.join(fixtureAgentDir, 'scripts');
+    const fixtureImageDir = path.join(tempDir, 'image');
+    const bwrapPath = path.join(fixtureImageDir, 'usr', 'bin', 'bwrap');
+    const helperPath = path.join(fixtureImageDir, 'usr', 'local', 'libexec', 'ploinky-bwrap-launch');
+    await fs.mkdir(fixtureScriptsDir, { recursive: true });
+    await fs.mkdir(path.dirname(bwrapPath), { recursive: true });
+    await fs.mkdir(path.dirname(helperPath), { recursive: true });
+    await fs.copyFile(installScript, path.join(fixtureScriptsDir, 'install-opencode.sh'));
+    await fs.copyFile(configTemplate, path.join(fixtureAgentDir, 'opencode.json'));
+    await fs.writeFile(bwrapPath, `#!/bin/sh
+cat <<'EOF'
+--bind-fd FD DEST
+--ro-bind-fd FD DEST
+--ro-bind-data FD DEST
+--perms OCTAL
+EOF
+`, { mode: 0o755 });
+    await fs.writeFile(helperPath, `#!/bin/sh
+printf '%s\n' 'ploinky-bwrap-launch-v1 source-sha=${'a'.repeat(40)} protocol=1 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data preexec-barrier=R/G credential-bound=4096'
+`, { mode: 0o755 });
+    const ensureSource = (await fs.readFile(ensureScript, 'utf8'))
+        .replaceAll('/usr/bin/bwrap', bwrapPath)
+        .replaceAll('/usr/local/libexec/ploinky-bwrap-launch', helperPath);
+    await fs.writeFile(
+        path.join(fixtureScriptsDir, 'ensure-bubblewrap.sh'),
+        ensureSource,
+        { mode: 0o755 },
+    );
+    return path.join(fixtureScriptsDir, 'install-opencode.sh');
 }
 
 test('installer writes the managed Soul Gateway config without changing provider state', async () => {
@@ -43,12 +73,12 @@ test('installer writes the managed Soul Gateway config without changing provider
     await fs.mkdir(path.dirname(authPath), { recursive: true });
     await fs.mkdir(path.dirname(modelPath), { recursive: true });
     await writeFakeCurl(fakeBinDir);
-    await writeFakeBwrap(fakeBinDir);
     await fs.writeFile(path.join(configDir, 'opencode.json'), '{"old":true}\n');
     await fs.writeFile(authPath, '{"credential":"keep"}\n');
     await fs.writeFile(modelPath, '{"recent":[{"providerID":"openai","modelID":"existing"}]}\n');
+    const fixtureInstallScript = await materializeInstallFixture(tempDir);
 
-    const result = spawnSync('sh', [installScript], {
+    const result = spawnSync('sh', [fixtureInstallScript], {
         env: {
             ...process.env,
             HOME: homeDir,
@@ -81,10 +111,10 @@ test('installer leaves the persistent config untouched when OpenCode download fa
     await fs.mkdir(fakeBinDir, { recursive: true });
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(path.join(fakeBinDir, 'curl'), '#!/bin/sh\nexit 22\n', { mode: 0o755 });
-    await writeFakeBwrap(fakeBinDir);
     await fs.writeFile(configPath, '{"existing":true}\n');
+    const fixtureInstallScript = await materializeInstallFixture(tempDir);
 
-    const result = spawnSync('sh', [installScript], {
+    const result = spawnSync('sh', [fixtureInstallScript], {
         env: {
             ...process.env,
             HOME: homeDir,

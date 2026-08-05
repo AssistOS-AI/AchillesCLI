@@ -1,175 +1,266 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
-import {
-    __testables as credentialContextTestables,
-} from '../../Ploinky/Agent/lib/agentCredentialContext.mjs';
-import * as providerSandboxModule from '../../Ploinky/Agent/lib/providerSandbox.mjs';
-import { buildBwrapAgentCredential } from '../../Ploinky/cli/sandbox/bwrap/bwrapAgentCredential.js';
-import {
-    checkTaskSandboxReadiness as checkOpenCodeReadiness,
-} from '../opencodeAgent/scripts/check-task-sandbox.mjs';
-import {
-    checkTaskSandboxReadiness as checkPiReadiness,
-} from '../piAgent/scripts/check-task-sandbox.mjs';
+const REQUIRED_BWRAP_OPTIONS = Object.freeze([
+    '--bind-fd FD DEST',
+    '--ro-bind-fd FD DEST',
+    '--ro-bind-data FD DEST',
+    '--perms OCTAL',
+]);
 
-function credentialContext(provider) {
-    const principalId = `agent:AchillesCLI/${provider}Agent`;
-    const generated = buildBwrapAgentCredential({
-        principalId,
-        instanceId: `${provider}Agent_alias-1`,
-        enableGeneration: `generation-${provider}-1`,
-        runtimeKey: `${provider}Agent_alias-1`,
-        routeKey: `${provider}Agent`,
-        router: {
-            physicalOrigin: 'http://127.0.0.1:8080',
-            requestAuthority: '127.0.0.1:18080',
-            host: '127.0.0.1',
-            port: 8080,
-        },
-        admission: {
-            runtimeKind: 'bwrap',
-            manifestDigest: `sha256:${'1'.repeat(64)}`,
-            capabilityDigest: `sha256:${'2'.repeat(64)}`,
-            networkHash: `sha256:${'3'.repeat(64)}`,
-        },
-    }, {
-        now: Math.floor(Date.now() / 1000) - 10,
-        randomBytes: () => Buffer.alloc(32, 7),
-        buildCredentialEnv: () => ({
-            PLOINKY_AGENT_SECRET: 'a'.repeat(64),
-            PLOINKY_AGENT_PRIVATE_SECRET: 'b'.repeat(64),
-            PLOINKY_AGENT_API_KEY: `${principalId}|fixture-signature`,
-            PLOINKY_AGENT_API_PUBLIC_KEY: Buffer.alloc(32, 8).toString('base64url'),
-        }),
-    });
-    return credentialContextTestables.createBwrapContextFromRead({
-        descriptor: generated.descriptor,
-        publicAttestation: generated.publicAttestation,
-    });
-}
+const REQUIRED_HELPER_CAPABILITIES = Object.freeze([
+    `ploinky-bwrap-launch-v1 source-sha=${'a'.repeat(40)}`,
+    'protocol=1 descriptor-fd=3',
+    'path-resolution=openat2-beneath-no-magiclinks-no-symlinks',
+    'bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms',
+    'typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file',
+    'ro-data-path-hardening=sealed-memfd-ro-bind-data',
+    'preexec-barrier=R/G',
+    'credential-bound=4096',
+]);
 
-function record(policy, type, predicate = () => true) {
-    return policy.records.find((candidate) => candidate.type === type && predicate(candidate));
-}
-
-const readinessImplementations = [
-    {
+const implementations = Object.freeze([
+    Object.freeze({
         agent: 'OpenCode',
-        provider: 'opencode',
-        executable: '/home/agent/.opencode/bin/opencode',
-        source: new URL('../opencodeAgent/scripts/check-task-sandbox.mjs', import.meta.url),
-        shell: new URL('../opencodeAgent/readiness.sh', import.meta.url),
-        run(context, injectedModule) {
-            return checkOpenCodeReadiness(
-                { credentialContext: context },
-                { providerSandboxModule: injectedModule },
-            );
-        },
-    },
-    {
+        source: new URL('../opencodeAgent/readiness.sh', import.meta.url),
+        ensureSource: new URL('../opencodeAgent/scripts/ensure-bubblewrap.sh', import.meta.url),
+        providerPaths: Object.freeze([
+            '.opencode/bin/opencode',
+            '.config/opencode/opencode.json',
+        ]),
+    }),
+    Object.freeze({
         agent: 'PI',
-        provider: 'pi',
-        executable: '/home/agent/.local/bin/pi',
-        source: new URL('../piAgent/scripts/check-task-sandbox.mjs', import.meta.url),
-        shell: new URL('../piAgent/readiness.sh', import.meta.url),
-        run(context, injectedModule) {
-            return checkPiReadiness({
-                credentialContext: context,
-                dependencies: { providerSandbox: injectedModule },
+        source: new URL('../piAgent/readiness.sh', import.meta.url),
+        ensureSource: new URL('../piAgent/scripts/ensure-bubblewrap.sh', import.meta.url),
+        providerPaths: Object.freeze([
+            '.local/bin/pi',
+            '.local/lib/node_modules/@earendil-works/pi-coding-agent',
+        ]),
+    }),
+]);
+
+async function writeExecutable(filePath, source) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, source, { mode: 0o755 });
+}
+
+function replaceImagePaths(source, { bwrapPath, helperPath }) {
+    return source
+        .replaceAll('/usr/bin/bwrap', bwrapPath)
+        .replaceAll('/usr/local/libexec/ploinky-bwrap-launch', helperPath);
+}
+
+async function makeCapabilityFixture(t, implementation, {
+    bwrapHelp = REQUIRED_BWRAP_OPTIONS.join('\n'),
+    helperCapabilities = REQUIRED_HELPER_CAPABILITIES.join(' '),
+    includeBwrap = true,
+    includeHelper = true,
+} = {}) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'achilles-readiness-capability-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const bwrapPath = path.join(root, 'image', 'usr', 'bin', 'bwrap');
+    const helperPath = path.join(root, 'image', 'usr', 'local', 'libexec', 'ploinky-bwrap-launch');
+    const probeLog = path.join(root, 'probe.log');
+    const scriptPath = path.join(root, 'ensure-bubblewrap.sh');
+
+    if (includeBwrap) {
+        await writeExecutable(bwrapPath, `#!/bin/sh
+printf '%s\\n' "bwrap:$*" >> '${probeLog}'
+test "\${1:-}" = '--help' || exit 64
+cat <<'EOF'
+${bwrapHelp}
+EOF
+`);
+    }
+    if (includeHelper) {
+        await writeExecutable(helperPath, `#!/bin/sh
+printf '%s\\n' "helper:$*" >> '${probeLog}'
+test "\${1:-}" = '--capabilities' || exit 64
+cat <<'EOF'
+${helperCapabilities}
+EOF
+`);
+    }
+
+    const source = await fs.readFile(implementation.ensureSource, 'utf8');
+    await writeExecutable(scriptPath, replaceImagePaths(source, { bwrapPath, helperPath }));
+    return { probeLog, root, scriptPath };
+}
+
+async function makeReadinessFixture(t, implementation, mode) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), `achilles-${mode}-readiness-`));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const home = path.join(root, mode === 'sandbox' ? 'home-agent' : 'root');
+    const code = path.join(root, 'code');
+    const bin = path.join(root, 'bin');
+    const providerMarker = path.join(root, 'provider-executed');
+    const nodeMarker = path.join(root, 'node-executed');
+    const ensureMarker = path.join(root, 'capability-probed');
+
+    await fs.mkdir(path.join(code, 'scripts'), { recursive: true });
+    await fs.mkdir(bin, { recursive: true });
+    for (const providerPath of implementation.providerPaths) {
+        const target = path.join(home, providerPath);
+        if (providerPath.endsWith('pi-coding-agent')) {
+            await fs.mkdir(target, { recursive: true });
+        } else if (providerPath.endsWith('.json')) {
+            await fs.mkdir(path.dirname(target), { recursive: true });
+            await fs.writeFile(target, '{}\n');
+        } else {
+            await writeExecutable(target, `#!/bin/sh
+touch '${providerMarker}'
+exit 91
+`);
+        }
+    }
+    await writeExecutable(path.join(bin, 'node'), `#!/bin/sh
+touch '${nodeMarker}'
+exit 92
+`);
+    await writeExecutable(path.join(code, 'scripts', 'ensure-bubblewrap.sh'), `#!/bin/sh
+touch '${ensureMarker}'
+exit 0
+`);
+    await fs.copyFile(implementation.source, path.join(code, 'readiness.sh'));
+    await fs.chmod(path.join(code, 'readiness.sh'), 0o755);
+
+    return {
+        code,
+        ensureMarker,
+        home,
+        nodeMarker,
+        providerMarker,
+        run() {
+            return spawnSync('/bin/sh', [path.join(code, 'readiness.sh')], {
+                encoding: 'utf8',
+                env: { HOME: home, PATH: `${bin}:/usr/bin:/bin` },
             });
         },
-    },
-];
+    };
+}
 
-for (const implementation of readinessImplementations) {
-    test(`${implementation.agent} readiness uses only the canonical empty-workspace provider mode`, async () => {
-        const calls = [];
-        const injectedModule = {
-            ...providerSandboxModule,
-            spawnProviderSandbox(input, lifecycle) {
-                const policy = providerSandboxModule.buildProviderSandboxPolicy(input);
-                calls.push({ input, lifecycle, policy });
-                return Object.freeze({
-                    launch: Object.freeze({
-                        mode: input.mode,
-                        provider: input.provider,
-                        cwd: '/workspace/readiness',
-                    }),
-                    completion: Promise.resolve({ code: 0, signal: null }),
-                });
-            },
-        };
-
-        await implementation.run(credentialContext(implementation.provider), injectedModule);
-
-        assert.equal(calls.length, 1);
-        const [{ input, policy }] = calls;
-        assert.equal(input.mode, providerSandboxModule.PROVIDER_SANDBOX_MODES.READINESS);
-        assert.equal(input.provider, implementation.provider);
-        assert.equal(record(policy, 'WORKSPACE'), undefined);
-        assert.equal(record(policy, 'WORKDIR'), undefined);
-        assert.ok(record(policy, 'TMPFS', ({ target }) => target === '/workspace'));
-        assert.ok(record(policy, 'DIR', ({ target }) => target === '/workspace/readiness'));
-        assert.ok(record(policy, 'PROC'));
-        assert.deepEqual(policy.command, [implementation.executable, '--version']);
-        assert.equal(policy.env.PLOINKY_TASK_BROKER_URL, undefined);
-        assert.equal(policy.env.PLOINKY_TASK_BROKER_KEY, undefined);
+for (const implementation of implementations) {
+    test(`${implementation.agent} readiness is capability-only in sandbox and container HOME modes`, async (t) => {
+        for (const mode of ['sandbox', 'container']) {
+            const fixture = await makeReadinessFixture(t, implementation, mode);
+            const result = fixture.run();
+            assert.equal(result.status, 0, `${mode}: ${result.stderr}`);
+            assert.equal(await fs.stat(fixture.ensureMarker).then(() => true, () => false), true);
+            assert.equal(await fs.stat(fixture.providerMarker).then(() => true, () => false), false);
+            assert.equal(await fs.stat(fixture.nodeMarker).then(() => true, () => false), false);
+        }
     });
 
-    test(`${implementation.agent} readiness fails closed without trusted context or on provider failure`, async () => {
-        const missingContextModule = {
-            ...providerSandboxModule,
-            spawnProviderSandbox(input) {
-                providerSandboxModule.buildProviderSandboxPolicy(input);
-                throw new Error('unreachable');
-            },
-        };
-        await assert.rejects(
-            implementation.run(null, missingContextModule),
-            (error) => error?.code === 'PLOINKY_AGENT_CREDENTIAL_CONTEXT_REQUIRED'
-                || /requires credentialContext/.test(error?.message || ''),
-        );
-
-        const failedModule = {
-            ...providerSandboxModule,
-            spawnProviderSandbox() {
-                return Object.freeze({
-                    launch: Object.freeze({ mode: 'readiness', provider: implementation.provider }),
-                    completion: Promise.resolve({ code: 19, signal: null }),
-                });
-            },
-        };
-        await assert.rejects(
-            implementation.run(credentialContext(implementation.provider), failedModule),
-            (error) => error?.code === 'PLOINKY_PROVIDER_READINESS_FAILED',
-        );
-    });
-
-    test(`${implementation.agent} readiness contains no real-workspace or direct-provider fallback`, async () => {
+    test(`${implementation.agent} readiness derives state from HOME and cannot inspect a real workspace`, async () => {
         const source = await fs.readFile(implementation.source, 'utf8');
+        assert.match(source, /\$HOME/);
+        assert.doesNotMatch(source, /HOME:-}" = "\/(?:home\/agent|root)"/);
         for (const forbidden of [
             'PLOINKY_WORKSPACE_ROOT',
-            '/usr/bin/bwrap',
-            '/root',
-            'node:child_process',
-            'spawnSync',
-            'probeNestedBubblewrap',
-            'readAgentCredentialDescriptor',
+            '/workspace',
+            'check-task-sandbox',
+            '--version',
+            '/root/',
+            '/home/agent/',
+            'eval ',
         ]) {
             assert.equal(source.includes(forbidden), false, forbidden);
         }
-        assert.match(source, /import\('\/Agent\/lib\/providerSandbox\.mjs'\)/);
+    });
 
-        const shell = await fs.readFile(implementation.shell, 'utf8');
-        for (const forbidden of [
-            'PLOINKY_WORKSPACE_ROOT',
-            '/root',
-            'check-task-sandbox',
-            '--version',
+    test(`${implementation.agent} Bubblewrap capability gate accepts only the fd-safe image contract`, async (t) => {
+        const valid = await makeCapabilityFixture(t, implementation);
+        const result = spawnSync('/bin/sh', [valid.scriptPath], { encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.deepEqual(
+            (await fs.readFile(valid.probeLog, 'utf8')).trim().split('\n'),
+            ['bwrap:--help', 'helper:--capabilities'],
+        );
+
+        const formatted = await makeCapabilityFixture(t, implementation, {
+            bwrapHelp: REQUIRED_BWRAP_OPTIONS
+                .map((value) => `    ${value}                pinned Bubblewrap description`)
+                .join('\n'),
+        });
+        const formattedResult = spawnSync('/bin/sh', [formatted.scriptPath], { encoding: 'utf8' });
+        assert.equal(formattedResult.status, 0, formattedResult.stderr);
+
+        for (const requiredOption of REQUIRED_BWRAP_OPTIONS) {
+            const invalid = await makeCapabilityFixture(t, implementation, {
+                bwrapHelp: REQUIRED_BWRAP_OPTIONS.filter((value) => value !== requiredOption).join('\n'),
+            });
+            const failure = spawnSync('/bin/sh', [invalid.scriptPath], { encoding: 'utf8' });
+            assert.notEqual(failure.status, 0, requiredOption);
+            assert.match(failure.stderr, /PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE/);
+        }
+
+        for (const requiredCapability of REQUIRED_HELPER_CAPABILITIES) {
+            const invalid = await makeCapabilityFixture(t, implementation, {
+                helperCapabilities: REQUIRED_HELPER_CAPABILITIES
+                    .filter((value) => value !== requiredCapability)
+                    .join(' '),
+            });
+            const failure = spawnSync('/bin/sh', [invalid.scriptPath], { encoding: 'utf8' });
+            assert.notEqual(failure.status, 0, requiredCapability);
+            assert.match(failure.stderr, /PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE/);
+        }
+
+        for (const bwrapHelp of [
+            REQUIRED_BWRAP_OPTIONS.map((value) => `${value}extra`).join('\n'),
+            REQUIRED_BWRAP_OPTIONS.map((value) => value.replace(' DEST', ' DESTROY')).join('\n'),
         ]) {
-            assert.equal(shell.includes(forbidden), false, forbidden);
+            const invalid = await makeCapabilityFixture(t, implementation, { bwrapHelp });
+            const failure = spawnSync('/bin/sh', [invalid.scriptPath], { encoding: 'utf8' });
+            assert.notEqual(failure.status, 0, bwrapHelp);
+            assert.match(failure.stderr, /PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE/);
+        }
+
+        for (const helperCapabilities of [
+            REQUIRED_HELPER_CAPABILITIES.join(' ').replace(/[0-9a-f]{40}/, ''),
+            REQUIRED_HELPER_CAPABILITIES.join(' ').replace(/[0-9a-f]{40}/, 'g'.repeat(40)),
+            `${REQUIRED_HELPER_CAPABILITIES.join(' ')} unexpected=capability`,
+        ]) {
+            const invalid = await makeCapabilityFixture(t, implementation, { helperCapabilities });
+            const failure = spawnSync('/bin/sh', [invalid.scriptPath], { encoding: 'utf8' });
+            assert.notEqual(failure.status, 0, helperCapabilities);
+            assert.match(failure.stderr, /PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE/);
+        }
+    });
+
+    test(`${implementation.agent} Bubblewrap capability gate never installs or mutates the runtime`, async (t) => {
+        for (const missing of ['bwrap', 'helper']) {
+            const fixture = await makeCapabilityFixture(t, implementation, {
+                includeBwrap: missing !== 'bwrap',
+                includeHelper: missing !== 'helper',
+            });
+            const fakeBin = path.join(fixture.root, 'bin');
+            const mutationMarker = path.join(fixture.root, 'apt-get-executed');
+            await writeExecutable(path.join(fakeBin, 'id'), '#!/bin/sh\necho 0\n');
+            await writeExecutable(path.join(fakeBin, 'apt-get'), `#!/bin/sh\n: > '${mutationMarker}'\nexit 0\n`);
+            const result = spawnSync('/bin/sh', [fixture.scriptPath], {
+                encoding: 'utf8',
+                env: { PATH: `${fakeBin}:/usr/bin:/bin` },
+            });
+            assert.notEqual(result.status, 0, missing);
+            assert.match(result.stderr, /PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE/);
+            assert.equal(await fs.stat(mutationMarker).then(() => true, () => false), false);
+        }
+
+        const source = await fs.readFile(implementation.ensureSource, 'utf8');
+        for (const forbidden of ['apt-get', 'DEBIAN_FRONTEND', 'apk ', 'dnf ', 'yum ']) {
+            assert.equal(source.includes(forbidden), false, forbidden);
         }
     });
 }
+
+test('OpenCode and PI share an identical Bubblewrap capability contract', async () => {
+    const [openCode, pi] = await Promise.all(
+        implementations.map(({ ensureSource }) => fs.readFile(ensureSource, 'utf8')),
+    );
+    assert.equal(openCode, pi);
+});

@@ -31,26 +31,104 @@ async function readManifest(relativePath) {
     return JSON.parse(await fs.readFile(path.join(repoRoot, relativePath), 'utf8'));
 }
 
-test('only the three clean-break coding agents select lite-sandbox', async () => {
-    const selected = [];
-    for (const manifestPath of await findManifests()) {
-        const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-        if (manifest['lite-sandbox'] === true) {
-            selected.push(path.relative(repoRoot, manifestPath));
-        }
+function isUsableContainerDeclaration(value) {
+    return typeof value === 'string'
+        && value.length > 0
+        && value === value.trim()
+        && !/[\s\0]/.test(value);
+}
+
+function assertSelectorContract(manifest, manifestPath) {
+    if (Object.hasOwn(manifest, 'lite-sandbox')) {
+        assert.equal(
+            typeof manifest['lite-sandbox'],
+            'boolean',
+            `${manifestPath}: lite-sandbox must be boolean when declared`,
+        );
     }
 
-    assert.deepEqual(selected.sort(), [
-        'codexAgent/manifest.json',
-        'opencodeAgent/manifest.json',
-        'piAgent/manifest.json',
-    ]);
+    if (manifest['lite-sandbox'] === true) {
+        assert.equal(
+            Object.hasOwn(manifest, 'network'),
+            false,
+            `${manifestPath}: sandbox networking is platform-owned`,
+        );
+        return;
+    }
 
-    for (const manifestPath of selected) {
+    assert.equal(
+        isUsableContainerDeclaration(manifest.container),
+        true,
+        `${manifestPath}: false/missing lite-sandbox requires a usable container declaration`,
+    );
+}
+
+test('agent manifests satisfy the capability-based selector contract', async () => {
+    for (const manifestPath of await findManifests()) {
+        const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+        assertSelectorContract(manifest, path.relative(repoRoot, manifestPath));
+    }
+});
+
+test('sandbox selector validation is agent-name and interactivity independent', () => {
+    assert.doesNotThrow(() => assertSelectorContract({
+        name: 'futureBatchWorker',
+        'lite-sandbox': true,
+        container: { dormant: 'sandbox mode does not inspect this declaration' },
+    }, 'futureBatchWorker/manifest.json'));
+});
+
+test('container selector validation mirrors the runtime declaration grammar', () => {
+    for (const container of ['node:24', 'alpine', 'registry/repository:tag']) {
+        assert.doesNotThrow(() => assertSelectorContract({ container }, `valid:${container}`));
+    }
+
+    for (const container of [
+        undefined,
+        '',
+        '   ',
+        ' node:24',
+        'node:24 ',
+        'node:\t24',
+        'node:\n24',
+        `node:${String.fromCharCode(0)}24`,
+        false,
+        {},
+    ]) {
+        assert.throws(
+            () => assertSelectorContract({ container }, 'malformed-container'),
+            /requires a usable container declaration/,
+        );
+        assert.throws(
+            () => assertSelectorContract({ container, 'lite-sandbox': false }, 'malformed-container'),
+            /requires a usable container declaration/,
+        );
+        assert.doesNotThrow(
+            () => assertSelectorContract({ container, 'lite-sandbox': true }, 'dormant-container'),
+        );
+    }
+});
+
+test('required coding agents retain selector-only dual-mode declarations', async () => {
+    for (const agent of ['codexAgent', 'opencodeAgent', 'piAgent']) {
+        const manifestPath = `${agent}/manifest.json`;
         const manifest = await readManifest(manifestPath);
-        assert.equal(Object.hasOwn(manifest, 'container'), false, manifestPath);
-        assert.equal(Object.hasOwn(manifest, 'network'), false, manifestPath);
+
+        assert.equal(manifest['lite-sandbox'], true, manifestPath);
         assert.equal(manifest.startup, 'manual', manifestPath);
+        assert.equal(
+            manifest.container,
+            'docker.io/assistos/ploinky-node:24-bookworm-tools',
+            manifestPath,
+        );
+        assert.equal(Object.hasOwn(manifest, 'network'), false, manifestPath);
+
+        assertSelectorContract({ ...manifest, 'lite-sandbox': true }, `${manifestPath}:sandbox`);
+        assertSelectorContract({ ...manifest, 'lite-sandbox': false }, `${manifestPath}:container`);
+        assertSelectorContract(
+            Object.fromEntries(Object.entries(manifest).filter(([key]) => key !== 'lite-sandbox')),
+            `${manifestPath}:container-default`,
+        );
     }
 });
 

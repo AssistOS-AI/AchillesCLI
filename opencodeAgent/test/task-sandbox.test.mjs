@@ -266,8 +266,9 @@ test('OpenCode adapters contain no local sandbox, raw bwrap, or path fallback', 
             assert.equal(source.includes(forbidden), false, forbidden);
         }
     }
-    assert.match(readinessShell, /HOME:-}" = "\/home\/agent"/);
-    assert.match(readinessShell, /\/usr\/local\/libexec\/ploinky-bwrap-launch/);
+    assert.match(readinessShell, /\$HOME\/\.opencode\/bin\/opencode/);
+    assert.doesNotMatch(readinessShell, /HOME:-}" = "\/(?:home\/agent|root)"/);
+    assert.match(readinessShell, /scripts\/ensure-bubblewrap\.sh/);
     assert.equal(readinessShell.includes('check-task-sandbox.mjs'), false);
     assert.equal(readinessShell.includes('opencode --version'), false);
 });

@@ -134,6 +134,16 @@ Ploinky integration boundary:
     existing generated Ploinky agent credential; it does not add a public HTTP
     service, delegation, or MCP execution tool.
 19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
+    The three coding-worker manifests are dual-runtime declarations. Each keeps
+    `lite-sandbox: true`, `startup: manual`, and the shared
+    `docker.io/assistos/ploinky-node:24-bookworm-tools` container declaration.
+    The universal Ploinky selector alone chooses the service boundary: true
+    requires the platform sandbox and treats the container declaration as
+    dormant, while false or missing requires Podman and activates that exact
+    declaration. Neither selected mode may fall back to the other. This is a
+    capability contract rather than an agent-name allowlist. GPTResearcher is
+    not qualified for the platform-sandbox service ABI in this rollout, so its
+    manifest omits `lite-sandbox` and retains its specialized container.
     Optional activation is additive: the candidate must be admitted and become
     ready before routing selection changes, and a failed candidate must leave
     the active generation plus unrelated Router and Soul Gateway routes
@@ -245,11 +255,14 @@ Provider launcher discovery:
    `outputText`; lifecycle events, thinking content, signatures, encrypted
    content, and usage metadata must not enter the visible log. Non-JSON
    diagnostic stdout and provider stderr remain visible without synthetic
-   status messages or stream prefixes. Its task runner must
-   retain `HOME=/root` and must not
-   override `PI_CODING_AGENT_DIR`, so interactive CLI login, initial tasks, and
-   continued tasks all use PI's persistent default configuration directory
-   under the agent home, including the same OAuth credentials and settings.
+   status messages or stream prefixes. Every PI provider path maps the selected
+   service mode's exact HOME to `/home/agent` inside the nested policy and must
+   not override `PI_CODING_AGENT_DIR`, so interactive CLI, login, initial work,
+   and continuation use one persistent configuration and session directory for
+   that alias and mode. Sandbox service state uses the versioned
+   `<runtime-key>.sandbox-v2` backing; container service state retains its
+   native backing. There is no `/root` shim, cross-mode reader, or direct
+   provider-authentication fallback for delegated model access.
    The PI profile installer must install the package and stable launcher under
    `$HOME/.local`, and the manifest and task runner must resolve that
    home-relative launcher. It must not require writes to `/usr/local`, because
@@ -275,67 +288,71 @@ Provider launcher discovery:
    `external_directory` to `deny`, and must not select a default model or
    restrict other providers. This is an OpenCode application policy rather
    than an operating-system filesystem sandbox by itself.
-   Both `opencodeAgent` and `piAgent` must additionally start every initial
-   and continued provider process inside a task-local Bubblewrap namespace.
-   The wrapper must canonicalize `projectDir`, require it to remain under
-   `PLOINKY_WORKSPACE_ROOT`, expose system/runtime files read-only, make the
-   namespace root read-only, and bind only the canonical `projectDir` writable
-   from the workspace. Provider-owned configuration and session directories
-   may be mounted separately with the minimum required access; the broader
-   workspace root and sibling projects must not be mounted. The task sandbox
-   shares the existing network namespace so provider API routing continues to
-   work, but unshares user, PID, IPC, and UTS namespaces. Before probing or
-   mutating project/session state, it must verify that outer `/proc/self`
-   represents the worker's current PID namespace and probe private proc first.
-   After a private-mode failure, it may bind the existing proc filesystem
-   read-only only when an in-sandbox guard proves dynamic self-process data and
-   denies access to the parent worker's environment, root, working directory,
-   and file descriptors. The selected
-   frozen capability is cached only for a bounded lifetime against the
-   Bubblewrap executable's real path, device, inode, size, and modification
-   time. No task or operator environment value may replace the production
-   Bubblewrap path or select a proc mode.
-   The project path must be authorized against the real workspace before any
-   directory creation. Missing components are created without following
-   symlinks and the final real path is revalidated before launch. The task
-   environment is constructed from an explicit allowlist and excludes
-   `PLOINKY_AGENT_API_KEY`, `PLOINKY_AGENT_PRIVATE_SECRET`,
-   `PLOINKY_AGENT_CLIENT_SECRET`, `PLOINKY_AGENT_SECRET`,
-   `PLOINKY_MASTER_KEY`, invocation/router credentials, and provider secrets.
-   In generated-local mode the outer wrapper owns a loopback broker limited to
-   the Soul Gateway chat-completions route and the `fast`, `plan`, and `deep`
-   models. It injects the signed agent key upstream while the nested task sees
-   only the broker URL and a random per-task bearer token. PI registers the same
-   broker through its repository-owned provider extension. Outside that mode,
-   provider authentication comes from provider-owned persistent state; raw
-   Ploinky credentials are never task authority. Capability failure returns
-   `PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE` with status and cause before task or
-   persistent-state mutation. Provider execution has no elapsed timeout and
-   remains active until completion, cancellation, failure, or runtime
-   interruption, while retained stdout, stderr, final output, and diagnostics
-   remain byte bounded.
+   Both `opencodeAgent` and `piAgent` must start every provider execution path,
+   including initial work, continuation, session discovery, models, login, and
+   interactive CLI, through the canonical provider Bubblewrap policy. The
+   provider sees the sanitized `/workspace` tree read-only and only one exact,
+   existing, non-root `projectDir` subtree read-write. Sibling projects remain
+   readable but reject writes. Ploinky control state, `.data`, other agent
+   homes, engine storage, sockets, and devices are masked or absent. The exact
+   mode-derived provider HOME is mounted read-write at `/home/agent`, and the
+   provider executable and package roots are overlaid read-only.
+   The privileged `ploinky-bwrap-launch` helper opens `/workspace` and resolves
+   the relative workdir with `openat2(2)` using
+   `RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS|RESOLVE_NO_SYMLINKS`. It retains the
+   workspace, workdir, HOME, and executable/package file descriptors and gives
+   Bubblewrap only `--ro-bind-fd`/`--bind-fd` sources. Exact `/workspace`,
+   missing or non-directory targets, traversal, symlinks, and protected paths
+   are rejected before HOME lease or broker creation. There is no directory
+   creation, `realpath`/metadata security decision, pathname reopen, or
+   unsupported-syscall fallback.
+   The namespace shares the selected service network for provider access but
+   always creates private user, PID, IPC, UTS, mount, and `/proc` views. An
+   inherited-proc mode is never admitted. Both service images provide the same
+   pinned Bubblewrap and helper ABI; JavaScript never invokes a raw Bubblewrap
+   path and no provider installer adds it at runtime.
+   The provider environment is rebuilt from an explicit allowlist. The trusted
+   AgentServer receives its generation capability only through the pipe-fed
+   descriptor and frozen `AgentCredentialContext`; that context is never
+   reconstructed in environment variables or passed into a provider. Every
+   managed model call uses a context-backed, task/generation/audience-scoped
+   loopback broker, and the nested process receives only the broker URL and
+   short-lived random token. Missing or mismatched context fails before spawn;
+   there is no direct Router, provider-key, or persistent-credential fallback.
+   Capability failure returns a stable policy code and status before task,
+   HOME, broker, or persistent-state mutation. Provider execution has no
+   elapsed timeout and remains active until completion, cancellation, failure,
+   or runtime interruption, while retained stdout, stderr, final output, and
+   diagnostics remain byte bounded.
    The same contract applies when the Ploinky runtime itself is a container or
    a `lite-sandbox` Bubblewrap process: container profiles must permit nested
-   namespaces, the installer must install `bubblewrap` only when `bwrap` is not
-   already available, and readiness must prove that a nested sandbox can
+   namespaces, both selected service images must already provide the compatible
+   Bubblewrap and fd-safe launcher ABI, and provider installers must never add
+   Bubblewrap at runtime. Readiness must prove that a nested sandbox can
    actually start before the agent becomes ready. OpenCode and PI do not request
    privileged containers. Qualification of the exact Box runtime image must
-   separately pass the non-skipping private/guarded-inherited proc,
-   UID/GID/home, writable-path, and real task checks. Until the canonical
-   empty-workspace provider-readiness mode is available, agent readiness is
-   capability-only: it must not execute the provider binary or pass
-   `PLOINKY_WORKSPACE_ROOT` into a task sandbox. The final provider startup
-   check must run only with a private empty workspace, never the real user
-   workspace.
-   For initial
-   PI tasks outside generated-local mode, the provider owns model selection.
-   Generated-local tasks use the scoped Soul `fast` model unless an allowed
-   Soul tier is requested. Before continuation, `piAgent`
+   separately pass the non-skipping private-proc, UID/GID/home,
+   fd-pinned writable-path, and real task checks. AgentServer provider
+   readiness must invoke the provider only through the canonical readiness
+   policy: a private empty tmpfs mounted at `/workspace`, an isolated
+   `/workspace/readiness` working directory, the exact provider HOME and
+   immutable executable roots, and private proc. It must never pass
+   `PLOINKY_WORKSPACE_ROOT`, mount real user workspace content, invoke raw
+   Bubblewrap, or fall back to a direct provider spawn.
+   Migration staging is explicit: the Phase 1 OpenCode/PI shell readiness is
+   capability- and installed-file-only and never executes a provider. It is a
+   safe prerequisite, not the final readiness contract. Phase 6 replaces that
+   interim check with the canonical empty-workspace provider probe above; the
+   migration cannot be released while only the interim check remains.
+   For initial PI tasks the provider owns model selection unless the trusted
+   credential context authorizes a scoped Soul tier; context-backed tasks use
+   `fast` unless an allowed Soul tier is requested. Before continuation, `piAgent`
    must merge its persistent global settings with project-local PI settings,
    read the effective `defaultProvider`, `defaultModel`, and valid
    `defaultThinkingLevel`, and pass them as explicit CLI overrides while
-   retaining the stored session id and directory. Missing or malformed model
-   settings fall back to PI's native session-resume behavior. For initial
+   retaining the stored session id and directory. Missing or malformed current
+   HOME-ABI model state rejects continuation with a structured state error; no
+   older or cross-mode reader is attempted. For initial
    OpenCode tasks, the wrapper must assign an unpredictable internal session
    title and resolve the provider session id through the separate session-list
    interface after execution. If that read-only CLI operation cannot run in the
@@ -345,7 +362,8 @@ Provider launcher discovery:
    Before continuation, `opencodeAgent` must read the first recent model and
    its non-default variant from its persistent OpenCode state and pass them as
    explicit CLI overrides while retaining the stored session id. Unavailable
-   or malformed model state falls back to OpenCode's native resume behavior.
+   or malformed current HOME-ABI model state rejects continuation rather than
+   entering a tolerant or cross-mode resume path.
    After resolving an OpenCode session, the wrapper must inspect its exported
    message data outside the visible stream and use the last assistant text as
    `outputText`; export output must never enter task logs. Wrapper stdout is a
@@ -372,16 +390,18 @@ Provider launcher discovery:
    `--model`, so the Codex configuration active for the new turn remains the
    model authority. Both initial and resumed execution place Codex's global
    `--sandbox workspace-write --ask-for-approval never` options before `exec`.
-   In generated-local Ploinky mode they also select a fixed custom provider at
-   the Router's local Soul Gateway Responses endpoint, reference the generated
-   `PLOINKY_AGENT_API_KEY` by environment-variable name, and use the concrete
-   `gpt-5.6-sol` model identity as a one-run config default. Soul Gateway maps
-   that compatibility alias to its operator-managed `fast` cascade, separating
-   Codex capability lookup from routing policy without persisting credentials
-   or provider state in the workspace. Partial generated provenance fails before spawn,
-   while non-generated invocations retain normal Codex authentication.
-   The selected project directory is writable, broader filesystem writes fail
-   without prompting, and the wrapper must not bypass Codex's sandbox. On
+   Every Codex provider invocation runs inside the same canonical fd-pinned
+   provider boundary used by OpenCode and PI. A frozen trusted credential
+   context may mint a process-lifetime Soul broker and select the concrete
+   `gpt-5.6-sol` model identity as a one-run default; the nested Codex process
+   receives only the scoped broker URL and token. Missing or mismatched context
+   fails before spawn, and no generated environment credential or direct
+   provider credential is accepted as a fallback. Soul Gateway maps the model
+   identity to its operator-managed `fast` cascade without persisting
+   credentials or provider state in the workspace. The workspace is read-only,
+   the exact existing non-root project directory is writable, and broader
+   writes fail without prompting. The wrapper must not bypass either the
+   Ploinky boundary or Codex's native sandbox. On
    controlled cancellation the wrapper aborts Codex and preserves a
    reported thread id behind the existing opaque handle before exiting
    unsuccessfully.

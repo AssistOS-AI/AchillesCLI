@@ -114,10 +114,10 @@ test('PI readiness has no standalone identity, real-workspace, or direct provide
     }
 
     const shellSource = await fs.readFile(new URL('../readiness.sh', import.meta.url), 'utf8');
-    assert.match(shellSource, /HOME:-}" = "\/home\/agent"/);
-    assert.match(shellSource, /\/home\/agent\/\.local\/bin\/pi/);
+    assert.match(shellSource, /\$HOME\/\.local\/bin\/pi/);
     assert.match(shellSource, /@earendil-works\/pi-coding-agent/);
-    for (const forbidden of ['/root', 'check-task-sandbox', 'node ', '--version']) {
+    assert.doesNotMatch(shellSource, /HOME:-}" = "\/(?:home\/agent|root)"/);
+    for (const forbidden of ['/root/', '/home/agent/', 'check-task-sandbox', 'node /code', '--version']) {
         assert.equal(shellSource.includes(forbidden), false, forbidden);
     }
 });

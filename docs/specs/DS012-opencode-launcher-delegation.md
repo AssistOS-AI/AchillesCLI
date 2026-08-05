@@ -145,53 +145,78 @@ runtime, readiness probe, task runner, models handler, and interactive CLI must
 resolve the OpenCode binary from the same effective `HOME` unless an explicit
 `OPENCODE_BIN` test or operator override is supplied.
 
-Every OpenCode task process, including session discovery, export, initial
-execution, continuation, and the chat-completions execution path, must run
-inside a task-local Bubblewrap namespace. The canonical `projectDir` is the
-only writable bind from the Ploinky workspace; the namespace root and provider
-runtime are read-only, while only the OpenCode configuration, cache, data, and
-state directories needed for normal operation are mounted separately writable.
-The wrapper must reject missing, external, or symlink-escaped project
-directories, share networking for provider calls, filter loader/runtime
-injection variables, all raw Ploinky agent/private/client/master credentials,
-invocation/router credentials, and provider secrets, and fail closed if nested
-Bubblewrap cannot start. Provider authentication for delegated work comes from
-provider-owned persistent state or a separately specified scoped broker; the
-configured Soul Gateway template does not authorize exposing
-`PLOINKY_AGENT_API_KEY` to a delegated task.
-Before probing Bubblewrap or mutating project/session state, the wrapper must
-verify that outer `/proc/self` represents its current PID namespace. It probes
-private proc first. After a private failure, it may bind the existing proc
-filesystem read-only only when an in-sandbox guard proves dynamic self-process
-data and denies access to the parent worker's environment, root, working
-directory, and file descriptors; task input and environment cannot choose the
-mode or replace `/usr/bin/bwrap`.
-Project authorization occurs before directory creation, missing components are
-created without following symlinks, and the final real path is revalidated.
-Capability failure is structured with status `422` and code
-`PLOINKY_BWRAP_CAPABILITY_UNAVAILABLE`; the launcher surfaces only allowlisted
-safe lifecycle codes and never command lines, environment, credentials, or
-hidden routing state. Execution remains unbounded until completion or
-cancellation, while retained output and diagnostics are byte bounded.
-Container profiles must allow nested user/mount namespaces. The installer must
-reuse an existing `bwrap` binary in a Ploinky host sandbox, install Bubblewrap
-when it is absent in a container, and readiness must execute the nested sandbox
-guard. Until the canonical empty-workspace provider-readiness mode is
-available, readiness is capability-only and must not execute OpenCode or mount
-the real user workspace. The final harmless provider startup check must use a
-private empty workspace that contains no real workspace content.
+Every OpenCode execution path, including session discovery, export, initial
+execution, continuation, chat completions, model helpers, login/control, and
+interactive CLI, must run through the canonical provider Bubblewrap policy.
+The provider receives the sanitized `/workspace` tree read-only and only the
+exact selected `projectDir` subtree read-write; sibling projects remain
+readable but reject writes. The mode-derived provider HOME is mounted
+read-write at `/home/agent`, with the OpenCode executable/package roots
+overlaid read-only. Ploinky control state, `.data`, other homes, engine storage,
+sockets, and devices are masked or absent.
+
+`projectDir` must already exist, be a directory below `/workspace`, and not be
+the workspace root or a protected ancestor. The privileged
+`ploinky-bwrap-launch` helper opens the workspace root once and resolves the
+relative target with `openat2(2)` using
+`RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS|RESOLVE_NO_SYMLINKS`. It retains the
+workspace, workdir, HOME, and executable/package file descriptors and passes
+them to Bubblewrap with `--ro-bind-fd`/`--bind-fd`; Bubblewrap never reopens a
+security-sensitive source pathname. Missing directories are never created.
+There is no `realpath`/metadata security decision, path-based fallback, or
+fallback when `openat2`, required resolve flags, fd retention, or fd binding is
+unavailable.
+
+The namespace shares the selected service network for provider calls while
+unsharing user, mount, PID, IPC, and UTS namespaces and mounting private proc.
+Inherited proc is never admitted. Task input and environment cannot choose a
+proc mode, helper, or Bubblewrap binary; JavaScript does not invoke a raw
+Bubblewrap path. The environment is rebuilt from an explicit allowlist and
+contains no service credential, reusable Router credential, master material,
+or provider key. The trusted AgentServer creates a scoped Soul broker only
+from its frozen `AgentCredentialContext`, and OpenCode receives only that
+task/generation/audience-bound broker URL and short-lived token. Missing or
+mismatched context fails before spawn; delegated work has no direct credential
+or provider-owned authentication fallback.
+
+Capability failure is structured with a stable status and policy code; the
+launcher surfaces only allowlisted lifecycle codes and never command lines,
+environment, credentials, or hidden routing state. Failure occurs before HOME
+lease, broker, provider, project, or session mutation. Execution remains
+unbounded until completion or cancellation, while retained output and
+diagnostics are byte bounded.
+Container profiles must allow nested user/mount namespaces. Both the Box and
+the selected coding-container image must provide the compatible Bubblewrap and
+fd-safe launcher ABI before the agent starts; the provider installer must never
+install Bubblewrap at runtime. Readiness must execute the nested sandbox guard.
+AgentServer readiness executes OpenCode only through the canonical
+provider-readiness mode, with an empty tmpfs at `/workspace` and a private
+`/workspace/readiness` working directory. It must not mount the real user
+workspace, use `PLOINKY_WORKSPACE_ROOT`, invoke a raw Bubblewrap path, or fall
+back to a direct OpenCode spawn.
+
+During migration Phase 1, `readiness.sh` deliberately performs only immutable
+image capability and installed-file checks and never launches OpenCode. This
+interim safety gate removes the unsafe real-workspace probe but is not the
+release readiness contract. Phase 6 must replace it with the empty-workspace
+provider execution described above before the migration is accepted.
+
+The `opencodeAgent` manifest is a dual-runtime declaration. It remains manual,
+keeps `lite-sandbox: true`, and retains
+`docker.io/assistos/ploinky-node:24-bookworm-tools`. True selects the mandatory
+platform sandbox and ignores the dormant image declaration; changing only the
+selector to false or removing it selects mandatory Podman and activates that
+same container. A selected-runtime failure is fatal and never starts the other
+runtime.
 
 The installed OpenCode config must add an OpenAI-compatible provider named
-`soul-gateway`. Its base URL must be derived from `PLOINKY_ROUTER_URL`, and its
-API key must reference Ploinky's generated `PLOINKY_AGENT_API_KEY` through
-OpenCode environment substitution; neither resolved value may be written into
-the repository template. That reference supports explicitly authorized
-non-delegated runtime paths only; delegated Bubblewrap tasks do not inherit the
-raw key. The provider must expose `fast`, `deep`, and `plan`
+`soul-gateway`. Its repository template contains no endpoint or credential;
+each canonical provider launch supplies only the task-scoped broker URL and
+short-lived token minted from the frozen trusted credential context. Absence
+of that broker fails closed and never selects stored or direct provider
+credentials. The provider must expose `fast`, `deep`, and `plan`
 as `soul-gateway/fast`, `soul-gateway/deep`, and `soul-gateway/plan`. The config
-must not set `model` or `small_model`, must not allowlist providers, and must
-therefore preserve OpenCode's existing recent-model selection and other
-configured providers. Its global permission map must set `*` to `allow` and
+must not set `model` or `small_model`. Its global permission map must set `*` to `allow` and
 override `external_directory` to `deny`.
 
 The `opencodeAgent` manifest must expose AgentServer `endpoints.chatCompletions`
@@ -245,12 +270,12 @@ start acknowledgement while a generic observer follows the same task id over
 the router-mediated authorization path in each launch mode.
 
 ### Question #4: Why does the chat-completions wrapper use `WORKSPACE_PATH`?
-Response: Ploinky sets `WORKSPACE_PATH` to the workspace that the agent should
-operate on. For isolated agents that path may be `/root`; for global or devel
-agents it is the current workspace path mounted into the container. Using
-`PLOINKY_WORKSPACE_ROOT` would confuse host workspace identity with the
-effective runtime project directory and can be wrong for the way an agent is
-mounted.
+Response: Ploinky resolves `WORKSPACE_PATH` as the exact selected provider
+workdir, not as the workspace root or an inferred current directory. The
+canonical helper requires it to be an existing non-root directory below
+`/workspace` and mounts that retained inode read-write over the read-only
+workspace view. `PLOINKY_WORKSPACE_ROOT` identifies the policy root and is
+therefore never a provider workdir.
 
 ### Question #5: Why does `opencodeAgent` expose `/v1/models`?
 Response: Soul Gateway treats each Ploinky agent as a provider and discovers
@@ -294,17 +319,18 @@ not expose an OpenCode-specific model argument. The OpenCode CLI and
 `opencodeAgent` share the same persistent provider home, so the agent can read
 the first recent model and its selected variant immediately before resuming.
 Passing that selection explicitly overrides the older model stored on the
-resumed session. Because this state file is an OpenCode implementation detail,
-invalid or unavailable state preserves native resume behavior as a safe
-compatibility fallback.
+resumed session. Because this state file is part of the current provider HOME
+ABI, invalid or unavailable state rejects the continuation with a structured
+state error; it is not interpreted through an older or cross-mode reader.
 
 ### Question #11: Why is Soul Gateway configured during the install hook?
 Response: The profile install hook already runs before AgentServer in both the
 container and host-sandbox startup paths. Installing the versioned template
 immediately after the current OpenCode release avoids a dedicated image while
 ensuring the MCP runner and interactive CLI read the same provider config from
-their effective home. Ploinky injects the signed agent API key at runtime, so
-the template contains only an environment reference and no credential.
+their effective home. The template contains no reusable endpoint or credential;
+each provider launch receives only the scoped broker URL and token minted from
+the AgentServer's frozen credential context.
 
 ### Question #12: Why does every OpenCode model use only `coding-agent`?
 Response: The routed model executes through the OpenCode coding agent, so the
@@ -324,10 +350,11 @@ boundary.
 ### Question #14: Why is Bubblewrap started again when Ploinky already uses a container or `lite-sandbox`?
 Response: The outer Ploinky boundary protects the host but can expose the whole
 selected workspace to one agent instance. The inner namespace has a different
-scope: it protects sibling projects from each individual task by making only
-that task's canonical `projectDir` writable. A startup probe verifies this
-nested namespace path for both outer runtime modes, and the agent remains
-unready rather than silently running without per-task confinement.
+scope: it presents the workspace read-only and makes only the task's exact
+fd-pinned `projectDir` writable, so sibling reads remain possible but sibling
+writes fail. A startup probe verifies this nested namespace path for both outer
+runtime modes, and the agent remains unready rather than silently running
+without per-task confinement.
 
 ## Conclusion
 OpenCode delegation in AchillesCLI is a narrow provider launcher. It lets users
@@ -336,5 +363,5 @@ fixed tool dispatch, deterministic argument mapping, and plain text results.
 Completed task results additionally carry an opaque continuation capability.
 The same agent also provides an OpenAI-compatible provider surface for Soul
 Gateway, with model discovery delegated to OpenCode and execution constrained
-to the Ploinky-provided `WORKSPACE_PATH` plus the task-local Bubblewrap
-filesystem boundary.
+to an existing non-root `WORKSPACE_PATH` through the canonical fd-pinned
+Bubblewrap boundary and context-backed scoped broker.
