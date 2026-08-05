@@ -21,7 +21,7 @@ cat <<'INSTALLER'
 #!/bin/sh
 set -eu
 mkdir -p "$HOME/.opencode/bin"
-printf '%s\n' '#!/bin/sh' 'exit 0' > "$HOME/.opencode/bin/opencode"
+printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "1.14.19"' > "$HOME/.opencode/bin/opencode"
 chmod 755 "$HOME/.opencode/bin/opencode"
 INSTALLER
 `, { mode: 0o755 });
@@ -47,7 +47,7 @@ cat <<'EOF'
 EOF
 `, { mode: 0o755 });
     await fs.writeFile(helperPath, `#!/bin/sh
-printf '%s\n' 'ploinky-bwrap-launch-v1 source-sha=${'a'.repeat(40)} protocol=1 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data preexec-barrier=R/G credential-bound=4096'
+printf '%s\n' 'ploinky-bwrap-launch-v2 source-sha=${'a'.repeat(40)} protocol=2 descriptor-fd=3 path-resolution=openat2-beneath-no-magiclinks-no-symlinks bwrap-fd-options=bind-fd,ro-bind-fd,ro-bind-data,perms typed-fs=dir,tmpfs,proc,dev,system-symlink,ro-data-path-file ro-data-path-hardening=sealed-memfd-ro-bind-data home-sources=sandbox-workspace-v2,container-native home-marker=ploinky-home-v2-schema-2 home-revalidation=post-barrier-G preexec-barrier=R/G credential-bound=4096'
 `, { mode: 0o755 });
     const ensureSource = (await fs.readFile(ensureScript, 'utf8'))
         .replaceAll('/usr/bin/bwrap', bwrapPath)
@@ -98,7 +98,11 @@ test('installer writes the managed Soul Gateway config without changing provider
     assert.equal(await fs.readFile(authPath, 'utf8'), '{"credential":"keep"}\n');
     assert.match(await fs.readFile(modelPath, 'utf8'), /"modelID":"existing"/);
     assert.equal(resolveOpenCodeBin({ HOME: homeDir }), path.join(homeDir, '.opencode', 'bin', 'opencode'));
-    assert.equal(resolveOpenCodeBin({}), '/home/agent/.opencode/bin/opencode');
+    assert.throws(() => resolveOpenCodeBin({}), /canonical provider HOME/);
+    const installSource = await fs.readFile(installScript, 'utf8');
+    assert.match(installSource, /OPENCODE_VERSION=1\.14\.19/u);
+    assert.match(installSource, /--version "\$OPENCODE_VERSION" --no-modify-path/u);
+    assert.match(installSource, /installed version does not match the required pin/u);
 });
 
 test('installer leaves the persistent config untouched when OpenCode download fails', async () => {
@@ -145,8 +149,8 @@ test('config uses only the task-scoped Soul broker credential', async () => {
     assert.ok(!JSON.stringify(config).includes('PLOINKY_ROUTER_URL'));
     assert.ok(!JSON.stringify(config).includes('PLOINKY_AGENT_API_KEY'));
     assert.equal(manifest.profiles.default.install, 'sh /code/scripts/install-opencode.sh');
-    assert.equal(manifest.cli, '"$HOME/.opencode/bin/opencode"');
-    assert.equal(manifest.env.includes('PLOINKY_WORKSPACE_ROOT'), false);
+    assert.equal(manifest.cli, 'node /code/scripts/interactive-cli.mjs');
+    assert.equal(manifest.env, undefined);
     assert.equal(manifest.containerSecurity, undefined);
     assert.equal(manifest.health?.readiness?.script, 'readiness.sh');
     assert.ok(!JSON.stringify(manifest).includes('PLOINKY_AGENT_API_KEY'));

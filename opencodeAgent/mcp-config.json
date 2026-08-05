@@ -10,6 +10,7 @@
             "description": "Execute an OpenCode build task from a caller-supplied prompt and model, persist its provider session behind an opaque continuation handle, and write artifacts in the supplied project directory.",
             "providerExecution": {
                 "provider": "opencode",
+                "mode": "task",
                 "module": "/code/scripts/execute-task.mjs",
                 "export": "executeProviderTask"
             },
@@ -39,9 +40,12 @@
             "name": "continue-task",
             "title": "Continue OpenCode Task",
             "description": "Continue a previously completed or failed OpenCode task through its opaque Ploinky continuation handle.",
-            "command": "node",
-            "args": ["/code/scripts/continue-task.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "opencode",
+                "mode": "operation",
+                "module": "/code/scripts/continue-task.mjs",
+                "export": "continueProviderTask"
+            },
             "async": true,
             "taskLogRetention": "full",
             "tags": ["internal"],
@@ -67,20 +71,26 @@
             "name": "task-session-control",
             "title": "Control OpenCode Task Session",
             "description": "Run typed provider authentication operations for an OpenCode task session.",
-            "command": "node",
-            "args": ["/code/scripts/task-session-control.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "opencode",
+                "mode": "operation",
+                "module": "/code/scripts/task-session-control.mjs",
+                "export": "executeTaskSessionControl"
+            },
             "tags": ["internal"],
             "inputSchema": {
                 "operation": { "type": "string", "optional": false },
-                "handle": { "type": "string", "optional": false },
+                "handle": { "type": "string", "optional": true },
                 "provider": { "type": "string", "optional": true },
                 "method": { "type": "string", "optional": true },
                 "flowId": { "type": "string", "optional": true },
+                "continuationHandle": { "type": "string", "optional": true },
+                "seq": { "type": "number", "optional": true },
+                "nonce": { "type": "string", "optional": true },
                 "response": { "type": "string", "optional": true },
                 "apiKey": { "type": "string", "optional": true },
                 "inputs": { "type": "object", "additionalProperties": true, "optional": true },
-                "secretResponse": { "type": "string", "optional": true }
+                "additionalProperties": false
             }
         }
     ]

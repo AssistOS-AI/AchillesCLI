@@ -1,8 +1,7 @@
-#!/usr/bin/env node
+import { runOpenCodeOperation } from '../scripts/opencode-runner.mjs';
 
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createContainerLogStream, executeOpenCodeTask } from '../scripts/opencode-runner.mjs';
+const SOUL_MODELS = new Set(['fast', 'plan', 'deep']);
+const SILENT_LOG_STREAM = Object.freeze({ write() {} });
 
 function completionId() {
     return `chatcmpl-opencode-${Date.now().toString(36)}`;
@@ -34,16 +33,6 @@ export function openAiCompletion({ model, content }) {
             total_tokens: 0,
         },
     };
-}
-
-async function readStdinJson() {
-    process.stdin.setEncoding('utf8');
-    let raw = '';
-    for await (const chunk of process.stdin) {
-        raw += chunk;
-    }
-    if (!raw.trim()) return {};
-    return JSON.parse(raw);
 }
 
 function extractOpenAiRequest(payload) {
@@ -105,76 +94,73 @@ function failureContent(message, details = {}) {
     return extra ? `OpenCode task failed: ${message}\n${extra}` : `OpenCode task failed: ${message}`;
 }
 
-export async function handleChatCompletions(payload, {
-    env = process.env,
-    logStream = createContainerLogStream(),
-    sandboxDependencies,
-} = {}) {
+function managedModel(requestedModel) {
+    const requested = String(requestedModel || '').trim();
+    const [provider, model] = requested.split('/');
+    return provider === 'soul' && SOUL_MODELS.has(model)
+        ? requested
+        : 'soul/fast';
+}
+
+function invalidRequest(message) {
+    const error = new Error(message);
+    error.code = 'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID';
+    throw error;
+}
+
+export async function executeChatCompletion(payload, { providerRuntime } = {}) {
     const request = extractOpenAiRequest(payload);
-    const model = typeof request?.model === 'string' ? request.model.trim() : '';
+    const requestedModel = typeof request?.model === 'string' ? request.model.trim() : '';
     const messages = Array.isArray(request?.messages) ? request.messages : [];
     const prompt = messagesToPrompt(messages);
-    const projectDir = typeof env.WORKSPACE_PATH === 'string' ? env.WORKSPACE_PATH.trim() : '';
 
-    if (!model) {
-        return openAiCompletion({
-            model,
-            content: failureContent('model is required and must be an OpenCode model id.'),
-        });
+    if (!requestedModel) {
+        invalidRequest('model is required and must be an OpenCode model id.');
     }
 
     if (!prompt) {
-        return openAiCompletion({
-            model,
-            content: failureContent('at least one text message is required.'),
-        });
+        invalidRequest('at least one text message is required.');
     }
 
-    if (!projectDir) {
-        return openAiCompletion({
-            model,
-            content: failureContent('WORKSPACE_PATH is not configured for opencodeAgent.'),
+    const model = managedModel(requestedModel);
+    let result;
+    try {
+        result = await runOpenCodeOperation({
+            args: ['run', '--auto', '--model', model, prompt],
+            providerRuntime,
+            logStream: SILENT_LOG_STREAM,
         });
+    } catch (error) {
+        if (error?.code === 'PLOINKY_PROVIDER_RUNTIME_REQUIRED') throw error;
+        return {
+            ok: false,
+            code: error?.code || 'PLOINKY_PROVIDER_OPERATION_FAILED',
+            error: error?.message || 'OpenCode chat operation failed',
+        };
     }
 
-    const result = await executeOpenCodeTask({
-        prompt,
-        projectDir,
-        model,
-        logStream,
-        env,
-        createProjectDir: false,
-        sandboxDependencies,
-    });
-
-    if (!result.ok) {
-        return openAiCompletion({
-            model,
-            content: failureContent(
-                result.code ? `${result.code}: ${result.error || 'OpenCode task failed.'}` : result.error || 'OpenCode task failed.',
-                {
-                output: result.outputText,
-                },
-            ),
-        });
+    if (result.code !== 0 || result.signal) {
+        return {
+            ok: true,
+            response: openAiCompletion({
+                model,
+                content: failureContent(
+                    result.signal
+                        ? `OpenCode operation ended with signal ${result.signal}.`
+                        : `OpenCode operation failed with exit code ${result.code ?? 'unknown'}.`,
+                    { output: result.outputText },
+                ),
+            }),
+        };
     }
 
-    return openAiCompletion({
-        model,
-        content: result.outputText || 'OpenCode task completed.',
-    });
+    return {
+        ok: true,
+        response: openAiCompletion({
+            model,
+            content: result.outputText || 'OpenCode operation completed.',
+        }),
+    };
 }
 
-async function main() {
-    const payload = await readStdinJson();
-    const completion = await handleChatCompletions(payload);
-    process.stdout.write(JSON.stringify(completion));
-}
-
-const currentFilePath = fileURLToPath(import.meta.url);
-if (process.argv[1] && path.resolve(process.argv[1]) === currentFilePath) {
-    main().catch((error) => {
-        process.stderr.write(`${error?.stack || error?.message || String(error)}\n`);
-        process.exitCode = 1;
-    });
-}
+export const __testables = Object.freeze({ managedModel });

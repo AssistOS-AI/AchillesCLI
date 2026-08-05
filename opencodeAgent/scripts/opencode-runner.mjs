@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { spawnTaskSandbox } from './task-sandbox.mjs';
 
-const DEFAULT_OPENCODE_HOME = '/home/agent';
+export const OPENCODE_PROVIDER_EXECUTABLE = '/home/agent/.opencode/bin/opencode';
 const LOG_TAIL_LIMIT = 16 * 1024;
 const SEMANTIC_FAILURE_PATTERNS = [
     /permission requested:\s*external_directory/i,
@@ -37,7 +37,11 @@ function serializeCause(cause, depth = 0) {
 }
 
 export function resolveOpenCodeBin(env = process.env) {
-    const home = String(env.HOME || DEFAULT_OPENCODE_HOME);
+    const home = String(env?.HOME || '').trim();
+    if (!home || !path.isAbsolute(home) || path.normalize(home) !== home
+        || home === path.parse(home).root) {
+        throw new Error('OpenCode requires the canonical provider HOME');
+    }
     return path.join(home, '.opencode', 'bin', 'opencode');
 }
 
@@ -77,7 +81,7 @@ function providerEnvironment(env) {
 
 export async function readRecentOpenCodeModel(env = process.env) {
     const stateRoot = String(env.XDG_STATE_HOME || '').trim()
-        || path.join(String(env.HOME || DEFAULT_OPENCODE_HOME), '.local', 'state');
+        || path.join(path.dirname(resolveOpenCodeBin(env)), '..', '..', '.local', 'state');
     try {
         const state = JSON.parse(await fs.readFile(
             path.join(stateRoot, 'opencode', 'model.json'),
@@ -106,7 +110,7 @@ export async function readRecentOpenCodeModel(env = process.env) {
 
 export async function findSessionIdFromDatabase({ projectDir, env = process.env, title }) {
     const dataRoot = String(env.XDG_DATA_HOME || '').trim()
-        || path.join(String(env.HOME || DEFAULT_OPENCODE_HOME), '.local', 'share');
+        || path.join(path.dirname(resolveOpenCodeBin(env)), '..', '..', '.local', 'share');
     const databasePath = path.join(dataRoot, 'opencode', 'opencode.db');
     let expectedDirectory = path.resolve(projectDir);
     try {
@@ -141,11 +145,24 @@ function managedOpenCodeModel(requestedModel) {
         : 'soul/fast';
 }
 
-function assertProviderRuntime(providerRuntime) {
+function assertTaskProviderRuntime(providerRuntime) {
     if (!providerRuntime || typeof providerRuntime !== 'object'
         || providerRuntime.provider !== 'opencode'
+        || providerRuntime.mode !== 'task'
         || typeof providerRuntime.spawnWith !== 'function') {
         const error = new Error('OpenCode task requires the admitted provider runtime');
+        error.code = 'PLOINKY_PROVIDER_RUNTIME_REQUIRED';
+        throw error;
+    }
+    return providerRuntime;
+}
+
+function assertOperationProviderRuntime(providerRuntime) {
+    if (!providerRuntime || typeof providerRuntime !== 'object'
+        || providerRuntime.provider !== 'opencode'
+        || providerRuntime.mode !== 'operation'
+        || typeof providerRuntime.launch !== 'function') {
+        const error = new Error('OpenCode operation requires the admitted provider runtime');
         error.code = 'PLOINKY_PROVIDER_RUNTIME_REQUIRED';
         throw error;
     }
@@ -172,11 +189,12 @@ export async function runOpenCode({
     captureSession = false,
     continuationHandle = '',
     continuationStore,
+    validateAfterLease,
     logStream = createContainerLogStream(),
     env = process.env,
     providerRuntime,
 }) {
-    assertProviderRuntime(providerRuntime);
+    assertTaskProviderRuntime(providerRuntime);
     const startedAt = Date.now();
     const args = ['run', '--auto'];
     const sessionTitle = captureSession && !sessionId
@@ -231,6 +249,7 @@ export async function runOpenCode({
                     });
                 }
             },
+            ...(validateAfterLease ? { validateAfterLease } : {}),
         },
     );
     const output = { stdoutTail: '', stderrTail: '' };
@@ -252,6 +271,40 @@ export async function runOpenCode({
         outputText: output.stdoutTail.trim(),
         effectiveProjectDir,
     };
+}
+
+export async function runOpenCodeOperation({
+    args,
+    logStream = createContainerLogStream(),
+    env = process.env,
+    providerRuntime,
+}) {
+    const runtime = assertOperationProviderRuntime(providerRuntime);
+    if (!Array.isArray(args) || args.some((argument) => typeof argument !== 'string')) {
+        const error = new TypeError('OpenCode operation args must be an array of strings');
+        error.code = 'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID';
+        throw error;
+    }
+    const startedAt = Date.now();
+    const handle = await runtime.launch({
+        command: [OPENCODE_PROVIDER_EXECUTABLE, ...args],
+    }, {
+        environment: providerEnvironment(env),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        leaseMetadata: { purpose: 'provider-operation' },
+    });
+    const output = { stdoutTail: '', stderrTail: '' };
+    appendChildOutput(handle.child, logStream, output);
+    const completion = await handle.completion;
+    return Object.freeze({
+        code: completion.code,
+        signal: completion.signal,
+        durationMs: Date.now() - startedAt,
+        stdoutTail: output.stdoutTail,
+        stderrTail: output.stderrTail,
+        outputText: output.stdoutTail.trim(),
+        launch: handle.launch,
+    });
 }
 
 export function detectSemanticFailure(result) {
@@ -279,6 +332,7 @@ export async function executeOpenCodeTask({
     captureSession = false,
     continuationHandle = '',
     continuationStore,
+    validateAfterLease,
     logStream = createContainerLogStream(),
     env = process.env,
     providerRuntime,
@@ -300,6 +354,7 @@ export async function executeOpenCodeTask({
             captureSession,
             continuationHandle,
             continuationStore,
+            validateAfterLease,
             logStream,
             env,
             providerRuntime,

@@ -15,10 +15,9 @@ import {
     __testables as executeTaskTestables,
     executeProviderTask,
 } from '../scripts/execute-task.mjs';
+import { __testables as continueTaskTestables } from '../scripts/continue-task.mjs';
 import { spawnTaskSandbox } from '../scripts/task-sandbox.mjs';
 import { createContinuationStoreFixture } from './continuation-store-fixture.mjs';
-
-const FIXED_CONTINUATION_ROOT = '/home/agent/.ploinky/task-sessions';
 
 async function createSessionDatabase(dataRoot) {
     const directory = path.join(dataRoot, 'opencode');
@@ -63,6 +62,7 @@ function fakeProviderRuntime({
         leaseHeld: false,
         recordObservedWhileLeaseHeld: false,
         provider: 'opencode',
+        mode: 'task',
         async spawnWith(adapter, input, lifecycle) {
             assert.equal(adapter, spawnTaskSandbox);
             const workdir = input.workdir.startsWith('/workspace/')
@@ -357,6 +357,144 @@ test('executeProviderTask fails closed without input or admitted runtime', async
     assert.match(result.error, /admitted provider runtime/);
 });
 
+test('continue-task resolves HOME state once, transitions, and revalidates before provider execution', async () => {
+    const handle = '11111111-1111-4111-8111-111111111111';
+    const record = Object.freeze({
+        version: 1,
+        provider: 'opencode',
+        sessionId: 'ses-continued',
+        projectDir: '/workspace/projects/alpha',
+        createdAt: '2026-08-05T00:00:00.000Z',
+        updatedAt: '2026-08-05T00:01:00.000Z',
+    });
+    const order = [];
+    const runtime = {
+        provider: 'opencode',
+        mode: 'operation',
+        spawnWith() {},
+        async resolveHomeState(resolver) {
+            order.push('resolve');
+            return resolver({
+                homePath: '/home/agent',
+                provider: 'opencode',
+                runtimeKind: 'bwrap',
+            });
+        },
+        transitionToTask() {
+            order.push('transition');
+            this.mode = 'task';
+        },
+    };
+    let reads = 0;
+    const result = await continueTaskTestables.continueProviderTaskWithDependencies({
+        input: { handle, prompt: 'Continue exactly.' },
+    }, { providerRuntime: runtime }, {
+        continuationStoreForHome(homePath) {
+            assert.equal(homePath, '/home/agent');
+            return {
+                readContinuationRecord(requestedHandle) {
+                    reads += 1;
+                    assert.equal(requestedHandle, handle);
+                    return { ...record };
+                },
+            };
+        },
+        async readRecentOpenCodeModel(env) {
+            order.push('model');
+            assert.deepEqual(env, { HOME: '/home/agent' });
+            return { model: 'soul/plan', variant: 'high' };
+        },
+        async executeOpenCodeTask(input) {
+            order.push('preexec-revalidation');
+            assert.equal(runtime.mode, 'task');
+            assert.equal(input.projectDir, record.projectDir);
+            assert.equal(input.sessionId, record.sessionId);
+            assert.equal(input.model, 'soul/plan');
+            assert.equal(input.variant, 'high');
+            input.validateAfterLease({
+                homePath: '/home/agent',
+                provider: 'opencode',
+                runtimeKind: 'bwrap',
+                mode: 'task',
+                workdir: 'projects/alpha',
+            });
+            order.push('provider');
+            return { ok: true, outputText: 'continued output' };
+        },
+    });
+
+    assert.deepEqual(result, {
+        ok: true,
+        outputText: 'continued output',
+        continuation: { version: 1, handle, toolName: 'continue-task' },
+    });
+    assert.equal(reads, 2);
+    assert.deepEqual(order, [
+        'resolve',
+        'model',
+        'transition',
+        'preexec-revalidation',
+        'provider',
+    ]);
+});
+
+test('continue-task rejects a changed record in the post-lease preexec hook', async () => {
+    const handle = '22222222-2222-4222-8222-222222222222';
+    const record = {
+        version: 1,
+        provider: 'opencode',
+        sessionId: 'ses-original',
+        projectDir: '/workspace/projects/alpha',
+        createdAt: '2026-08-05T00:00:00.000Z',
+        updatedAt: '2026-08-05T00:01:00.000Z',
+    };
+    let reads = 0;
+    let providerStarted = false;
+    const runtime = {
+        provider: 'opencode',
+        mode: 'operation',
+        spawnWith() {},
+        resolveHomeState: (resolver) => resolver({
+            homePath: '/root',
+            provider: 'opencode',
+            runtimeKind: 'container',
+        }),
+        transitionToTask() { this.mode = 'task'; },
+    };
+
+    await assert.rejects(
+        continueTaskTestables.continueProviderTaskWithDependencies({
+            input: { handle, prompt: 'Must not start.' },
+        }, { providerRuntime: runtime }, {
+            continuationStoreForHome() {
+                return {
+                    readContinuationRecord() {
+                        reads += 1;
+                        return reads === 1
+                            ? { ...record }
+                            : { ...record, sessionId: 'ses-substituted' };
+                    },
+                };
+            },
+            readRecentOpenCodeModel: async () => ({ model: '', variant: '' }),
+            async executeOpenCodeTask(input) {
+                input.validateAfterLease({
+                    homePath: '/root',
+                    provider: 'opencode',
+                    runtimeKind: 'container',
+                    mode: 'task',
+                    workdir: 'projects/alpha',
+                });
+                providerStarted = true;
+                return { ok: true };
+            },
+        }),
+        (error) => error?.code === 'PLOINKY_CONTINUATION_STATE_CHANGED',
+    );
+    assert.equal(providerStarted, false);
+    assert.equal(reads, 2);
+});
+
 test('OpenCode execute-task config and source have no shell or broker fallback', async () => {
     const config = JSON.parse(await fs.readFile(
         new URL('../mcp-config.json', import.meta.url),
@@ -366,6 +504,7 @@ test('OpenCode execute-task config and source have no shell or broker fallback',
     const executeTask = config.tools.find(({ name }) => name === 'execute-task');
     assert.deepEqual(executeTask.providerExecution, {
         provider: 'opencode',
+        mode: 'task',
         module: '/code/scripts/execute-task.mjs',
         export: 'executeProviderTask',
     });
@@ -374,7 +513,19 @@ test('OpenCode execute-task config and source have no shell or broker fallback',
         assert.equal(field in executeTask, false, field);
     }
     const continuation = config.tools.find(({ name }) => name === 'continue-task');
-    assert.equal(continuation.command, 'node');
+    assert.deepEqual(continuation.providerExecution, {
+        provider: 'opencode',
+        mode: 'operation',
+        module: '/code/scripts/continue-task.mjs',
+        export: 'continueProviderTask',
+    });
+    const control = config.tools.find(({ name }) => name === 'task-session-control');
+    assert.deepEqual(control.providerExecution, {
+        provider: 'opencode',
+        mode: 'operation',
+        module: '/code/scripts/task-session-control.mjs',
+        export: 'executeTaskSessionControl',
+    });
 
     const taskSource = await fs.readFile(
         new URL('../scripts/execute-task.mjs', import.meta.url),
@@ -388,7 +539,13 @@ test('OpenCode execute-task config and source have no shell or broker fallback',
         new URL('../scripts/continuation-store.mjs', import.meta.url),
         'utf8',
     );
-    assert.equal(continuationTestables.STORE_DIRECTORY, FIXED_CONTINUATION_ROOT);
+    const runtimeStore = continuationTestables.continuationStoreForEnvironment({
+        HOME: '/home/agent',
+    }, {
+        atomicWrite() {},
+        readFile() { return '{}'; },
+    });
+    assert.equal(typeof runtimeStore.readContinuationRecord, 'function');
     assert.match(runnerSource, /providerRuntime\.spawnWith\(\s*spawnTaskSandbox,/);
     assert.doesNotMatch(taskSource, /\.writeContinuationRecord\(/);
     assert.match(runnerSource, /afterExit:[\s\S]*continuationStore\.writeContinuationRecord\(/);
@@ -408,7 +565,8 @@ test('OpenCode execute-task config and source have no shell or broker fallback',
         assert.equal(taskSource.includes(forbidden), false, forbidden);
     }
     assert.equal(continuationSource.includes('/root'), false);
-    assert.equal(continuationSource.includes('process.env'), false);
+    assert.match(continuationSource, /runtimeHome\(env = process\.env\)/);
+    assert.doesNotMatch(continuationSource, /HOME\s*\|\||['"]\/root['"]/);
     assert.equal(continuationSource.includes('PLOINKY_CONTINUATION_STORE_DIR'), false);
     assert.equal(continuationSource.includes('openPortableStore'), false);
     assert.equal(executeTask.inputSchema.projectDir.description.includes('symlink'), false);

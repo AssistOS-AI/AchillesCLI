@@ -3,8 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const HANDLE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const STORE_HOME = '/home/agent';
-const STORE_DIRECTORY = '/home/agent/.ploinky/task-sessions';
 
 function stateError(code, cause) {
     const error = new Error(code, cause ? { cause } : undefined);
@@ -24,6 +22,26 @@ function assertRoot(directory, label) {
         throw new Error(`invalid_${label}`);
     }
     return directory;
+}
+
+function runtimeHome(env = process.env) {
+    const value = env?.HOME;
+    if (typeof value !== 'string' || value.includes('\0')) {
+        throw new Error('invalid_provider_home');
+    }
+    return assertRoot(value, 'provider_home');
+}
+
+export function continuationStoreForHome(homeRoot, filesystem) {
+    const fixedHomeRoot = assertRoot(homeRoot, 'provider_home');
+    return createContinuationStore({
+        homeRoot: fixedHomeRoot,
+        storeRoot: path.join(fixedHomeRoot, '.ploinky', 'task-sessions'),
+    }, filesystem);
+}
+
+export function continuationStoreForEnvironment(env = process.env, filesystem) {
+    return continuationStoreForHome(runtimeHome(env), filesystem);
 }
 
 function assertBeneath(homeRoot, directory) {
@@ -275,21 +293,16 @@ function createContinuationStore({ homeRoot, storeRoot }, filesystem) {
     return Object.freeze({ readContinuationRecord, writeContinuationRecord });
 }
 
-const continuationStore = createContinuationStore({
-    homeRoot: STORE_HOME,
-    storeRoot: STORE_DIRECTORY,
-});
-
 export function createContinuationHandle() {
     return crypto.randomUUID();
 }
 
 export function writeContinuationRecord(handle, record) {
-    return continuationStore.writeContinuationRecord(handle, record);
+    return continuationStoreForEnvironment().writeContinuationRecord(handle, record);
 }
 
 export function readContinuationRecord(handle) {
-    return continuationStore.readContinuationRecord(handle);
+    return continuationStoreForEnvironment().readContinuationRecord(handle);
 }
 
 export function continuationDescriptor(handle) {
@@ -302,10 +315,10 @@ export function continuationDescriptor(handle) {
 
 export const __testables = Object.freeze({
     HANDLE_RE,
-    STORE_HOME,
-    STORE_DIRECTORY,
     assertHandle,
     assertProjectDir,
+    runtimeHome,
+    continuationStoreForEnvironment,
     createContinuationStore,
     createRetainedFilesystem,
 });

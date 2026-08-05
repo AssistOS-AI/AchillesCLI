@@ -19,24 +19,22 @@
     },
     "endpoints": {
         "chatCompletions": {
-            "command": "node",
-            "args": ["/code/openai-api/chat-completions.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "opencode",
+                "mode": "operation",
+                "module": "/code/openai-api/chat-completions.mjs",
+                "export": "executeChatCompletion"
+            },
             "supportsStream": false
         },
         "models": {
-            "command": "node",
-            "args": ["/code/openai-api/models.mjs"],
-            "cwd": "/code"
+            "providerExecution": {
+                "provider": "opencode",
+                "mode": "operation",
+                "module": "/code/openai-api/models.mjs",
+                "export": "listOpenCodeModelsEndpoint"
+            }
         }
     },
-    "cli": "\"$HOME/.opencode/bin/opencode\"",
-    "env": [
-        "OPENCODE_API_KEY",
-        "XAI_API_KEY",
-        "OPENCODE_API_KEY",
-        "GEMINI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY"
-    ]
+    "cli": "node /code/scripts/interactive-cli.mjs"
 }

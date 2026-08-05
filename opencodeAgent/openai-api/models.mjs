@@ -1,13 +1,8 @@
-#!/usr/bin/env node
+import { runOpenCodeOperation } from '../scripts/opencode-runner.mjs';
 
-import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { resolveOpenCodeBin } from '../scripts/opencode-runner.mjs';
-
-const MODEL_LIST_TIMEOUT_MS = 30000;
 const DEFAULT_TAGS = ['coding-agent'];
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
+const SILENT_LOG_STREAM = Object.freeze({ write() {} });
 
 function stripAnsi(value) {
     return String(value || '').replace(ANSI_PATTERN, '');
@@ -152,54 +147,27 @@ export function opencodeModelDescriptor(record) {
     };
 }
 
-function runOpenCodeModels(args, {
+async function runOpenCodeModels(args, {
     env = process.env,
-    timeoutMs = MODEL_LIST_TIMEOUT_MS,
+    providerRuntime,
+    logStream,
 } = {}) {
-    const opencodeBin = env.OPENCODE_BIN || resolveOpenCodeBin(env);
-
-    return new Promise((resolve, reject) => {
-        const child = spawn(opencodeBin, ['models', ...args], {
-            env: {
-                ...process.env,
-                ...env,
-                HOME: env.HOME || '/root',
-                NO_COLOR: '1',
-            },
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
-        let stdout = '';
-        let stderr = '';
-        let timedOut = false;
-        const timeout = setTimeout(() => {
-            timedOut = true;
-            try {
-                child.kill('SIGTERM');
-            } catch {
-            }
-        }, timeoutMs);
-
-        child.stdout.on('data', (chunk) => {
-            stdout += chunk.toString('utf8');
-        });
-        child.stderr.on('data', (chunk) => {
-            stderr += chunk.toString('utf8');
-        });
-        child.on('error', (error) => {
-            clearTimeout(timeout);
-            reject(error);
-        });
-        child.on('close', (code, signal) => {
-            clearTimeout(timeout);
-            if (code === 0 && !timedOut) {
-                resolve(stdout);
-                return;
-            }
-            const detail = stderr.trim() || stdout.trim();
-            reject(new Error(`opencode models failed with exit code ${code ?? 'unknown'}${signal ? ` signal ${signal}` : ''}${timedOut ? ' after timeout' : ''}${detail ? `: ${detail}` : ''}`));
-        });
+    const result = await runOpenCodeOperation({
+        args: ['models', ...args],
+        env,
+        providerRuntime,
+        logStream,
     });
+    if (result.code !== 0 || result.signal) {
+        const error = new Error(
+            `OpenCode models failed (${result.signal
+                ? `signal ${result.signal}`
+                : `exit ${result.code ?? 'unknown'}`})`,
+        );
+        error.code = 'PLOINKY_PROVIDER_OPERATION_FAILED';
+        throw error;
+    }
+    return result.stdoutTail;
 }
 
 export async function listOpenCodeModels(options = {}) {
@@ -213,18 +181,25 @@ export async function listOpenCodeModels(options = {}) {
     return parseSimpleModelIds(simpleOutput).map(opencodeModelDescriptor);
 }
 
-async function main() {
-    const models = await listOpenCodeModels();
-    process.stdout.write(JSON.stringify({
-        object: 'list',
-        data: models,
-    }));
-}
-
-const currentFilePath = fileURLToPath(import.meta.url);
-if (process.argv[1] && path.resolve(process.argv[1]) === currentFilePath) {
-    main().catch((error) => {
-        process.stderr.write(`${error?.stack || error?.message || String(error)}\n`);
-        process.exitCode = 1;
-    });
+export async function listOpenCodeModelsEndpoint(_payload, { providerRuntime } = {}) {
+    try {
+        const models = await listOpenCodeModels({
+            providerRuntime,
+            logStream: SILENT_LOG_STREAM,
+        });
+        return {
+            ok: true,
+            response: {
+                object: 'list',
+                data: models,
+            },
+        };
+    } catch (error) {
+        if (error?.code === 'PLOINKY_PROVIDER_RUNTIME_REQUIRED') throw error;
+        return {
+            ok: false,
+            code: error?.code || 'PLOINKY_PROVIDER_OPERATION_FAILED',
+            error: error?.message || 'OpenCode models failed',
+        };
+    }
 }

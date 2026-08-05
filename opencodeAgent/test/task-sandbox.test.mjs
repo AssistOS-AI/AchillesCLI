@@ -82,7 +82,10 @@ test('OpenCode task adapter delegates the exact canonical task policy', async ()
     assert.deepEqual(record(policy, 'WORKDIR'), { type: 'WORKDIR', path: 'projects/alpha' });
     assert.ok(record(policy, 'TMPFS', ({ target }) => target === '/workspace/.ploinky'));
     assert.ok(record(policy, 'TMPFS', ({ target }) => target === '/workspace/.data'));
-    assert.ok(record(policy, 'HOME', ({ runtimeKey }) => runtimeKey === 'opencodeAgent_alias-1'));
+    assert.ok(record(policy, 'HOME', ({ sourceKind, homeKey }) => (
+        sourceKind === 'sandbox-workspace-v2'
+        && homeKey === 'opencodeAgent_alias-1.sandbox-v2'
+    )));
     assert.ok(record(policy, 'RO_PATH', ({ target }) => target === OPENCODE_SANDBOX_EXECUTABLE));
     assert.ok(record(policy, 'PROC'));
     assert.equal(policy.env.HOME, '/home/agent');
@@ -97,7 +100,7 @@ test('OpenCode launch uses only the canonical helper descriptor transport', asyn
     assert.equal(launch.helper, providerSandboxModule.PROVIDER_SANDBOX_HELPER);
     assert.deepEqual(launch.args, []);
     assert.ok(Buffer.isBuffer(launch.descriptor));
-    assert.equal(launch.descriptor.subarray(0, 8).toString('ascii'), 'PLBWLP01');
+    assert.equal(launch.descriptor.subarray(0, 8).toString('ascii'), 'PLBWLP02');
     assert.equal(launch.command[0], OPENCODE_SANDBOX_EXECUTABLE);
 });
 

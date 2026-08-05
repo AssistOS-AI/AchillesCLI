@@ -3,6 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CONFIG_TEMPLATE="$SCRIPT_DIR/../opencode.json"
+OPENCODE_VERSION=1.14.19
 
 "$SCRIPT_DIR/ensure-bubblewrap.sh"
 
@@ -29,13 +30,17 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 curl -fsSL https://opencode.ai/install > "$INSTALLER_PATH"
-bash "$INSTALLER_PATH"
+bash "$INSTALLER_PATH" --version "$OPENCODE_VERSION" --no-modify-path
 rm -f "$INSTALLER_PATH"
 INSTALLER_PATH=
 
 OPENCODE_BIN="$HOME/.opencode/bin/opencode"
 if [ ! -x "$OPENCODE_BIN" ]; then
     echo "install-opencode: installer did not create $OPENCODE_BIN." >&2
+    exit 1
+fi
+if [ "$("$OPENCODE_BIN" --version)" != "$OPENCODE_VERSION" ]; then
+    echo "install-opencode: installed version does not match the required pin $OPENCODE_VERSION." >&2
     exit 1
 fi
 
