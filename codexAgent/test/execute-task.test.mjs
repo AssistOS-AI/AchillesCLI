@@ -1,76 +1,140 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 import {
     buildCodexArgs,
     eventLogText,
-    resolveManagedSoulProvider,
+    executeCodexTask,
 } from '../scripts/codex-runner.mjs';
+import { executeProviderTask, __testables as executeTestables } from '../scripts/execute-task.mjs';
+import { continueProviderTask, __testables as continueTestables } from '../scripts/continue-task.mjs';
+import {
+    selectContinuationRecordFromHome,
+    __testables as continuationStoreTestables,
+} from '../scripts/continuation-store.mjs';
 
-const UNMANAGED_ENV = Object.freeze({});
+const THREAD_ID = '018f6f4a-4ec8-7d31-a852-0242ac120002';
 
-const executeTaskPath = new URL('../scripts/execute-task.mjs', import.meta.url).pathname;
-const continueTaskPath = new URL('../scripts/continue-task.mjs', import.meta.url).pathname;
-
-function runTaskScript(scriptPath, input, env, { signalAfterMs = 0 } = {}) {
-    return new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [scriptPath], {
-            env: { ...process.env, ...env },
-            stdio: ['pipe', 'pipe', 'pipe'],
-        });
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
-        child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
-        child.on('error', reject);
-        child.on('close', (code) => resolve({ code, stdout, stderr }));
-        child.stdin.end(JSON.stringify({ input }));
-        if (signalAfterMs > 0) {
-            setTimeout(() => child.kill('SIGTERM'), signalAfterMs);
-        }
-    });
+function providerRuntime({
+    code = 0,
+    signal = null,
+    threadId = THREAD_ID,
+    agentMessage = 'final answer\n',
+    commandOutput = 'command output\n',
+    stderr = 'provider stderr\n',
+    launchWorkdir = 'projects/example',
+    abortSignal,
+    leaseState,
+} = {}) {
+    const calls = [];
+    return {
+        calls,
+        async spawnWith(adapter, input, lifecycle) {
+            calls.push({ adapter, input, lifecycle });
+            const child = new EventEmitter();
+            child.stdout = new PassThrough();
+            child.stderr = new PassThrough();
+            child.kill = () => true;
+            const launch = {
+                helper: '/usr/local/libexec/ploinky-bwrap-launch',
+                provider: 'codex',
+                mode: 'task',
+                workdir: launchWorkdir,
+                cwd: `/workspace/${launchWorkdir}`,
+            };
+            lifecycle.observeProcess?.(child);
+            const completion = new Promise((resolve, reject) => {
+                setImmediate(async () => {
+                    try {
+                        child.stdout.write(`${JSON.stringify({ type: 'thread.started', thread_id: threadId })}\n`);
+                        child.stdout.write(`${JSON.stringify({
+                            type: 'item.completed',
+                            item: { type: 'command_execution', aggregated_output: commandOutput },
+                        })}\n`);
+                        child.stdout.write(`${JSON.stringify({
+                            type: 'item.completed',
+                            item: { type: 'agent_message', text: agentMessage },
+                        })}\n`);
+                        child.stderr.end(stderr);
+                        child.stdout.end();
+                        const terminal = {
+                            code: abortSignal?.aborted ? null : code,
+                            signal: abortSignal?.aborted ? 'SIGTERM' : signal,
+                        };
+                        await lifecycle.afterExit?.({ ...terminal, launch });
+                        if (leaseState) leaseState.held = false;
+                        resolve(terminal);
+                    } catch (error) {
+                        if (leaseState) leaseState.held = false;
+                        reject(error);
+                    }
+                });
+            });
+            return {
+                child,
+                completion,
+                launch,
+            };
+        },
+    };
 }
 
-async function makeFakeCodexBin(directory) {
-    const binPath = path.join(directory, 'fake-codex.mjs');
-    await fs.writeFile(binPath, `#!/usr/bin/env node
-import fs from 'node:fs';
-
-const args = process.argv.slice(2);
-fs.writeFileSync(process.env.CODEX_ARGS_PATH, JSON.stringify(args));
-const resumeIndex = args.indexOf('resume');
-const threadId = resumeIndex >= 0 ? args.at(-2) : '018f6f4a-4ec8-7d31-a852-0242ac120002';
-process.stdout.write(JSON.stringify({ type: 'thread.started', thread_id: threadId }) + '\\n');
-process.stdout.write(JSON.stringify({
-    type: 'item.completed',
-    item: { type: 'command_execution', aggregated_output: 'command output\\n' }
-}) + '\\n');
-await new Promise((resolve) => setTimeout(
-    resolve,
-    Number(process.env.FAKE_CODEX_WAIT_MS || 10),
-));
-const configuredModel = process.env.FAKE_CODEX_CURRENT_MODEL || 'configured-default';
-process.stdout.write(JSON.stringify({
-    type: 'item.completed',
-    item: { type: 'agent_message', text: configuredModel + ': final answer\\n' }
-}) + '\\n');
-await new Promise((resolve) => setTimeout(resolve, 10));
-process.stderr.write('provider stderr\\n');
-if (process.env.FAKE_CODEX_FAIL === '1') process.exitCode = 1;
-`, 'utf8');
-    await fs.chmod(binPath, 0o755);
-    return binPath;
+function continuationProviderRuntime({
+    order = [],
+    homePath = '/home/agent',
+    runtimeKind = 'bwrap',
+    validationOverrides = {},
+    resolverError,
+    transitionError,
+    ...taskOptions
+} = {}) {
+    const taskRuntime = providerRuntime(taskOptions);
+    let resolved = false;
+    let transitioned = false;
+    return {
+        calls: taskRuntime.calls,
+        async resolveHomeState(resolver) {
+            order.push('resolve:start');
+            if (resolverError) throw resolverError;
+            const value = await resolver({ homePath, provider: 'codex', runtimeKind });
+            resolved = true;
+            order.push('resolve:end');
+            return value;
+        },
+        transitionToTask() {
+            order.push('transition');
+            if (transitionError) throw transitionError;
+            assert.equal(resolved, true);
+            transitioned = true;
+            return 'task';
+        },
+        async spawnWith(adapter, input, lifecycle) {
+            order.push('spawn:start');
+            assert.equal(transitioned, true);
+            await lifecycle.validateAfterLease({
+                homePath,
+                provider: 'codex',
+                runtimeKind,
+                mode: 'task',
+                workdir: 'projects/example',
+                ...validationOverrides,
+            });
+            order.push('spawn:validated');
+            return taskRuntime.spawnWith(adapter, input, lifecycle);
+        },
+    };
 }
 
-test('Codex initial arguments persist a thread and allow an explicit initial model', () => {
+test('Codex initial arguments retain native defense in depth and an optional initial model', () => {
     assert.deepEqual(buildCodexArgs({
         prompt: 'Build this.',
         model: 'gpt-initial',
-    }, UNMANAGED_ENV), [
+    }), [
         '--sandbox',
         'workspace-write',
         '--ask-for-approval',
@@ -84,13 +148,11 @@ test('Codex initial arguments persist a thread and allow an explicit initial mod
     ]);
 });
 
-test('Codex resume arguments apply an explicit task model', () => {
-    const args = buildCodexArgs({
+test('Codex continuation never accepts a model override', () => {
+    assert.deepEqual(buildCodexArgs({
         prompt: 'Continue.',
-        model: 'must-not-be-used',
         threadId: 'thread-1',
-    }, UNMANAGED_ENV);
-    assert.deepEqual(args, [
+    }), [
         '--sandbox',
         'workspace-write',
         '--ask-for-approval',
@@ -99,270 +161,464 @@ test('Codex resume arguments apply an explicit task model', () => {
         'resume',
         '--json',
         '--skip-git-repo-check',
-        '--model',
-        'must-not-be-used',
         'thread-1',
         'Continue.',
     ]);
-    assert.equal(args.includes('--model'), true);
+    assert.throws(
+        () => buildCodexArgs({ prompt: 'Continue.', threadId: 'thread-1', model: 'stale-model' }),
+        (error) => error?.code === 'PLOINKY_PROVIDER_INPUT_INVALID',
+    );
 });
 
-test('managed Codex uses generated Soul identity, local Router, and a concrete model alias by default', () => {
-    const env = {
-        PLOINKY_ROUTER_URL: 'http://host.containers.internal:8080',
-        PLOINKY_ROUTER_REQUEST_AUTHORITY: '127.0.0.1:8080',
-        PLOINKY_AGENT_API_KEY: 'generated-agent-identity',
-        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
-        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
-        PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
+test('Codex continuation storage derives only from the explicit runtime HOME', () => {
+    assert.equal(
+        continuationStoreTestables.storeDirectory({ HOME: '/home/agent' }),
+        '/home/agent/.ploinky/task-sessions',
+    );
+    assert.equal(
+        continuationStoreTestables.storeDirectory({ HOME: '/root' }),
+        '/root/.ploinky/task-sessions',
+    );
+    assert.equal(
+        continuationStoreTestables.storeDirectory({
+            HOME: '/home/agent',
+            PLOINKY_CONTINUATION_STORE_DIR: '/private/test-store',
+        }),
+        '/private/test-store',
+    );
+    assert.throws(
+        () => continuationStoreTestables.storeDirectory({}),
+        /explicit runtime HOME/u,
+    );
+});
+
+test('Codex trusted continuation selection is explicit-HOME-only, bounded, and symlink rejecting', async (t) => {
+    const handle = '2a9a13fb-8442-45d3-b7a7-af5a2335049e';
+    const homePath = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-continuation-home-'));
+    t.after(() => fs.rm(homePath, { recursive: true, force: true }));
+    const directory = path.join(homePath, '.ploinky', 'task-sessions');
+    const filePath = path.join(directory, `${handle}.json`);
+    const record = {
+        version: 1,
+        provider: 'codex',
+        threadId: THREAD_ID,
+        projectDir: '/workspace/projects/example',
+        createdAt: '2026-08-05T10:00:00.000Z',
+        updatedAt: '2026-08-05T10:00:01.000Z',
     };
-    assert.deepEqual(resolveManagedSoulProvider(env), {
-        provider: 'ploinky_soul',
-        baseUrl: 'http://host.containers.internal:8080/base-agent-additional-server/soul-gateway/7000/v1',
-        requestAuthority: '127.0.0.1:8080',
-        model: 'gpt-5.6-sol',
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    await fs.writeFile(filePath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+
+    assert.deepEqual(selectContinuationRecordFromHome(homePath, handle), {
+        handle,
+        threadId: THREAD_ID,
+        projectDir: '/workspace/projects/example',
     });
-    const args = buildCodexArgs({ prompt: 'Build this.' }, env);
-    assert.deepEqual(args.slice(0, 4), [
-        '--sandbox',
-        'workspace-write',
-        '--ask-for-approval',
-        'never',
-    ]);
-    assert.ok(args.includes('model_provider="ploinky_soul"'));
-    assert.ok(args.includes('model_providers.ploinky_soul.env_key="PLOINKY_AGENT_API_KEY"'));
-    assert.ok(args.includes('model_providers.ploinky_soul.wire_api="responses"'));
-    assert.ok(args.includes('model_providers.ploinky_soul.requires_openai_auth=false'));
-    assert.ok(args.includes('model_providers.ploinky_soul.http_headers={Host="127.0.0.1:8080"}'));
-    assert.ok(args.includes('shell_environment_policy.ignore_default_excludes=false'));
-    assert.ok(args.includes('model_providers.ploinky_soul.base_url="http://host.containers.internal:8080/base-agent-additional-server/soul-gateway/7000/v1"'));
-    assert.ok(args.includes('model="gpt-5.6-sol"'));
-    assert.equal(args.includes('--model'), false);
-    assert.equal(args.includes('generated-agent-identity'), false);
 
-    const resumed = buildCodexArgs({
-        prompt: 'Continue.',
-        threadId: 'thread-1',
-    }, env);
-    assert.ok(resumed.includes('model="gpt-5.6-sol"'));
-    assert.ok(resumed.includes('model_provider="ploinky_soul"'));
-    assert.equal(resumed.includes('--model'), false);
-
-    const explicit = buildCodexArgs({
-        prompt: 'Build this.',
-        model: 'direct-model',
-    }, env);
-    assert.equal(explicit.includes('model="gpt-5.6-sol"'), false);
-    assert.equal(explicit[explicit.indexOf('--model') + 1], 'direct-model');
-});
-
-test('managed Codex fails closed when Router identity configuration is partial', () => {
+    await fs.writeFile(filePath, JSON.stringify({ ...record, legacyPath: '/tmp/project' }));
     assert.throws(
-        () => buildCodexArgs({ prompt: 'Build this.' }, {
-            PLOINKY_ROUTER_URL: 'http://router.test',
-            PLOINKY_ROUTER_REQUEST_AUTHORITY: 'router.test',
-            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
-            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
-            PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
-        }),
-        /requires PLOINKY_ROUTER_URL, PLOINKY_ROUTER_REQUEST_AUTHORITY, and PLOINKY_AGENT_API_KEY/,
+        () => selectContinuationRecordFromHome(homePath, handle),
+        /invalid_continuation_record/u,
     );
+
+    await fs.writeFile(filePath, 'x'.repeat(continuationStoreTestables.MAX_RECORD_BYTES + 1));
     assert.throws(
-        () => buildCodexArgs({ prompt: 'Build this.' }, {
-            PLOINKY_AGENT_API_KEY: 'identity',
-            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
-            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
-            PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
-        }),
-        /requires PLOINKY_ROUTER_URL, PLOINKY_ROUTER_REQUEST_AUTHORITY, and PLOINKY_AGENT_API_KEY/,
+        () => selectContinuationRecordFromHome(homePath, handle),
+        /unsafe_continuation_record/u,
+    );
+
+    const targetPath = path.join(homePath, 'attacker-record.json');
+    await fs.writeFile(targetPath, JSON.stringify(record));
+    await fs.unlink(filePath);
+    await fs.symlink(targetPath, filePath);
+    assert.throws(
+        () => selectContinuationRecordFromHome(homePath, handle),
+        /unsafe_continuation_record/u,
     );
 });
 
-test('managed Codex rejects ungenerated or invalid Router request authority', () => {
-    const managedEnv = {
-        PLOINKY_ROUTER_URL: 'http://host.containers.internal:8080',
-        PLOINKY_ROUTER_REQUEST_AUTHORITY: '127.0.0.1:8080',
-        PLOINKY_AGENT_API_KEY: 'generated-agent-identity',
-        PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL: 'generated',
-        PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY: 'generated',
-    };
-    assert.throws(
-        () => buildCodexArgs({ prompt: 'Build this.' }, managedEnv),
-        /requires generated provenance for Router URL, request authority, and agent API key/,
+test('Codex continuation records accept only canonical selected workspace paths', () => {
+    assert.equal(
+        continuationStoreTestables.normalizeProjectDir('/workspace/projects/project with spaces'),
+        '/workspace/projects/project with spaces',
     );
-    assert.throws(
-        () => buildCodexArgs({ prompt: 'Build this.' }, {
-            ...managedEnv,
-            PLOINKY_ROUTER_REQUEST_AUTHORITY: 'router.test\r\nX-Injected: true',
-            PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY: 'generated',
-        }),
-        /PLOINKY_ROUTER_REQUEST_AUTHORITY is not a valid managed Router authority/,
-    );
+    for (const value of [
+        '/workspace',
+        '/workspace/',
+        '/workspace/projects/../sibling',
+        '/tmp/legacy-project',
+        'projects/relative',
+    ]) {
+        assert.throws(
+            () => continuationStoreTestables.normalizeProjectDir(value),
+            /invalid_continuation_record/u,
+        );
+    }
 });
 
 test('eventLogText exposes provider text without synthetic decoration', () => {
     assert.equal(eventLogText({
         type: 'item.completed',
-        item: { type: 'agent_message', text: 'answer\\n' },
-    }), 'answer\\n');
+        item: { type: 'agent_message', text: 'answer\n' },
+    }), 'answer\n');
     assert.equal(eventLogText({
         type: 'item.completed',
         item: { type: 'reasoning', text: 'private reasoning' },
     }), '');
 });
 
-test('execute-task streams Codex text and stderr raw and persists only private resume data', async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-agent-task-'));
-    const projectDir = path.join(temporaryDirectory, 'project');
-    const argsPath = path.join(temporaryDirectory, 'args.json');
-    const continuationStore = path.join(temporaryDirectory, 'continuations');
-    await fs.mkdir(projectDir);
-    const fakeBin = await makeFakeCodexBin(temporaryDirectory);
-    const result = await runTaskScript(executeTaskPath, {
-        prompt: 'Initial task',
-        projectDir,
+test('Codex runs only through providerRuntime.spawnWith and preserves streamed results', async () => {
+    const runtime = providerRuntime();
+    const visible = [];
+    const result = await executeCodexTask({
+        prompt: 'Build this.',
+        projectDir: '/workspace/projects/example',
         model: 'gpt-initial',
-    }, {
-        CODEX_BIN: fakeBin,
-        CODEX_ARGS_PATH: argsPath,
-        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
-        FAKE_CODEX_CURRENT_MODEL: 'gpt-initial',
+        providerRuntime: runtime,
+        logStream: { write: (chunk) => visible.push(String(chunk)) },
     });
 
-    assert.equal(result.code, 0, result.stderr);
-    const payload = JSON.parse(result.stdout);
-    assert.equal(payload.outputText, 'gpt-initial: final answer');
-    assert.equal(payload.continuation.toolName, 'continue-task');
-    assert.match(payload.continuation.handle, /^[0-9a-f-]{36}$/i);
-    assert.equal(result.stderr, 'command output\ngpt-initial: final answer\nprovider stderr\n');
-    assert.doesNotMatch(result.stderr, /thread\.started|item\.completed|\[codex|exit code/);
-
-    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.deepEqual(args.slice(0, 5), [
-        '--sandbox',
-        'workspace-write',
-        '--ask-for-approval',
-        'never',
-        'exec',
-    ]);
-    assert.equal(args.includes('--ephemeral'), false);
-    assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
-    assert.equal(args[args.indexOf('--model') + 1], 'gpt-initial');
-    const record = JSON.parse(await fs.readFile(
-        path.join(continuationStore, `${payload.continuation.handle}.json`),
-        'utf8',
-    ));
-    assert.equal(record.provider, 'codex');
-    assert.equal(record.threadId, '018f6f4a-4ec8-7d31-a852-0242ac120002');
-    assert.equal(record.projectDir, projectDir);
-    assert.equal(Object.hasOwn(record, 'model'), false);
+    assert.equal(result.ok, true);
+    assert.equal(result.outputText, 'final answer');
+    assert.equal(result.threadId, THREAD_ID);
+    assert.equal(result.projectDir, '/workspace/projects/example');
+    assert.equal(runtime.calls.length, 1);
+    assert.equal(runtime.calls[0].adapter.name, 'spawnTaskSandbox');
+    assert.deepEqual(runtime.calls[0].input, {
+        workdir: '/workspace/projects/example',
+        args: buildCodexArgs({ prompt: 'Build this.', model: 'gpt-initial' }),
+    });
+    assert.deepEqual(Object.keys(runtime.calls[0].lifecycle).sort(), ['observeProcess', 'stdio']);
+    assert.deepEqual(runtime.calls[0].lifecycle.stdio, ['ignore', 'pipe', 'pipe']);
+    assert.equal(typeof runtime.calls[0].lifecycle.observeProcess, 'function');
+    assert.equal(visible.join(''), 'command output\nfinal answer\nprovider stderr\n');
 });
 
-test('continue-task keeps the default without an override and applies a task model when supplied', async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-agent-resume-'));
-    const projectDir = path.join(temporaryDirectory, 'project');
-    const argsPath = path.join(temporaryDirectory, 'args.json');
-    const continuationStore = path.join(temporaryDirectory, 'continuations');
-    await fs.mkdir(projectDir);
-    const fakeBin = await makeFakeCodexBin(temporaryDirectory);
-    const env = {
-        CODEX_BIN: fakeBin,
-        CODEX_ARGS_PATH: argsPath,
-        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
+test('missing providerRuntime fails closed before provider execution', async () => {
+    const result = await executeCodexTask({
+        prompt: 'Build this.',
+        projectDir: '/workspace/projects/example',
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'PLOINKY_PROVIDER_RUNTIME_REQUIRED');
+    assert.match(result.error, /providerRuntime/);
+});
+
+test('workdir validation is delegated without path resolution or directory creation', async () => {
+    for (const projectDir of ['/workspace', '../escape', '/workspace/link/project']) {
+        const expected = new Error('canonical workdir rejection');
+        expected.code = 'PLOINKY_WORKDIR_INVALID';
+        const runtime = {
+            calls: [],
+            async spawnWith(_adapter, input) {
+                this.calls.push(input);
+                throw expected;
+            },
+        };
+        const result = await executeCodexTask({ prompt: 'Task', projectDir, providerRuntime: runtime });
+        assert.equal(result.ok, false);
+        assert.equal(result.code, 'PLOINKY_WORKDIR_INVALID');
+        assert.deepEqual(runtime.calls[0].workdir, projectDir);
+    }
+});
+
+test('execute provider module persists only canonical launch workdir and private thread data', async () => {
+    const records = new Map();
+    const leaseState = { held: true };
+    const store = {
+        writeContinuationRecord(handle, record) {
+            assert.equal(leaseState.held, true);
+            records.set(handle, record);
+        },
     };
-    const initial = await runTaskScript(executeTaskPath, {
-        prompt: 'Initial task',
-        projectDir,
-        model: 'gpt-old',
-    }, {
-        ...env,
-        FAKE_CODEX_CURRENT_MODEL: 'gpt-old',
-    });
-    assert.equal(initial.code, 0, initial.stderr);
-    const initialPayload = JSON.parse(initial.stdout);
+    const runtime = providerRuntime({ launchWorkdir: 'projects/example', leaseState });
+    const result = await executeTestables.executeProviderTaskWithStore({
+        input: {
+            prompt: 'Initial task',
+            projectDir: '/workspace/projects/example',
+            model: 'gpt-initial',
+        },
+    }, { providerRuntime: runtime }, store);
 
-    const resumed = await runTaskScript(continueTaskPath, {
-        handle: initialPayload.continuation.handle,
-        prompt: 'Continue the task',
-    }, {
-        ...env,
-        FAKE_CODEX_CURRENT_MODEL: 'gpt-current',
+    assert.equal(result.ok, true);
+    assert.equal(result.outputText, 'final answer');
+    assert.equal(result.continuation.toolName, 'continue-task');
+    assert.match(result.continuation.handle, /^[0-9a-f-]{36}$/iu);
+    assert.deepEqual(records.get(result.continuation.handle), {
+        threadId: THREAD_ID,
+        projectDir: '/workspace/projects/example',
     });
-    assert.equal(resumed.code, 0, resumed.stderr);
-    const resumedPayload = JSON.parse(resumed.stdout);
-    assert.equal(resumedPayload.outputText, 'gpt-current: final answer');
-    assert.equal(resumedPayload.continuation.handle, initialPayload.continuation.handle);
-    const args = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.deepEqual(args.slice(0, 6), [
-        '--sandbox',
-        'workspace-write',
-        '--ask-for-approval',
-        'never',
-        'exec',
-        'resume',
+    assert.equal(leaseState.held, false);
+});
+
+test('execute provider module requires its injected runtime capability', async () => {
+    const result = await executeProviderTask({
+        input: { prompt: 'Task', projectDir: '/workspace/projects/example' },
+    }, {});
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'PLOINKY_PROVIDER_RUNTIME_REQUIRED');
+});
+
+test('failed and cancelled Codex processes retain an observed thread continuation', async () => {
+    for (const runtime of [
+        providerRuntime({ code: 1 }),
+        providerRuntime({ abortSignal: AbortSignal.abort() }),
+    ]) {
+        const records = new Map();
+        const result = await executeTestables.executeProviderTaskWithStore({
+            input: { prompt: 'Task', projectDir: '/workspace/projects/example' },
+        }, { providerRuntime: runtime }, {
+            writeContinuationRecord(handle, record) { records.set(handle, record); },
+        });
+        assert.equal(result.ok, false);
+        assert.equal(result.continuation.toolName, 'continue-task');
+        assert.equal(records.get(result.continuation.handle).threadId, THREAD_ID);
+    }
+});
+
+test('Codex continuation persistence failure rejects completion before HOME lease release', async () => {
+    const leaseState = { held: true };
+    const runtime = providerRuntime({ leaseState });
+    const result = await executeTestables.executeProviderTaskWithStore({
+        input: { prompt: 'Task', projectDir: '/workspace/projects/example' },
+    }, { providerRuntime: runtime }, {
+        writeContinuationRecord() {
+            assert.equal(leaseState.held, true);
+            throw Object.assign(new Error('simulated continuation write failure'), {
+                code: 'PLOINKY_PROVIDER_CONTINUATION_WRITE_FAILED',
+            });
+        },
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'PLOINKY_PROVIDER_CONTINUATION_WRITE_FAILED');
+    assert.equal(result.continuation, undefined);
+    assert.equal(leaseState.held, false);
+});
+
+test('continuation resolves under the operation HOME lease then revalidates under the task lease', async () => {
+    const handle = '2a9a13fb-8442-45d3-b7a7-af5a2335049e';
+    const order = [];
+    const writes = [];
+    const leaseState = { held: true };
+    let selections = 0;
+    const store = {
+        readContinuationRecord() {
+            throw new Error('legacy pre-lease continuation read must not run');
+        },
+        selectContinuationRecordFromHome(homePath, value) {
+            order.push(`select:${++selections}`);
+            assert.equal(homePath, '/home/agent');
+            assert.equal(value, handle);
+            return { handle, threadId: THREAD_ID, projectDir: '/workspace/projects/example' };
+        },
+        writeContinuationRecord(value, record) {
+            assert.equal(leaseState.held, true);
+            writes.push({ value, record });
+        },
+    };
+    const runtime = continuationProviderRuntime({ order, leaseState });
+    const result = await continueTestables.continueProviderTaskWithStore({
+        input: { handle, prompt: 'Continue.' },
+    }, { providerRuntime: runtime }, store);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.continuation.handle, handle);
+    assert.equal(runtime.calls[0].input.args.includes('--model'), false);
+    assert.equal(runtime.calls[0].input.workdir, '/workspace/projects/example');
+    assert.equal(typeof runtime.calls[0].lifecycle.validateAfterLease, 'function');
+    assert.deepEqual(order, [
+        'resolve:start',
+        'select:1',
+        'resolve:end',
+        'transition',
+        'spawn:start',
+        'select:2',
+        'spawn:validated',
     ]);
-    assert.equal(args.includes('--model'), false);
-    assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
-    assert.equal(args.at(-2), '018f6f4a-4ec8-7d31-a852-0242ac120002');
-    assert.equal(args.at(-1), 'Continue the task');
+    assert.deepEqual(writes, [{
+        value: handle,
+        record: { threadId: THREAD_ID, projectDir: '/workspace/projects/example' },
+    }]);
+    assert.equal(leaseState.held, false);
 
-    const overridden = await runTaskScript(continueTaskPath, {
-        handle: initialPayload.continuation.handle,
-        prompt: 'Continue with selected model',
-        model: 'gpt-task-selected',
-    }, env);
-    assert.equal(overridden.code, 0, overridden.stderr);
-    const overrideArgs = JSON.parse(await fs.readFile(argsPath, 'utf8'));
-    assert.equal(overrideArgs[overrideArgs.indexOf('--model') + 1], 'gpt-task-selected');
-    assert.equal(overrideArgs.at(-1), 'Continue with selected model');
+    const invalid = await continueProviderTask({
+        input: { handle, prompt: 'Continue.', model: 'legacy-override' },
+    }, { providerRuntime: runtime });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.code, 'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID');
 });
 
-test('failed Codex execution still returns a continuation when the thread exists', async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-agent-failure-'));
-    const projectDir = path.join(temporaryDirectory, 'project');
-    const continuationStore = path.join(temporaryDirectory, 'continuations');
-    await fs.mkdir(projectDir);
-    const fakeBin = await makeFakeCodexBin(temporaryDirectory);
-    const result = await runTaskScript(executeTaskPath, {
-        prompt: 'Fail after creating the thread',
-        projectDir,
-    }, {
-        CODEX_BIN: fakeBin,
-        CODEX_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
-        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
-        FAKE_CODEX_FAIL: '1',
+test('continuation rejects thread and project record races before the provider task is released', async () => {
+    const handle = '2a9a13fb-8442-45d3-b7a7-af5a2335049e';
+    for (const changed of [
+        { threadId: 'different-thread' },
+        { projectDir: '/workspace/projects/sibling' },
+    ]) {
+        const writes = [];
+        let selections = 0;
+        const runtime = continuationProviderRuntime();
+        const result = await continueTestables.continueProviderTaskWithStore({
+            input: { handle, prompt: 'Continue.' },
+        }, { providerRuntime: runtime }, {
+            selectContinuationRecordFromHome() {
+                selections += 1;
+                return {
+                    handle,
+                    threadId: THREAD_ID,
+                    projectDir: '/workspace/projects/example',
+                    ...(selections === 2 ? changed : {}),
+                };
+            },
+            writeContinuationRecord(...args) { writes.push(args); },
+        });
+
+        assert.equal(result.ok, false);
+        assert.equal(result.code, 'PLOINKY_PROVIDER_CONTINUATION_CHANGED');
+        assert.match(result.error, /state changed/u);
+        assert.equal(selections, 2);
+        assert.equal(runtime.calls.length, 0);
+        assert.deepEqual(writes, []);
+    }
+});
+
+test('continuation rejects task HOME, runtime, and workdir identity drift before execution', async () => {
+    const handle = '2a9a13fb-8442-45d3-b7a7-af5a2335049e';
+    for (const validationOverrides of [
+        { homePath: '/root' },
+        { runtimeKind: 'container' },
+        { workdir: 'projects/sibling' },
+    ]) {
+        let selections = 0;
+        const runtime = continuationProviderRuntime({ validationOverrides });
+        const result = await continueTestables.continueProviderTaskWithStore({
+            input: { handle, prompt: 'Continue.' },
+        }, { providerRuntime: runtime }, {
+            selectContinuationRecordFromHome() {
+                selections += 1;
+                return { handle, threadId: THREAD_ID, projectDir: '/workspace/projects/example' };
+            },
+            writeContinuationRecord() {
+                assert.fail('identity rejection must not update continuation state');
+            },
+        });
+        assert.equal(result.ok, false);
+        assert.equal(result.code, 'PLOINKY_PROVIDER_CONTINUATION_CHANGED');
+        assert.equal(selections, 1);
+        assert.equal(runtime.calls.length, 0);
+    }
+});
+
+test('continuation fails closed when HOME resolution or task transition fails', async () => {
+    const handle = '2a9a13fb-8442-45d3-b7a7-af5a2335049e';
+    const resolverError = Object.assign(new Error('resolver lease failed'), {
+        code: 'PLOINKY_PROVIDER_HOME_BUSY',
+    });
+    const transitionError = Object.assign(new Error('transition rejected'), {
+        code: 'PLOINKY_PROVIDER_RUNTIME_TRANSITION_INVALID',
+    });
+    for (const options of [{ resolverError }, { transitionError }]) {
+        let selections = 0;
+        const runtime = continuationProviderRuntime(options);
+        const result = await continueTestables.continueProviderTaskWithStore({
+            input: { handle, prompt: 'Continue.' },
+        }, { providerRuntime: runtime }, {
+            selectContinuationRecordFromHome() {
+                selections += 1;
+                return { handle, threadId: THREAD_ID, projectDir: '/workspace/projects/example' };
+            },
+            writeContinuationRecord() {
+                assert.fail('failed continuation admission must not update state');
+            },
+        });
+        assert.equal(result.ok, false);
+        assert.equal(result.code, options.resolverError
+            ? 'PLOINKY_PROVIDER_HOME_BUSY'
+            : 'PLOINKY_PROVIDER_RUNTIME_TRANSITION_INVALID');
+        assert.equal(runtime.calls.length, 0);
+        assert.equal(selections, options.resolverError ? 0 : 1);
+    }
+});
+
+test('continuation fails closed when post-lease state cannot be reread', async () => {
+    const handle = '2a9a13fb-8442-45d3-b7a7-af5a2335049e';
+    let selections = 0;
+    const runtime = continuationProviderRuntime();
+    const result = await continueTestables.continueProviderTaskWithStore({
+        input: { handle, prompt: 'Continue.' },
+    }, { providerRuntime: runtime }, {
+        selectContinuationRecordFromHome() {
+            selections += 1;
+            if (selections === 2) throw new Error('record disappeared');
+            return { handle, threadId: THREAD_ID, projectDir: '/workspace/projects/example' };
+        },
+        writeContinuationRecord() {
+            assert.fail('post-lease read failure must not update state');
+        },
     });
 
-    assert.equal(result.code, 1);
-    const payload = JSON.parse(result.stdout);
-    assert.equal(payload.continuation.toolName, 'continue-task');
-    assert.match(payload.continuation.handle, /^[0-9a-f-]{36}$/i);
-    assert.match(result.stderr, /Codex task failed with exit code 1/);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'PLOINKY_PROVIDER_CONTINUATION_CHANGED');
+    assert.match(result.error, /could not be revalidated/u);
+    assert.equal(runtime.calls.length, 0);
 });
 
-test('cancelled Codex execution saves the observed thread before exiting', async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-agent-cancelled-'));
-    const projectDir = path.join(temporaryDirectory, 'project');
-    const continuationStore = path.join(temporaryDirectory, 'continuations');
-    await fs.mkdir(projectDir);
-    const fakeBin = await makeFakeCodexBin(temporaryDirectory);
+test('continuation uses the selected container HOME without cross-mode state lookup', async () => {
+    const handle = '2a9a13fb-8442-45d3-b7a7-af5a2335049e';
+    const homes = [];
+    const runtime = continuationProviderRuntime({ homePath: '/root', runtimeKind: 'container' });
+    const result = await continueTestables.continueProviderTaskWithStore({
+        input: { handle, prompt: 'Continue.' },
+    }, { providerRuntime: runtime }, {
+        selectContinuationRecordFromHome(homePath) {
+            homes.push(homePath);
+            return { handle, threadId: THREAD_ID, projectDir: '/workspace/projects/example' };
+        },
+        writeContinuationRecord() {},
+    });
 
-    const result = await runTaskScript(executeTaskPath, {
-        prompt: 'Stop Codex after thread creation',
-        projectDir,
-    }, {
-        CODEX_BIN: fakeBin,
-        CODEX_ARGS_PATH: path.join(temporaryDirectory, 'args.json'),
-        PLOINKY_CONTINUATION_STORE_DIR: continuationStore,
-        FAKE_CODEX_WAIT_MS: '1000',
-    }, { signalAfterMs: 700 });
+    assert.equal(result.ok, true);
+    assert.deepEqual(homes, ['/root', '/root']);
+});
 
-    assert.equal(result.code, 1);
-    const payload = JSON.parse(result.stdout);
-    assert.equal(payload.continuation.toolName, 'continue-task');
-    const record = JSON.parse(await fs.readFile(
-        path.join(continuationStore, `${payload.continuation.handle}.json`),
-        'utf8',
-    ));
-    assert.equal(record.threadId, '018f6f4a-4ec8-7d31-a852-0242ac120002');
+test('Codex task modules have no executable child-process fallback', async () => {
+    for (const relative of [
+        '../scripts/codex-runner.mjs',
+        '../scripts/execute-task.mjs',
+        '../scripts/continue-task.mjs',
+    ]) {
+        const source = await fs.readFile(new URL(relative, import.meta.url), 'utf8');
+        assert.doesNotMatch(source, /node:child_process|\bspawn\s*\(/u);
+    }
+});
+
+test('Codex continuation has no legacy reader, environment lookup, or custom executable resolver', async () => {
+    const source = await fs.readFile(new URL('../scripts/continue-task.mjs', import.meta.url), 'utf8');
+    assert.doesNotMatch(
+        source,
+        /readContinuationRecord\b|process\.env|resolveCodexBinary|CODEX_BIN|argv0/u,
+    );
+    assert.match(source, /resolveHomeState/u);
+    assert.match(source, /transitionToTask/u);
+    assert.match(source, /validateAfterLease/u);
+});
+
+test('Codex manifest admits canonical readiness and provider module execution', async () => {
+    const agentRoot = path.resolve(new URL('..', import.meta.url).pathname);
+    const manifest = JSON.parse(await fs.readFile(path.join(agentRoot, 'manifest.json'), 'utf8'));
+    const config = JSON.parse(await fs.readFile(path.join(agentRoot, 'mcp-config.json'), 'utf8'));
+    assert.deepEqual(config.providerSandbox, { provider: 'codex', readiness: true });
+    for (const name of ['execute-task', 'continue-task']) {
+        const tool = config.tools.find((entry) => entry.name === name);
+        assert.deepEqual(tool.providerExecution, {
+            provider: 'codex',
+            mode: name === 'execute-task' ? 'task' : 'operation',
+            module: `/code/scripts/${name}.mjs`,
+            export: name === 'execute-task' ? 'executeProviderTask' : 'continueProviderTask',
+        });
+        assert.equal(tool.command, undefined);
+        assert.equal(tool.async, true);
+    }
+    assert.equal(manifest.container, 'docker.io/assistos/ploinky-node:24-bookworm-tools');
+    assert.equal(manifest['lite-sandbox'], true);
 });

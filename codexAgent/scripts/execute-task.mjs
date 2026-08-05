@@ -1,8 +1,3 @@
-#!/usr/bin/env node
-
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { executeCodexTask } from './codex-runner.mjs';
 import {
     continuationDescriptor,
@@ -10,77 +5,81 @@ import {
     writeContinuationRecord,
 } from './continuation-store.mjs';
 
-async function readStdin() {
-    if (process.stdin.isTTY) return '';
-    process.stdin.setEncoding('utf8');
-    let data = '';
-    for await (const chunk of process.stdin) data += chunk;
-    return data;
+function invalidInput(error, code = 'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID') {
+    return { ok: false, outputText: '', error, code };
 }
 
-function parseInput(raw) {
-    const trimmed = String(raw ?? '').trim();
-    if (!trimmed) return null;
-    try {
-        const parsed = JSON.parse(trimmed);
-        return parsed.input && typeof parsed.input === 'object' ? parsed.input : parsed;
-    } catch {
-        return null;
+function normalizeInput(payload) {
+    const input = payload?.input;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { error: invalidInput('Invalid or missing input. Expected prompt and projectDir.') };
     }
-}
-
-async function main() {
-    const cancellation = new AbortController();
-    process.on('SIGTERM', () => cancellation.abort());
-    const input = parseInput(await readStdin());
-    if (!input) {
-        process.stderr.write('Invalid or missing input. Expected JSON with prompt and projectDir.\n');
-        process.exitCode = 1;
-        return;
+    const allowed = new Set(['prompt', 'projectDir', 'model']);
+    for (const key of Object.keys(input)) {
+        if (!allowed.has(key)) return { error: invalidInput(`unsupported Codex task input ${key}`) };
     }
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
     const projectDir = typeof input.projectDir === 'string' ? input.projectDir.trim() : '';
-    if (!prompt) {
-        process.stderr.write('prompt is required and must be a non-empty string.\n');
-        process.exitCode = 1;
-        return;
+    const model = typeof input.model === 'string' ? input.model.trim() : '';
+    if (!prompt) return { error: invalidInput('prompt is required and must be a non-empty string.') };
+    if (!projectDir) return { error: invalidInput('projectDir is required and must be a non-empty string.') };
+    if (input.model !== undefined && typeof input.model !== 'string') {
+        return { error: invalidInput('model must be a string when supplied.') };
     }
-    if (!projectDir) {
-        process.stderr.write('projectDir is required and must be a non-empty string.\n');
-        process.exitCode = 1;
-        return;
+    return { input: { prompt, projectDir, model } };
+}
+
+async function executeProviderTaskWithStore(
+    payload,
+    { providerRuntime, signal } = {},
+    continuationStore = { writeContinuationRecord },
+) {
+    const normalized = normalizeInput(payload);
+    if (normalized.error) return normalized.error;
+    if (!providerRuntime || typeof providerRuntime.spawnWith !== 'function') {
+        return invalidInput(
+            'Codex requires an injected canonical providerRuntime capability.',
+            'PLOINKY_PROVIDER_RUNTIME_REQUIRED',
+        );
+    }
+    if (signal !== undefined && !(signal instanceof AbortSignal)) {
+        return invalidInput('signal must be an AbortSignal.');
     }
 
-    const result = await executeCodexTask({
-        prompt,
-        projectDir,
-        model: input.model,
-        signal: cancellation.signal,
-    });
-    if (!result.threadId) {
-        process.stderr.write(`${result.error || 'Codex did not report a resumable thread id.'}\n`);
-        process.exitCode = 1;
-        return;
-    }
     const handle = createContinuationHandle();
-    writeContinuationRecord(handle, {
-        threadId: result.threadId,
-        projectDir,
+    let continuationPersisted = false;
+    const result = await executeCodexTask({
+        ...normalized.input,
+        providerRuntime,
+        afterExit({ threadId, projectDir }) {
+            if (!threadId) return;
+            continuationStore.writeContinuationRecord(handle, { threadId, projectDir });
+            continuationPersisted = true;
+        },
     });
-    process.stdout.write(JSON.stringify({
+    if (!result.threadId || !continuationPersisted) {
+        return {
+            ok: false,
+            outputText: result.outputText || '',
+            error: result.error || 'Codex did not report a resumable thread id.',
+            code: result.code || 'PLOINKY_PROVIDER_THREAD_REQUIRED',
+            ...(result.cause ? { cause: result.cause } : {}),
+        };
+    }
+    return {
+        ok: result.ok === true,
         outputText: result.outputText || '',
         continuation: continuationDescriptor(handle),
-    }));
-    if (!result.ok) {
-        process.stderr.write(`${result.error || 'Codex task failed.'}\n`);
-        process.exitCode = 1;
-    }
+        ...(!result.ok ? {
+            error: result.error || 'Codex task failed.',
+            code: result.code,
+            ...(result.cause ? { cause: result.cause } : {}),
+        } : {}),
+    };
 }
 
-const currentFilePath = fileURLToPath(import.meta.url);
-if (process.argv[1] && path.resolve(process.argv[1]) === currentFilePath) {
-    main().catch((error) => {
-        process.stderr.write(`${error?.message || error}\n`);
-        process.exitCode = 1;
-    });
+export function executeProviderTask(payload, context) {
+    return executeProviderTaskWithStore(payload, context);
 }
+
+export const __testables = Object.freeze({ executeProviderTaskWithStore, normalizeInput });

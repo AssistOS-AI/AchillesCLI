@@ -1,12 +1,19 @@
 {
+    "providerSandbox": {
+        "provider": "codex",
+        "readiness": true
+    },
     "tools": [
         {
             "name": "execute-task",
             "title": "Execute Codex Task",
             "description": "Execute a Codex coding task and persist its provider thread behind an opaque continuation handle.",
-            "command": "node",
-            "args": ["/code/scripts/execute-task.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "codex",
+                "mode": "task",
+                "module": "/code/scripts/execute-task.mjs",
+                "export": "executeProviderTask"
+            },
             "async": true,
             "taskLogRetention": "full",
             "continuationTool": "continue-task",
@@ -34,9 +41,12 @@
             "name": "continue-task",
             "title": "Continue Codex Task",
             "description": "Continue a Codex task through its opaque Ploinky continuation handle using the currently configured model.",
-            "command": "node",
-            "args": ["/code/scripts/continue-task.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "codex",
+                "mode": "operation",
+                "module": "/code/scripts/continue-task.mjs",
+                "export": "continueProviderTask"
+            },
             "async": true,
             "taskLogRetention": "full",
             "tags": ["internal"],
@@ -51,11 +61,6 @@
                     "description": "New user message to execute in the existing Codex thread.",
                     "optional": false
                 },
-                "model": {
-                    "type": "string",
-                    "description": "Optional task-specific Codex model override.",
-                    "optional": true
-                },
                 "additionalProperties": false
             }
         },
@@ -63,20 +68,25 @@
             "name": "task-session-control",
             "title": "Control Codex Task Session",
             "description": "Run typed OpenAI and ChatGPT authentication operations for a Codex task session.",
-            "command": "node",
-            "args": ["/code/scripts/task-session-control.mjs"],
-            "cwd": "/code",
+            "providerExecution": {
+                "provider": "codex",
+                "mode": "operation",
+                "module": "/code/scripts/task-session-control.mjs",
+                "export": "executeTaskSessionControl"
+            },
             "tags": ["internal"],
             "inputSchema": {
                 "operation": { "type": "string", "optional": false },
-                "handle": { "type": "string", "optional": false },
+                "handle": { "type": "string", "optional": true },
                 "provider": { "type": "string", "optional": true },
                 "method": { "type": "string", "optional": true },
                 "flowId": { "type": "string", "optional": true },
+                "continuationHandle": { "type": "string", "optional": true },
+                "seq": { "type": "number", "optional": true },
+                "nonce": { "type": "string", "optional": true },
                 "response": { "type": "string", "optional": true },
                 "apiKey": { "type": "string", "optional": true },
-                "inputs": { "type": "object", "additionalProperties": true, "optional": true },
-                "secretResponse": { "type": "string", "optional": true }
+                "additionalProperties": false
             }
         }
     ]

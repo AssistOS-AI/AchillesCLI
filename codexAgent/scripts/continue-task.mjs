@@ -1,64 +1,190 @@
-#!/usr/bin/env node
-
 import {
     continuationDescriptor,
-    readContinuationRecord,
+    selectContinuationRecordFromHome,
     writeContinuationRecord,
 } from './continuation-store.mjs';
 import { executeCodexTask } from './codex-runner.mjs';
 
-async function readStdin() {
-    process.stdin.setEncoding('utf8');
-    let data = '';
-    for await (const chunk of process.stdin) data += chunk;
-    return data;
+function invalidInput(error, code = 'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID') {
+    return { ok: false, outputText: '', error, code };
 }
 
-function parseInput(raw) {
+function normalizeInput(payload) {
+    const input = payload?.input;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { error: invalidInput('Invalid or missing Codex continuation input.') };
+    }
+    for (const key of Object.keys(input)) {
+        if (key !== 'handle' && key !== 'prompt') {
+            return { error: invalidInput(`unsupported Codex continuation input ${key}`) };
+        }
+    }
+    const handle = typeof input.handle === 'string' ? input.handle.trim() : '';
+    const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
+    if (!handle || !prompt) return { error: invalidInput('handle and prompt are required') };
+    return { input: { handle, prompt } };
+}
+
+function runtimeError(code, message, options) {
+    const error = new Error(message, options);
+    error.code = code;
+    return error;
+}
+
+function selectedWorkdir(selected, expectedHandle) {
+    if (!selected || typeof selected !== 'object'
+        || selected.handle !== expectedHandle
+        || typeof selected.threadId !== 'string' || !selected.threadId
+        || selected.threadId !== selected.threadId.trim() || selected.threadId.includes('\0')
+        || typeof selected.projectDir !== 'string'
+        || selected.projectDir !== selected.projectDir.trim()
+        || !selected.projectDir.startsWith('/workspace/')) {
+        throw runtimeError(
+            'PLOINKY_PROVIDER_CONTINUATION_INVALID',
+            'Codex continuation resolver returned invalid trusted state',
+        );
+    }
+    const workdir = selected.projectDir.slice('/workspace/'.length);
+    if (!workdir || workdir.split('/').some((part) => !part || part === '.' || part === '..')) {
+        throw runtimeError(
+            'PLOINKY_PROVIDER_CONTINUATION_INVALID',
+            'Codex continuation resolver returned an invalid project identity',
+        );
+    }
+    return workdir;
+}
+
+function assertResolverBoundary({ homePath, provider, runtimeKind }) {
+    const expectedHomePath = runtimeKind === 'bwrap'
+        ? '/home/agent'
+        : (runtimeKind === 'container' ? '/root' : '');
+    if (provider !== 'codex' || !expectedHomePath || homePath !== expectedHomePath) {
+        throw runtimeError(
+            'PLOINKY_PROVIDER_RUNTIME_BOUNDARY_INVALID',
+            'Codex continuation resolver received the wrong runtime HOME boundary',
+        );
+    }
+    return Object.freeze({ homePath, provider, runtimeKind });
+}
+
+function continuationChanged(message, cause) {
+    return runtimeError(
+        'PLOINKY_PROVIDER_CONTINUATION_CHANGED',
+        message,
+        cause ? { cause } : undefined,
+    );
+}
+
+async function continueProviderTaskWithStore(
+    payload,
+    { providerRuntime, signal } = {},
+    continuationStore = { selectContinuationRecordFromHome, writeContinuationRecord },
+) {
+    const normalized = normalizeInput(payload);
+    if (normalized.error) return normalized.error;
+    if (!providerRuntime || typeof providerRuntime.spawnWith !== 'function'
+        || typeof providerRuntime.resolveHomeState !== 'function'
+        || typeof providerRuntime.transitionToTask !== 'function') {
+        return invalidInput(
+            'Codex requires an injected canonical providerRuntime capability.',
+            'PLOINKY_PROVIDER_RUNTIME_REQUIRED',
+        );
+    }
+    if (signal !== undefined && !(signal instanceof AbortSignal)) {
+        return invalidInput('signal must be an AbortSignal.');
+    }
+    let selected;
+    let selectedBoundary;
     try {
-        const parsed = JSON.parse(String(raw || '').trim());
-        return parsed?.input && typeof parsed.input === 'object' ? parsed.input : parsed;
-    } catch {
-        return null;
+        selected = await providerRuntime.resolveHomeState(({ homePath, provider, runtimeKind }) => {
+            if (selectedBoundary) {
+                throw runtimeError(
+                    'PLOINKY_PROVIDER_RUNTIME_BOUNDARY_INVALID',
+                    'Codex continuation resolver boundary was invoked more than once',
+                );
+            }
+            selectedBoundary = assertResolverBoundary({ homePath, provider, runtimeKind });
+            return continuationStore.selectContinuationRecordFromHome(
+                homePath,
+                normalized.input.handle,
+            );
+        });
+        if (!selectedBoundary) {
+            throw runtimeError(
+                'PLOINKY_PROVIDER_RUNTIME_BOUNDARY_INVALID',
+                'Codex continuation resolver returned without an admitted HOME boundary',
+            );
+        }
+        selectedWorkdir(selected, normalized.input.handle);
+        if (providerRuntime.transitionToTask() !== 'task') {
+            throw runtimeError(
+                'PLOINKY_PROVIDER_RUNTIME_TRANSITION_INVALID',
+                'Codex continuation did not enter the canonical task runtime',
+            );
+        }
+    } catch (error) {
+        return invalidInput(
+            error?.message || 'invalid Codex continuation record',
+            typeof error?.code === 'string'
+                ? error.code
+                : 'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID',
+        );
     }
-}
 
-async function main() {
-    const cancellation = new AbortController();
-    process.on('SIGTERM', () => cancellation.abort());
-    const input = parseInput(await readStdin());
-    const handle = String(input?.handle || '').trim();
-    const prompt = String(input?.prompt || '').trim();
-    const model = String(input?.model || '').trim();
-    if (!handle || !prompt) throw new Error('handle and prompt are required');
-    const record = readContinuationRecord(handle);
+    const validateAfterLease = ({ homePath, provider, runtimeKind, mode, workdir }) => {
+        const expectedWorkdir = selectedWorkdir(selected, normalized.input.handle);
+        if (provider !== selectedBoundary.provider
+            || runtimeKind !== selectedBoundary.runtimeKind
+            || homePath !== selectedBoundary.homePath
+            || mode !== 'task'
+            || workdir !== expectedWorkdir
+            || selected.projectDir !== `/workspace/${workdir}`) {
+            throw continuationChanged('Codex continuation runtime identity changed before task launch');
+        }
+        let current;
+        try {
+            current = continuationStore.selectContinuationRecordFromHome(
+                homePath,
+                normalized.input.handle,
+            );
+        } catch (error) {
+            throw continuationChanged('Codex continuation state could not be revalidated', error);
+        }
+        if (current?.handle !== selected.handle
+            || current?.threadId !== selected.threadId
+            || current?.projectDir !== selected.projectDir) {
+            throw continuationChanged('Codex continuation state changed before task launch');
+        }
+    };
+
     const result = await executeCodexTask({
-        prompt,
-        projectDir: record.projectDir,
-        threadId: record.threadId,
-        model,
-        signal: cancellation.signal,
+        prompt: normalized.input.prompt,
+        projectDir: selected.projectDir,
+        threadId: selected.threadId,
+        validateAfterLease,
+        providerRuntime,
+        afterExit({ code, threadId, projectDir }) {
+            if (code !== 0 || !threadId) return;
+            continuationStore.writeContinuationRecord(normalized.input.handle, {
+                threadId,
+                projectDir,
+            });
+        },
     });
-    if (!result.ok) {
-        process.stdout.write(JSON.stringify({
-            outputText: result.outputText || '',
-            continuation: continuationDescriptor(handle),
-        }));
-        process.stderr.write(`${result.error || 'Codex continuation failed.'}\n`);
-        process.exitCode = 1;
-        return;
-    }
-    writeContinuationRecord(handle, {
-        ...record,
-        threadId: result.threadId || record.threadId,
-    });
-    process.stdout.write(JSON.stringify({
+    return {
+        ok: result.ok === true,
         outputText: result.outputText || '',
-        continuation: continuationDescriptor(handle),
-    }));
+        continuation: continuationDescriptor(normalized.input.handle),
+        ...(!result.ok ? {
+            error: result.error || 'Codex continuation failed.',
+            code: result.code,
+            ...(result.cause ? { cause: result.cause } : {}),
+        } : {}),
+    };
 }
 
-main().catch((error) => {
-    process.stderr.write(`${error?.message || error}\n`);
-    process.exitCode = 1;
-});
+export function continueProviderTask(payload, context) {
+    return continueProviderTaskWithStore(payload, context);
+}
+
+export const __testables = Object.freeze({ continueProviderTaskWithStore, normalizeInput });

@@ -1,15 +1,46 @@
-#!/usr/bin/env node
-
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { resolveCodexBinary } from '../scripts/codex-runner.mjs';
-
+const CODEX_EXECUTABLE = '/home/agent/.local/bin/codex';
 const REQUEST_TIMEOUT_MS = 30000;
 
+function providerError(code, message, options) {
+    const error = new Error(message, options);
+    error.code = code;
+    return error;
+}
+
 function requestError(payload) {
-    return new Error(payload?.error?.message || 'Codex app-server request failed.');
+    return providerError(
+        'PLOINKY_CODEX_APP_SERVER_FAILED',
+        payload?.error?.message || 'Codex app-server request failed.',
+    );
+}
+
+function assertOperationRuntime(providerRuntime) {
+    if (!providerRuntime || typeof providerRuntime !== 'object'
+        || providerRuntime.mode !== undefined && providerRuntime.mode !== 'operation'
+        || typeof providerRuntime.launch !== 'function') {
+        throw providerError(
+            'PLOINKY_PROVIDER_RUNTIME_REQUIRED',
+            'Codex model listing requires an injected operation providerRuntime capability',
+        );
+    }
+    return providerRuntime;
+}
+
+function assertOperationHandle(handle) {
+    if (!handle || typeof handle !== 'object'
+        || !handle.child?.stdin || !handle.child?.stdout || !handle.child?.stderr
+        || !(handle.completion instanceof Promise)
+        || handle.launch?.helper !== '/usr/local/libexec/ploinky-bwrap-launch'
+        || handle.launch?.provider !== 'codex'
+        || handle.launch?.mode !== 'operation'
+        || handle.launch?.workdir !== null
+        || handle.launch?.cwd !== '/workspace/operation') {
+        throw providerError(
+            'PLOINKY_PROVIDER_RUNTIME_BOUNDARY_INVALID',
+            'Codex model listing did not receive the canonical private operation boundary',
+        );
+    }
+    return handle;
 }
 
 export function codexModelDescriptor(raw) {
@@ -38,12 +69,22 @@ export function codexModelDescriptor(raw) {
     };
 }
 
-export function listCodexModels({ env = process.env, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+export async function listCodexModels({
+    providerRuntime,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+} = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > REQUEST_TIMEOUT_MS) {
+        throw providerError(
+            'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID',
+            'Codex model listing timeout is invalid',
+        );
+    }
+    const runtime = assertOperationHandle(await assertOperationRuntime(providerRuntime).launch(
+        { command: [CODEX_EXECUTABLE, 'app-server', '--stdio'] },
+        { stdio: ['pipe', 'pipe', 'pipe'] },
+    ));
+    const { child } = runtime;
     return new Promise((resolve, reject) => {
-        const child = spawn(resolveCodexBinary(env), ['app-server', '--stdio'], {
-            env: { ...process.env, ...env, HOME: env.HOME || '/root' },
-            stdio: ['pipe', 'pipe', 'pipe'],
-        });
         let stdout = '';
         let stderr = '';
         let settled = false;
@@ -51,12 +92,14 @@ export function listCodexModels({ env = process.env, timeoutMs = REQUEST_TIMEOUT
             if (settled) return;
             settled = true;
             clearTimeout(timer);
-            try { child.kill('SIGTERM'); } catch (_) { }
             if (error) reject(error);
             else resolve(value);
         };
         const timer = setTimeout(() => {
-            finish(new Error(`Codex model listing timed out.${stderr.trim() ? ` ${stderr.trim()}` : ''}`));
+            finish(providerError(
+                'PLOINKY_CODEX_APP_SERVER_TIMEOUT',
+                `Codex model listing timed out.${stderr.trim() ? ` ${stderr.trim()}` : ''}`,
+            ));
         }, timeoutMs);
         const send = (payload) => child.stdin.write(`${JSON.stringify(payload)}\n`);
         const consumeLine = (line) => {
@@ -85,11 +128,20 @@ export function listCodexModels({ env = process.env, timeoutMs = REQUEST_TIMEOUT
                 newline = stdout.indexOf('\n');
             }
         });
-        child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
-        child.on('error', (error) => finish(error));
-        child.on('close', (code) => {
-            if (!settled) finish(new Error(stderr.trim() || `Codex app-server exited (${code ?? 'unknown'}).`));
+        child.stderr.on('data', (chunk) => {
+            stderr = `${stderr}${chunk.toString('utf8')}`.slice(-8192);
         });
+        child.on('error', (error) => finish(providerError(
+            'PLOINKY_CODEX_APP_SERVER_FAILED',
+            'Codex app-server failed to start.',
+            { cause: error },
+        )));
+        runtime.completion.then(({ code, signal }) => {
+            finish(providerError(
+                'PLOINKY_CODEX_APP_SERVER_FAILED',
+                stderr.trim() || `Codex app-server exited (${signal || code || 'unknown'}).`,
+            ));
+        }, (error) => finish(error));
         send({
             id: 1,
             method: 'initialize',
@@ -100,13 +152,24 @@ export function listCodexModels({ env = process.env, timeoutMs = REQUEST_TIMEOUT
     });
 }
 
-async function main() {
-    process.stdout.write(JSON.stringify({ object: 'list', data: await listCodexModels() }));
+export async function executeCodexModels(_payload, { providerRuntime, signal } = {}) {
+    if (signal !== undefined && !(signal instanceof AbortSignal)) {
+        throw providerError(
+            'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID',
+            'Codex model listing signal must be an AbortSignal',
+        );
+    }
+    return {
+        ok: true,
+        response: {
+            object: 'list',
+            data: await listCodexModels({ providerRuntime }),
+        },
+    };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    main().catch((error) => {
-        process.stderr.write(`${error?.stack || error}\n`);
-        process.exitCode = 1;
-    });
-}
+export const __testables = Object.freeze({
+    CODEX_EXECUTABLE,
+    REQUEST_TIMEOUT_MS,
+    assertOperationHandle,
+});

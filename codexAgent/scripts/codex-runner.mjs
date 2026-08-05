@@ -1,13 +1,27 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 
-export const DEFAULT_CODEX_HOME = '/root';
-export const DEFAULT_CODEX_BIN = '/root/.local/bin/codex';
+import { spawnTaskSandbox } from './task-sandbox.mjs';
+
 export const MANAGED_SOUL_MODEL = 'gpt-5.6-sol';
 export const MANAGED_SOUL_PROVIDER = 'ploinky_soul';
 
 const LOG_TAIL_LIMIT = 16 * 1024;
+
+function runtimeError(code, message, options) {
+    const error = new Error(message, options);
+    error.code = code;
+    return error;
+}
+
+function serializeCause(cause, depth = 0) {
+    if (!cause || depth >= 4) return undefined;
+    if (typeof cause !== 'object') return { message: String(cause) };
+    return {
+        ...(typeof cause.code === 'string' ? { code: cause.code } : {}),
+        ...(typeof cause.message === 'string' ? { message: cause.message } : {}),
+        ...(cause.cause ? { cause: serializeCause(cause.cause, depth + 1) } : {}),
+    };
+}
 
 function appendBoundedTail(current, chunk, limit = LOG_TAIL_LIMIT) {
     const next = `${current}${chunk}`;
@@ -28,75 +42,15 @@ export function createContainerLogStream() {
 export function resolveCodexBinary(env = process.env) {
     const configured = String(env.CODEX_BIN || '').trim();
     if (configured) return configured;
-    const home = String(env.HOME || DEFAULT_CODEX_HOME);
-    const homeBinary = path.join(home, '.local', 'bin', 'codex');
-    return fs.existsSync(homeBinary) ? homeBinary : 'codex';
+    const home = String(env.HOME || '').trim();
+    if (!home) {
+        throw runtimeError('PLOINKY_PROVIDER_HOME_REQUIRED', 'Codex requires an explicit runtime HOME');
+    }
+    return path.join(home, '.local', 'bin', 'codex');
 }
 
 function textValue(value) {
     return typeof value === 'string' ? value : '';
-}
-
-function tomlString(value) {
-    return JSON.stringify(String(value));
-}
-
-export function resolveManagedSoulProvider(env = process.env) {
-    const keySource = String(env.PLOINKY_ENV_SOURCE_PLOINKY_AGENT_API_KEY || '').trim();
-    const routerSource = String(env.PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_URL || '').trim();
-    const authoritySource = String(
-        env.PLOINKY_ENV_SOURCE_PLOINKY_ROUTER_REQUEST_AUTHORITY || '',
-    ).trim();
-    const generatedMode = keySource === 'generated'
-        || routerSource === 'generated'
-        || authoritySource === 'generated';
-    if (!generatedMode) return null;
-    if (keySource !== 'generated'
-        || routerSource !== 'generated'
-        || authoritySource !== 'generated') {
-        throw new Error(
-            'Managed Codex routing requires generated provenance for Router URL, request authority, and agent API key',
-        );
-    }
-    const routerUrl = String(env.PLOINKY_ROUTER_URL || '').trim();
-    const requestAuthority = String(env.PLOINKY_ROUTER_REQUEST_AUTHORITY || '').trim();
-    const apiKey = String(env.PLOINKY_AGENT_API_KEY || '').trim();
-    if (!routerUrl || !requestAuthority || !apiKey) {
-        throw new Error(
-            'Managed Codex routing requires PLOINKY_ROUTER_URL, PLOINKY_ROUTER_REQUEST_AUTHORITY, and PLOINKY_AGENT_API_KEY',
-        );
-    }
-    let baseUrl;
-    try {
-        const parsed = new URL(routerUrl);
-        if (!['http:', 'https:'].includes(parsed.protocol)
-            || parsed.username || parsed.password || parsed.search || parsed.hash) {
-            throw new Error('unsupported Router URL');
-        }
-        parsed.pathname = '/base-agent-additional-server/soul-gateway/7000/v1';
-        baseUrl = parsed.toString().replace(/\/$/, '');
-    } catch (cause) {
-        throw new Error('PLOINKY_ROUTER_URL is not a valid managed Router URL', { cause });
-    }
-    try {
-        if (/[\u0000-\u0020\u007f/?#@]/u.test(requestAuthority)) {
-            throw new Error('unsupported Router request authority');
-        }
-        const parsed = new URL(`http://${requestAuthority}`);
-        if (!parsed.hostname || parsed.host !== requestAuthority
-            || parsed.username || parsed.password || parsed.pathname !== '/'
-            || parsed.search || parsed.hash) {
-            throw new Error('unsupported Router request authority');
-        }
-    } catch (cause) {
-        throw new Error('PLOINKY_ROUTER_REQUEST_AUTHORITY is not a valid managed Router authority', { cause });
-    }
-    return Object.freeze({
-        provider: MANAGED_SOUL_PROVIDER,
-        baseUrl,
-        requestAuthority,
-        model: MANAGED_SOUL_MODEL,
-    });
 }
 
 export function eventLogText(event) {
@@ -127,38 +81,34 @@ function eventAgentMessage(event) {
     return textValue(event.item.text);
 }
 
-export function buildCodexArgs({ prompt, model = '', threadId = '' }, env = process.env) {
-    const managed = resolveManagedSoulProvider(env);
+export function buildCodexArgs({ prompt, model = '', threadId = '' }) {
+    const taskPrompt = String(prompt || '').trim();
+    const effectiveModel = String(model || '').trim();
+    const effectiveThreadId = String(threadId || '').trim();
+    if (!taskPrompt) {
+        throw runtimeError('PLOINKY_PROVIDER_INPUT_INVALID', 'Codex prompt must be non-empty');
+    }
     const globalArgs = [
         '--sandbox',
         'workspace-write',
         '--ask-for-approval',
         'never',
-        ...(managed ? [
-            '--config', `model_provider=${tomlString(managed.provider)}`,
-            '--config', `model_providers.${managed.provider}.name=${tomlString('Ploinky Soul Gateway')}`,
-            '--config', `model_providers.${managed.provider}.base_url=${tomlString(managed.baseUrl)}`,
-            '--config', `model_providers.${managed.provider}.http_headers={Host=${tomlString(managed.requestAuthority)}}`,
-            '--config', `model_providers.${managed.provider}.env_key=${tomlString('PLOINKY_AGENT_API_KEY')}`,
-            '--config', `model_providers.${managed.provider}.wire_api=${tomlString('responses')}`,
-            '--config', `model_providers.${managed.provider}.requires_openai_auth=false`,
-            '--config', 'shell_environment_policy.ignore_default_excludes=false',
-            ...(!String(model || '').trim()
-                ? ['--config', `model=${tomlString(managed.model)}`]
-                : []),
-        ] : []),
     ];
-    const effectiveModel = String(model || '').trim();
-    if (threadId) {
+    if (effectiveThreadId) {
+        if (effectiveModel) {
+            throw runtimeError(
+                'PLOINKY_PROVIDER_INPUT_INVALID',
+                'Codex continuation cannot override the current model',
+            );
+        }
         return [
             ...globalArgs,
             'exec',
             'resume',
             '--json',
             '--skip-git-repo-check',
-            ...(effectiveModel ? ['--model', effectiveModel] : []),
-            threadId,
-            prompt,
+            effectiveThreadId,
+            taskPrompt,
         ];
     }
     return [
@@ -167,63 +117,112 @@ export function buildCodexArgs({ prompt, model = '', threadId = '' }, env = proc
         '--json',
         '--skip-git-repo-check',
         ...(effectiveModel ? ['--model', effectiveModel] : []),
-        prompt,
+        taskPrompt,
     ];
 }
 
-export function runCodex({
+function assertProviderRuntime(providerRuntime) {
+    if (!providerRuntime || typeof providerRuntime !== 'object'
+        || typeof providerRuntime.spawnWith !== 'function') {
+        throw runtimeError(
+            'PLOINKY_PROVIDER_RUNTIME_REQUIRED',
+            'Codex requires an injected canonical providerRuntime capability',
+        );
+    }
+    return providerRuntime;
+}
+
+function assertProviderHandle(runtime) {
+    if (!runtime || typeof runtime !== 'object'
+        || !runtime.child?.stdout || !runtime.child?.stderr
+        || !(runtime.completion instanceof Promise)
+        || runtime.launch?.helper !== '/usr/local/libexec/ploinky-bwrap-launch'
+        || runtime.launch?.provider !== 'codex'
+        || runtime.launch?.mode !== 'task'
+        || typeof runtime.launch?.cwd !== 'string') {
+        throw runtimeError(
+            'PLOINKY_PROVIDER_RUNTIME_BOUNDARY_INVALID',
+            'Codex providerRuntime returned an invalid canonical boundary',
+        );
+    }
+    return runtime;
+}
+
+export async function runCodex({
     projectDir,
     prompt,
     model = '',
     threadId = '',
+    validateAfterLease,
+    afterExit,
     logStream = createContainerLogStream(),
-    env = process.env,
-    signal,
+    providerRuntime,
 }) {
-    return new Promise((resolve, reject) => {
-        const startedAt = Date.now();
-        const args = buildCodexArgs({ prompt, model, threadId }, env);
-        const child = spawn(resolveCodexBinary(env), args, {
-            cwd: projectDir,
-            env: {
-                ...process.env,
-                ...env,
-                HOME: '/root',
-            },
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        const abort = () => {
-            try { child.kill('SIGTERM'); } catch (_) { }
-        };
-        if (signal?.aborted) abort();
-        else signal?.addEventListener?.('abort', abort, { once: true });
-        let stdoutTail = '';
-        let stderrTail = '';
-        let jsonBuffer = '';
-        let resolvedThreadId = threadId;
-        let outputText = '';
-        let visibleTextTail = '';
+    if (validateAfterLease !== undefined && typeof validateAfterLease !== 'function') {
+        throw runtimeError(
+            'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID',
+            'Codex post-lease continuation validator must be a function',
+        );
+    }
+    if (afterExit !== undefined && typeof afterExit !== 'function') {
+        throw runtimeError(
+            'PLOINKY_PROVIDER_RUNTIME_INPUT_INVALID',
+            'Codex after-exit callback must be a function',
+        );
+    }
+    const startedAt = Date.now();
+    const args = buildCodexArgs({ prompt, model, threadId });
+    let stdoutTail = '';
+    let stderrTail = '';
+    let jsonBuffer = '';
+    let resolvedThreadId = String(threadId || '').trim();
+    let outputText = '';
+    let visibleTextTail = '';
+    let observedChild = null;
 
-        function consumeLine(rawLine, complete = true) {
-            const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
-            if (!line.trim()) return;
-            try {
-                const event = JSON.parse(line);
-                resolvedThreadId = eventThreadId(event) || resolvedThreadId;
-                const agentMessage = eventAgentMessage(event);
-                outputText = agentMessage
-                    ? appendBoundedTail('', agentMessage)
-                    : outputText;
-                const liveText = eventLogText(event);
-                if (liveText) {
-                    visibleTextTail = appendBoundedTail(visibleTextTail, liveText);
-                    logStream.write(liveText);
-                }
-            } catch {
-                logStream.write(`${line}${complete ? '\n' : ''}`);
+    function consumeLine(rawLine, complete = true) {
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+        if (!line.trim()) return;
+        try {
+            const event = JSON.parse(line);
+            resolvedThreadId = eventThreadId(event) || resolvedThreadId;
+            const agentMessage = eventAgentMessage(event);
+            outputText = agentMessage ? appendBoundedTail('', agentMessage) : outputText;
+            const liveText = eventLogText(event);
+            if (liveText) {
+                visibleTextTail = appendBoundedTail(visibleTextTail, liveText);
+                logStream.write(liveText);
             }
+        } catch {
+            logStream.write(`${line}${complete ? '\n' : ''}`);
         }
+    }
 
+    function flushJsonBuffer() {
+        if (jsonBuffer) {
+            const remaining = jsonBuffer;
+            jsonBuffer = '';
+            consumeLine(remaining, false);
+        }
+    }
+
+    function observeProcess(child) {
+        if (!child?.stdout || !child?.stderr) {
+            throw runtimeError(
+                'PLOINKY_PROVIDER_RUNTIME_BOUNDARY_INVALID',
+                'Codex provider observer received an invalid canonical child boundary',
+            );
+        }
+        if (observedChild) {
+            if (observedChild !== child) {
+                throw runtimeError(
+                    'PLOINKY_PROVIDER_RUNTIME_BOUNDARY_INVALID',
+                    'Codex provider observer received multiple child boundaries',
+                );
+            }
+            return;
+        }
+        observedChild = child;
         child.stdout.on('data', (chunk) => {
             const text = chunk.toString('utf8');
             stdoutTail = appendBoundedTail(stdoutTail, text);
@@ -239,25 +238,42 @@ export function runCodex({
             stderrTail = appendBoundedTail(stderrTail, chunk.toString('utf8'));
             logStream.write(chunk);
         });
-        child.on('error', (error) => {
-            signal?.removeEventListener?.('abort', abort);
-            reject(error);
-        });
-        child.on('close', (code, closeSignal) => {
-            signal?.removeEventListener?.('abort', abort);
-            if (jsonBuffer) consumeLine(jsonBuffer, false);
-            resolve({
-                code,
-                signal: closeSignal,
-                durationMs: Date.now() - startedAt,
-                stdoutTail,
-                stderrTail,
-                threadId: resolvedThreadId,
-                outputText: outputText.trim(),
-                visibleTextTail,
-            });
-        });
-    });
+    }
+
+    const runtime = assertProviderHandle(await assertProviderRuntime(providerRuntime).spawnWith(
+        spawnTaskSandbox,
+        { workdir: projectDir, args },
+        {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            observeProcess,
+            ...(validateAfterLease ? { validateAfterLease } : {}),
+            ...(afterExit ? {
+                afterExit: async ({ code, signal, launch }) => {
+                    flushJsonBuffer();
+                    return afterExit(Object.freeze({
+                        code,
+                        signal,
+                        threadId: resolvedThreadId,
+                        projectDir: launch.cwd,
+                    }));
+                },
+            } : {}),
+        },
+    ));
+    observeProcess(runtime.child);
+    const terminal = await runtime.completion;
+    flushJsonBuffer();
+    return {
+        code: terminal?.code,
+        signal: terminal?.signal,
+        durationMs: Date.now() - startedAt,
+        stdoutTail,
+        stderrTail,
+        threadId: resolvedThreadId,
+        outputText: outputText.trim(),
+        visibleTextTail,
+        projectDir: runtime.launch.cwd,
+    };
 }
 
 export function summarizeFailure(result) {
@@ -269,24 +285,36 @@ export async function executeCodexTask({
     projectDir,
     model = '',
     threadId = '',
+    validateAfterLease,
+    afterExit,
     logStream = createContainerLogStream(),
-    env = process.env,
-    signal,
+    providerRuntime,
 }) {
     const taskPrompt = String(prompt || '').trim();
-    const resolvedProjectDir = path.resolve(String(projectDir || '').trim());
+    const selectedProjectDir = String(projectDir || '').trim();
     const resolvedModel = String(model || '').trim();
     const resolvedThreadId = String(threadId || '').trim();
+    if (!taskPrompt || !selectedProjectDir) {
+        return {
+            ok: false,
+            error: 'Codex requires non-empty prompt and projectDir values',
+            code: 'PLOINKY_PROVIDER_INPUT_INVALID',
+            outputText: '',
+            threadId: resolvedThreadId,
+            projectDir: selectedProjectDir,
+        };
+    }
 
     try {
         const result = await runCodex({
-            projectDir: resolvedProjectDir,
+            projectDir: selectedProjectDir,
             prompt: taskPrompt,
             model: resolvedModel,
             threadId: resolvedThreadId,
+            validateAfterLease,
+            afterExit,
             logStream,
-            env,
-            signal,
+            providerRuntime,
         });
         const outputText = result.outputText
             || (result.stderrTail || '').trim()
@@ -295,26 +323,36 @@ export async function executeCodexTask({
             return {
                 ok: false,
                 error: summarizeFailure(result),
+                code: result.signal === 'SIGTERM'
+                    ? 'PLOINKY_PROVIDER_CANCELLED'
+                    : 'PLOINKY_PROVIDER_EXIT_FAILED',
                 outputText,
                 threadId: result.threadId,
-                projectDir: resolvedProjectDir,
+                projectDir: result.projectDir,
             };
         }
         return {
             ok: true,
             outputText,
             threadId: result.threadId,
-            projectDir: resolvedProjectDir,
+            projectDir: result.projectDir,
         };
     } catch (error) {
         return {
             ok: false,
             error: `Codex task failed: ${error?.message || 'unknown error'}`,
+            code: typeof error?.code === 'string' ? error.code : 'PLOINKY_PROVIDER_EXECUTION_FAILED',
+            cause: serializeCause(error),
             outputText: '',
             threadId: resolvedThreadId,
-            projectDir: resolvedProjectDir,
+            projectDir: selectedProjectDir,
         };
     }
 }
 
-export const __testables = { appendBoundedTail, eventThreadId, eventAgentMessage };
+export const __testables = Object.freeze({
+    appendBoundedTail,
+    eventThreadId,
+    eventAgentMessage,
+    serializeCause,
+});
