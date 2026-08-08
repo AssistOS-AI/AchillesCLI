@@ -2,9 +2,9 @@ import path from 'node:path';
 
 const INTRO_SKILL_SHORT_NAME = 'intro-skill';
 const INTRO_SKILL_CANONICAL_NAME = 'intro-skill-cskill';
-const MAX_SKILLS_FOR_INTRO = 30;
+const MAX_SKILLS_FOR_INTRO = 12;
 
-function cleanText(value, maxLength = 260) {
+function cleanText(value, maxLength = 100) {
     const text = String(value || '').replace(/\s+/g, ' ').trim();
     return text.length > maxLength ? `${text.slice(0, maxLength - 3).trim()}...` : text;
 }

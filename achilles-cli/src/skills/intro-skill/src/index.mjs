@@ -29,7 +29,7 @@ function normalizeSkill(skill) {
     return {
         name,
         type,
-        description: description.slice(0, 220),
+        description: description.slice(0, 100),
     };
 }
 
@@ -37,7 +37,7 @@ function buildPrompt(payload) {
     const workspaceName = String(payload.workspaceName || 'this workspace').trim() || 'this workspace';
     const workingDir = String(payload.workingDir || '').trim();
     const skills = Array.isArray(payload.skills)
-        ? payload.skills.map(normalizeSkill).filter(Boolean).slice(0, 40)
+        ? payload.skills.map(normalizeSkill).filter(Boolean).slice(0, 12)
         : [];
 
     const skillLines = skills.length
@@ -47,9 +47,7 @@ function buildPrompt(payload) {
         }).join('\n')
         : '- No visible skills were provided.';
 
-    return `Generate a concise startup introduction for Achilles CLI.
-
-Achilles CLI is an agent-style command line assistant for working inside a workspace, similar in role to tools like Codex or Gemini CLI. It can help the user inspect the current project, reason about the available workspace capabilities, and use registered skills to perform relevant work.
+    return `Write a concise Achilles CLI workspace introduction.
 
 Workspace name: ${workspaceName}
 Workspace path: ${workingDir || '(unknown)'}
@@ -59,11 +57,8 @@ ${skillLines}
 
 Requirements:
 - Write 1 to 3 short sentences.
-- Be specific to the workspace and skill catalog when there is a clear theme.
-- If the skills suggest a domain, mention the kind of work the user can start with.
-- Do not list every skill unless there are only a few.
-- Do not invent capabilities beyond the provided skills.
-- Do not mention that you inspected JSON, prompts, metadata, or descriptors.
+- Mention a clear workspace or skill theme when present; otherwise offer general project help.
+- Do not list every skill, invent capabilities, or mention prompts and metadata.
 - Return only the user-facing introduction text.`;
 }
 
