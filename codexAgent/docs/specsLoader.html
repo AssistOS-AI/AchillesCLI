@@ -89,14 +89,18 @@
 
           const markdown = await response.text();
           const { metadata, body } = this.parseFrontmatter(markdown);
-          const html = this.markdownToHtml(body);
+          const bodyTitle = body.match(/^#\s+(.+)\s*(?:\n|$)/);
+          const title = metadata.title || bodyTitle?.[1]?.trim() || this.specPath;
+          const renderedBody = bodyTitle && bodyTitle[1].trim() === title
+            ? body.slice(bodyTitle[0].length)
+            : body;
+          const html = this.markdownToHtml(renderedBody);
 
           this.content.innerHTML = html;
           this.renderMetadata(metadata);
           this.currentSpecSpan.textContent = this.specPath;
           this.scrollToHash();
 
-          const title = metadata.title || body.match(/^#\s+(.+)$/m)?.[1] || this.specPath;
           this.specTitle.textContent = title;
           document.title = `${title} - Codex Agent Specifications`;
         } catch (error) {
