@@ -1,11 +1,11 @@
 ---
 title: DS003-main-behavior
-summary: Defines the essential prompt execution, skill lifecycle, workspace confinement, and delegated-task behaviors that let users complete work through AchillesCLI.
+summary: Defines the prompt, skill, workspace-safety, and delegated-task behaviors that produce AchillesCLI's primary user outcome.
 ---
 
 ## Introduction
 
-AchillesCLI is primarily a local command-line agent that lets a user work with code and reusable agent skills inside a selected project directory. It converts a prompt or slash command into a skill-aware result, preserves the session's workspace boundary, and can hand long-running work to supported coding or research agents. Ploinky may host the same runtime and expose it through its dedicated WebChat interface without changing these core contracts.
+AchillesCLI lets a user complete project work from a local terminal or Ploinky WebChat. The same workspace-aware agent accepts prompts and commands, applies reusable skills, confines command execution, and can continue long-running work through external agents.
 
 ## Core Content
 
@@ -13,23 +13,23 @@ AchillesCLI is primarily a local command-line agent that lets a user work with c
 
 | Name | Explanation |
 | --- | --- |
-| Prompt execution across CLI surfaces | A user can submit work in single-shot, interactive REPL, or WebChat mode and receive one result through the same skill-aware agent runtime. |
-| Skill lifecycle and execution | A user can discover, inspect, create, validate, generate, test, refine, enable, disable, and execute supported skill definitions. |
-| Workspace-confined Bash execution | AchillesCLI confines the MainAgent and Bash child processes to the selected workspace while the trusted Broker controls command approval state. |
-| Persistent delegated tasks | A user can start, inspect, stop, and continue work delegated to supported external agents while AchillesCLI preserves task identity, logs, and continuation state. |
+| Prompt execution across CLI surfaces | A user submits work in single-shot, REPL, or WebChat mode and receives a result from the same skill-aware runtime. |
+| Skill lifecycle and execution | A user discovers, manages, and executes reusable skills that turn requests into project operations. |
+| Workspace-confined Bash execution | Approved commands can change the selected workspace without gaining access to sibling projects or broader host files. |
+| Persistent delegated tasks | A user starts, inspects, stops, and continues asynchronous work while AchillesCLI preserves one local task identity. |
 
 ### Prompt execution across CLI surfaces
 
-The user initiates this behavior by invoking `achilles-cli` with a prompt, starting the terminal REPL without a prompt, or sending a WebChat envelope. `src/cli.mjs` establishes the trusted boundary and starts `src/index.mjs`; the sandboxed runtime creates the AchillesAgentLib `MainAgent`, routes every model call through `LLMAgent`, loads applicable skills, and returns the agent's final answer through the active interface. Single-shot execution terminates after the answer, the REPL continues until an exit command, and WebChat continues to accept structured messages. These modes may adapt input and presentation, but they must use the same skill-aware execution contract and the runtime configuration described in [DS002](specsLoader.html?spec=DS002-llm-model-strategy.md), [DS004](specsLoader.html?spec=DS004-entrypoint-runtime-bootstrap.md), and [DS005](specsLoader.html?spec=DS005-repl-and-command-processing.md).
+A prompt argument starts one single-shot execution, an invocation without a prompt starts the terminal REPL, and a Ploinky WebChat launch starts the structured input loop. Every mode creates an AchillesAgentLib `MainAgent`, restores workspace state, registers applicable skills, routes model calls under [DS002](specsLoader.html?spec=DS002-llm-model-strategy.md), and returns the final result through the active interface. Interface-specific input and rendering must not change the execution contract.
 
 ### Skill lifecycle and execution
 
-The user initiates this behavior through slash commands such as `/list skills`, `/read`, `/write`, `/validate`, `/generate`, `/test`, `/run-tests`, `/refine`, `/exec`, `/skill`, and `/skills`. AchillesCLI discovers built-in and workspace skill roots, validates descriptor families through `src/schemas/skillSchemas.mjs`, and delegates each command to the matching built-in skill or deterministic handler. The observable result is a created or updated skill artifact, a validation or test result, a generated executable module, an execution result, or an updated workspace enablement setting. Skill descriptors remain the authoritative input; runtime code must not silently replace their schema contract. [DS007](specsLoader.html?spec=DS007-skills-runtime-and-builtins.md) and [DS008](specsLoader.html?spec=DS008-schemas-and-skill-doc-contract.md) own the detailed contracts.
+Slash commands and natural-language planning let a user inspect, create, validate, generate, test, refine, enable, disable, and execute skills. AchillesCLI discovers built-in and workspace roots, validates skill documents, and refreshes the active catalog after mutations. The resulting artifact or execution result must follow the descriptor contract owned by [DS007](specsLoader.html?spec=DS007-skills-runtime-and-builtins.md) and [DS008](specsLoader.html?spec=DS008-schemas-and-skill-doc-contract.md).
 
 ### Workspace-confined Bash execution
 
-The user initiates local command execution when the selected skill invokes the Bash tool. The trusted `AchillesBroker` remains outside Bubblewrap, stores the authoritative `ask-for-approval` or `full-access` mode, and authorizes Bash requests without executing them. `LocalBashExecutor` starts approved commands as children of the sandboxed MainAgent, so they inherit the same filesystem namespace and cannot gain host access through approval. A denied request returns a normal planner result and lets the turn continue; an approved request returns captured command output to the agentic session. The workspace selected at launch is the invariant boundary, and neither a permission-mode change nor an exact-call approval may widen it. [DS014](specsLoader.html?spec=DS014-global-architecture.md) owns the detailed security boundary.
+The trusted broker authorizes Bash requests, while the approved process starts as a child of the Bubblewrap-confined MainAgent. Approval may permit a command but must never widen the selected workspace boundary. Denial must return an ordinary tool result so planning can continue. [DS013](specsLoader.html?spec=DS013-global-architecture.md) owns the architectural security boundary.
 
 ### Persistent delegated tasks
 
-The user initiates delegation by requesting a supported coding or research agent or by executing a launcher skill. AchillesCLI starts the target through Ploinky and AgentServer interfaces, records a stable local task identifier and lifecycle journal under `.achilles-cli/tasks/`, streams or stores provider output, and returns an immediate acknowledgement for asynchronous work. `/tasks` and `/task view|stop|continue` expose the observable lifecycle without transferring persistence ownership to WebChat. Continuation creates a new remote execution while retaining the local task identity and opaque provider handle. Provider-specific launch, sandbox, model, and output rules remain in [DS010](specsLoader.html?spec=DS010-ecosystem-integration.md), [DS012](specsLoader.html?spec=DS012-opencode-launcher-delegation.md), and [DS013](specsLoader.html?spec=DS013-codex-launcher-delegation.md).
+A named launcher can activate a supported worker through Ploinky, submit work asynchronously, and return control to the conversation. AchillesCLI stores the generic task journal and logs under `.achilles-cli/tasks/`, exposes lifecycle actions through `/tasks` and `/task view|stop|continue`, and retains one local task identifier across continuation turns. The worker keeps provider-specific sessions and credentials private; [DS010](specsLoader.html?spec=DS010-ecosystem-integration.md) and [DS012](specsLoader.html?spec=DS012-launch-agent-skills.md) define the integration boundaries.

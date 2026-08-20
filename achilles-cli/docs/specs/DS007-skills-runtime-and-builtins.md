@@ -1,102 +1,26 @@
 ---
 title: DS007-skills-runtime-and-builtins
-summary: Defines skill discovery, execution flow, and built-in skill responsibilities.
+summary: Defines skill discovery, enablement, execution, mutation, and built-in skill boundaries.
 ---
 
 ## Introduction
-This DS defines how AchillesCLI discovers, validates, executes, and refreshes skills, including the shipped built-in skill modules.
+
+This DS owns the runtime lifecycle of skills. Skill-document syntax belongs to DS008, while Bash authorization and external worker implementation belong to their respective architectural and agent specifications.
 
 ## Core Content
-Skill runtime model:
-Skill discovery is managed by AchillesAgentLib `MainAgent`.
 
-AchillesCLI supplies built-in roots and optional external roots.
+AchillesAgentLib `MainAgent` must discover and execute skills. AchillesCLI supplies its built-in root, optional CLI roots, supported `node_modules` roots, and Ploinky repository roots under `.ploinky/repos/<repo>/achilles-skills`. Root order must be deterministic, and later external definitions may replace a built-in fallback with the same canonical name.
 
-In Ploinky workspaces, AchillesCLI also discovers launcher skills from workspace-managed repository clones under `.ploinky/repos/<repo>/achilles-skills` without hardcoding repository names or agent ids.
+| Skill area | Contract |
+| --- | --- |
+| Inspection | List and read skills or their sidecar specifications without mutating them. |
+| Authoring | Create, update, delete, validate, preview, or scaffold skill artifacts through schema-aware operations. |
+| Generation and tests | Generate executable code or tests, run the applicable checks, and refine a skill from their results. |
+| Execution | Execute one named skill directly or let natural-language planning select applicable skills. |
+| Provider launchers | Submit work to a fixed external worker through the Ploinky-mediated integration contract. |
 
-Later external roots may replace built-in fallback skills with the same normalized name; this is how a deployed provider launcher supersedes an unavailable placeholder.
+Skill mutations must trigger an explicit catalog reload. Reloading must preserve deterministic aliases and surface actionable discovery errors. Startup discovers the available roots; later refreshes reload those roots without silently inventing new search locations.
 
-Skill catalogs are reloadable at runtime after mutation operations.
+Workspace skills are enabled by default. AchillesCLI may persist only canonical disabled names in `.achilles-cli/settings.json`. Disabled skills must remain visible to inspection and enablement commands but must not execute, build, or enter MainAgent and orchestrator tool catalogs. Directory-wide enablement changes must remain confined to the active workspace and resolve to canonical skill names before they reach MainAgent.
 
-Every workspace skill is enabled by default. AchillesCLI persists only canonical disabled names and reapplies them when a MainAgent is created.
-
-Built-in skill responsibilities (`src/skills/`):
-### Catalog and inspection
-`list-skills`
-
-`read-skill`
-
-`read-specs`
-
-### Authoring and mutation
-`write-skill`
-
-`write-specs`
-
-`update-section`
-
-`delete-skill`
-
-### Validation and scaffolding
-`validate-skill`
-
-`get-template`
-
-`preview-changes`
-
-### Code-generation and execution
-`generate-code`
-
-`test-code`
-
-`execute-skill`
-
-`skill-refiner`
-
-`launch-codex`
-
-`launch-opencode`
-
-### Test-generation helpers
-`write-tests`
-
-`run-tests`
-
-### Local execution
-`bash` parses a command without a shell and delegates execution to the local executor inside MainAgent.
-
-The Bash skill contains no risk classifier, approval prompt, permission memory, or direct process launcher.
-
-The local executor is mandatory, inherits MainAgent's Bubblewrap namespace, starts the requested executable directly as a child process, and fails closed when unavailable.
-
-After authorization, the executor captures stdout and stderr without forwarding them to the AchillesCLI process streams. Bash returns the ordinary execution output or error only to the agentic session and does not expose one-time or reusable approval state.
-
-A pre-execution denial is resolved by the Supervisor before Bash is invoked. AchillesAgentLib records the exact tool name, exact parameters, and denial reason as the tool result and resumes the planner without calling this skill.
-
-Execution behavior:
-Slash commands target specific deterministic skill utilities.
-
-Natural-language prompts may route through orchestrator logic to compose multi-step skill plans.
-
-Skill mutation paths must preserve schema/contract validation behavior.
-
-Catalog and refresh invariants:
-Skill writes/deletes must synchronize catalog state through explicit reload paths.
-
-Aliases and command exposure remain deterministic after reload.
-
-Errors in skill loading must surface actionable diagnostics.
-
-Runtime refreshes reload already-registered roots; startup discovery is responsible for finding the active root set from built-ins, CLI flags, node_modules, and Ploinky repo `achilles-skills` roots.
-
-Permission policy is infrastructure owned by the external broker and Supervisor, never by skill code.
-
-Directory expansion and confinement belong to AchillesCLI; MainAgent receives only canonical name arrays through `enableSkills()` or `disableSkills()`.
-
-Disabled records remain listable but cannot execute, build, or participate in MainAgent or orchestrator tool surfaces.
-
-### Rationale and Boundaries
-
-Permission policy must remain authoritative for natural-language calls, direct slash execution, and future callers. Centralizing authorization in the trusted broker prevents a skill-local prompt or environment flag from bypassing approval. Workspace confinement is independently enforced because the local executor is already inside MainAgent's Bubblewrap namespace, while the skill remains responsible only for deterministic parsing and result formatting.
-
-Approval is control-plane state used only to decide whether the handler may run. Once allowed, the handler follows the same result contract as any ordinary invocation, so the planner receives the execution output or error without approval-specific text or metadata.
+The built-in Bash skill must only parse the requested command and call the sandboxed local executor. It must not own approval prompts, reusable approvals, risk classification, or process confinement. Provider launcher skills must similarly own only their public input mapping, target activation, asynchronous submission, and safe result contract; provider-specific sessions and execution internals remain outside AchillesCLI.

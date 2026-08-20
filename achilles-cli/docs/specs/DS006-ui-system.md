@@ -1,73 +1,24 @@
 ---
 title: DS006-ui-system
-summary: Specifies terminal UI components, rendering contracts, and provider abstractions.
+summary: Defines terminal input, selection, rendering, help, progress, and UI-provider boundaries.
 ---
 
 ## Introduction
-This DS defines AchillesCLI user-interface architecture under `src/ui/`, including rendering utilities, selectors, editor behavior, help flows, and provider abstraction.
+
+This DS owns presentation under `src/ui/`. UI modules may collect input and render state, but they must not decide command semantics, model routing, skill policy, or task persistence.
 
 ## Core Content
-UI component contracts:
-`CommandSelector.mjs`
 
-Provides keyboard-driven selector experiences for commands, skills, tests, help topics, and repositories.
+| Component | Responsibility |
+| --- | --- |
+| `CommandSelector.mjs` | Filters and selects commands, skills, tests, repositories, and help topics through keyboard input. |
+| `LineEditor.mjs` | Provides cursor movement, insertion, deletion, and editable terminal input. |
+| `HelpSystem.mjs` and `HelpPrinter.mjs` | Build and display command and topic guidance from the active command contract. |
+| `MarkdownRenderer.mjs` and `ResultFormatter.mjs` | Convert execution results into safe terminal output. |
+| `spinner.mjs` | Presents progress and interruption hints for long-running work. |
+| `themes/` | Defines visual tokens without changing runtime behavior. |
+| UI providers | Adapt the same input, output, banner, help, and progress operations to rich or minimal terminals. |
 
-Supports filtering, navigation, and explicit selection output.
+`BaseUIProvider` must define the provider contract. `ClaudeCodeUIProvider` may provide rich terminal interaction, while `MinimalUIProvider` must remain suitable for non-TTY or reduced-format output. `UIContext` may select the active provider, but command handlers must not depend on a concrete provider.
 
-`LineEditor.mjs`
-
-Implements advanced terminal input editing behavior.
-
-Supports cursor movement, insertion/deletion, and command-line editing ergonomics.
-
-`HelpSystem.mjs` and `HelpPrinter.mjs`
-
-Generate and display command help and topic-specific assistance.
-
-`MarkdownRenderer.mjs`
-
-Converts markdown-like responses into terminal-friendly formatted output.
-
-`spinner.mjs`
-
-Provides progress indication and operation feedback for longer tasks.
-
-Displays interruption hints for cancel-capable flows.
-
-`ResultFormatter.mjs`
-
-Normalizes execution results into user-facing terminal output.
-
-`themes/`
-
-Defines color/icon/box style behavior for UI presentations.
-
-Provider architecture:
-`providers/BaseUIProvider.mjs`
-
-Defines abstract UI capabilities: input, output, spinner, banner, help.
-
-`providers/ClaudeCodeUIProvider.mjs`
-
-Implements rich interactive terminal UX, selector integrations, and boxed startup layout.
-
-`providers/MinimalUIProvider.mjs`
-
-Implements low-friction plain-text UX suitable for non-TTY and reduced-render contexts.
-
-`providers/index.mjs`
-
-Maintains provider registry and provider factory behavior.
-
-`UIContext.mjs`
-
-Stores active provider globally and exposes theme/provider lookup.
-
-Interaction invariants:
-UI rendering concerns remain separated from business logic and skill execution.
-
-Provider swapping must not require command-handler rewrites.
-
-Output formatting must remain safe for normal terminal and scripted consumption.
-
-Interrupt-capable operations must keep terminal mode and cursor state consistent after ESC cancellation.
+Rendering must preserve the meaning of results, avoid leaking internal control records, and remain safe for scripted consumption when the minimal provider is active. Selector cancellation and ESC interruption must restore cursor visibility, input mode, and terminal state. UI modules may show progress or choices, but the executing subsystem remains the authority for state and outcomes.

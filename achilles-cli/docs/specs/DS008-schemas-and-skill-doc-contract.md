@@ -1,42 +1,26 @@
 ---
 title: DS008-schemas-and-skill-doc-contract
-summary: Defines skill schema detection, validation rules, templates, and `specs/` integration.
+summary: Defines skill-document detection, validation, templates, updates, and sidecar specifications.
 ---
 
 ## Introduction
-This DS specifies how AchillesCLI interprets skill documents and sidecar specifications through schema utilities in `src/schemas/skillSchemas.mjs`.
+
+This DS owns the Markdown contract interpreted by `src/schemas/skillSchemas.mjs`. It does not define how MainAgent discovers or executes a valid skill.
 
 ## Core Content
-Schema utility responsibilities:
-Detect skill type from document structure and known section headers.
 
-Validate required vs optional sections by skill family.
+Schema utilities must detect a supported skill family from its document structure and known headings. Validation must distinguish required and optional sections, report missing or invalid content explicitly, and preserve the expected section order when a targeted update rewrites one section.
 
-Provide canonical template structures for supported skill types.
+| Operation | Required result |
+| --- | --- |
+| Detect | Return the supported descriptor family established by the document. |
+| Validate | Return actionable contract violations without changing the source. |
+| Template | Produce a schema-valid starting document for the requested family. |
+| Section update | Change the requested supported section while preserving unrelated valid content. |
+| Sidecar read | Load optional Markdown files under the skill's `specs/` directory on demand. |
 
-Validate update operations that target specific sections.
+Every skill family may include an optional `## Help` section containing user-facing invocation guidance. Runtime execution logic must not be derived from that help text. Templates should include useful help examples when the family supports them.
 
-Document contract:
-Skill documents are markdown-based contract files.
+A missing `specs/` directory is valid. When present, sidecar files may contribute to reading, generation, or refinement flows, but they must not replace the primary skill descriptor or relax its validation rules.
 
-Validation output must be explicit about missing/invalid sections.
-
-Read and write paths must preserve document integrity and expected section order where applicable.
-
-All skill families may include an optional `## Help` section. This section is user-facing invocation guidance and is not used as runtime execution logic.
-
-`specs/` sidecar contract:
-Skills may include optional Markdown files under `specs/`.
-
-Sidecar specifications are loaded on demand and included in relevant generation/refinement/read flows.
-
-Missing `specs/` directories are valid and must not break normal skill execution.
-
-Operational invariants:
-Schema rules must stay synchronized with built-in skill authoring and validation commands.
-
-Template generation must produce schema-valid initial structures.
-
-Template generation must include `## Help` examples that explain how to invoke the generated skill from user-facing command surfaces.
-
-Contract changes to required sections must be reflected in both validation logic and documentation.
+Any change to required headings, supported families, templates, or section ordering must update the schema implementation, built-in authoring commands, and documentation together.

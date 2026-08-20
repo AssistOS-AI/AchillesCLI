@@ -1,33 +1,18 @@
 ---
 title: DS000-vision
-summary: Defines AchillesCLI mission, boundaries, and the authoritative documentation model.
+summary: Defines AchillesCLI's purpose, product boundary, and documentation authority.
 ---
 
 ## Introduction
-AchillesCLI is a skill-oriented CLI runtime built on AchillesAgentLib and packaged as a Ploinky-ready agent surface. The repository must stay focused on executable runtime behavior and auditable technical contracts, not on detached conceptual narratives.
+
+AchillesCLI is a local command-line agent for completing work inside a selected project directory. It can also run through Ploinky and its WebChat interface, while AchillesCLI remains the owner of prompt execution, workspace state, skills, sessions, and delegated-task records.
 
 ## Core Content
-The repository must preserve these permanent boundaries:
-`achilles-cli/` contains the runnable package, CLI entrypoint, REPL, UI stack, schemas, and built-in skills.
 
-`tests/` contains the executable test harness for runtime and skill flows.
+AchillesCLI must accept natural-language prompts and deterministic slash commands, execute applicable skills through AchillesAgentLib, and return results through single-shot, terminal REPL, or WebChat operation. The selected workspace is the durable scope for settings, conversations, task history, and writable command execution.
 
-`docs/` contains operator-facing HTML documentation.
+The product boundary excludes provider-specific worker implementation. GPTResearcher, Codex Agent, PI Agent, and OpenCode Agent own their provider runtimes and private continuation state. AchillesCLI may activate and call those workers through Ploinky, but it must retain only the generic information needed to present and continue a delegated task.
 
-`docs/specs/` contains authoritative DS contracts.
+The runnable package, built-in skills, schemas, UI, and package-local tests belong under `achilles-cli/`. Repository integration tests belong under `tests/`. Operator documentation belongs under `achilles-cli/docs/`, and `achilles-cli/docs/specs/` is the authoritative source for AchillesCLI contracts.
 
-The DS set is authoritative for contracts, invariants, and operational boundaries. HTML pages are explanatory surfaces that must remain synchronized with DS definitions. When drift appears, DS text controls repository intent until code and HTML are realigned.
-
-The project must retain portable skill behavior:
-Built-in skills are shipped with the CLI package.
-
-User and external skills are discovered dynamically from configured roots.
-
-Skill bootstrap examples remain inside skill folders when they exist for portability.
-
-The runtime must continue to support two user interaction styles:
-Deterministic command-driven execution through slash commands.
-
-Natural-language orchestration through the LLM path.
-
-The repository output contract remains English-only for persistent technical artifacts.
+Persistent technical documentation must remain in English and synchronized with behavior changes. Each DS must describe only the contract named by its filename; another DS may reference that contract but must not reproduce its details.

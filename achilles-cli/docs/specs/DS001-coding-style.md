@@ -1,81 +1,34 @@
 ---
 title: DS001-coding-style
-summary: Defines coding, runtime, and documentation conventions for all AchillesCLI components.
+summary: Defines AchillesCLI coding, module-ownership, documentation, and verification conventions.
 ---
 
 ## Introduction
-This file is the coding-style authority for AchillesCLI. It defines implementation conventions, runtime discipline, and documentation obligations that apply across CLI, REPL, UI, schema, and skill modules.
+
+This DS is the coding-style authority for AchillesCLI. It governs source organization and contribution quality without redefining runtime behavior owned by specialized specifications.
 
 ## Core Content
-### Language and module style
-Use ESM imports/exports in runtime modules.
 
-Keep directory-local naming conventions consistent with current files.
+### Language and module design
 
-Prefer focused modules with explicit responsibilities over large multipurpose files.
+Runtime code must use ESM imports and exports. Modules should have one clear responsibility, preserve the naming conventions of their directory, and separate transport, parsing, state, presentation, and policy. Shared behavior should use focused helpers instead of duplicated implementations.
 
-Follow SOLID and DRY principles: keep transport, parsing, relay dispatch, and domain-specific policy in separate focused modules, and reuse shared helpers instead of duplicating integration logic.
+### Source ownership
 
-### Structural conventions
-Trusted Broker bootstrap logic remains in `src/cli.mjs`, while sandboxed agent bootstrap and runtime-mode selection remain in `src/index.mjs`.
+| Path | Responsibility |
+| --- | --- |
+| `src/cli.mjs` and `src/broker/` | Trusted startup, workspace confinement, and Bash authorization. |
+| `src/index.mjs` | Sandboxed runtime assembly and execution-mode selection. |
+| `src/repl/` | Interactive lifecycle, slash-command dispatch, and prompt handling. |
+| `src/ui/` | Terminal input and presentation. |
+| `src/schemas/` | Skill-document detection and validation. |
+| `src/skills/` | Built-in executable skills. |
+| `src/lib/` | Reusable state and integration services with narrow contracts. |
 
-REPL lifecycle and interactive behavior remain in `src/repl/`.
+Feature modules must not embed workstation-specific paths or call provider SDKs when AchillesAgentLib or an existing integration module owns that concern. Configuration failures must remain explicit, while normal user output must not expose credentials, private prompts, or stack internals.
 
-UI rendering/input helpers remain in `src/ui/`.
+### Documentation and tests
 
-Skill contract parsing and schema utilities remain in `src/schemas/`.
+Persistent documentation must be English, use direct declarative language, and update with any behavior change. DS files must contain only `Introduction` and `Core Content`, must avoid Q&A formatting and list-shaped prose, and must stay within the subject named by the filename.
 
-Built-in executable skill modules remain in `src/skills/`.
-
-Runtime source remains under `achilles-cli/src/`, root integration tests remain under `tests/`, package-local tests remain under `achilles-cli/tests/`, and workspace-owned durable data remains under the selected workspace's `.achilles-cli/` directory.
-
-### Runtime configuration discipline
-Preserve environment-based defaults for runtime config.
-
-Preserve explicit manual override paths for core config and dependency resolution.
-
-Do not hide configuration failures behind silent fallbacks.
-
-### LLM interaction discipline
-Route LLM calls through AchillesAgentLib `LLMAgent` and `MainAgent` paths.
-
-Keep tier/model policy centralized and session-aware.
-
-Avoid ad-hoc direct provider SDK calls in feature modules.
-
-### Error handling and observability
-Emit clear operational errors for invalid command usage and unsupported flows.
-
-Keep debug-level internals gated by debug flags.
-
-Return user-safe error messages in non-debug paths.
-
-### Skill-system conventions
-Keep slash-command paths deterministic and explicit.
-
-Keep natural-language execution routed through orchestration logic.
-
-Keep read/write skill behavior explicit and auditable.
-
-### Achilles integration conventions
-AchillesAgentLib is an authorized dependency.
-
-Integration must not assume AchillesAgentLib is always available in the current repo root.
-
-Dependency resolution must use the Ploinky runtime mounts, explicit runtime overrides, parent-path lookup, or supported `node_modules` fallback described by the bootstrap contract; feature modules must not embed workstation-specific absolute paths.
-
-Routing-sensitive work must retain the `documentation`, `specification`, `orchestration`, `bootstrap`, and `testing` task metadata tags defined by DS002.
-
-### Documentation conventions
-Persistent documentation remains in English.
-
-DS files use direct specification language and do not use Q&A chapters.
-
-When runtime behavior changes, update DS files and HTML docs in the same change set.
-
-### Verification conventions
-Keep tests close to their contract surface and use descriptive `.test.mjs` names.
-
-Run `node tests/run-all.mjs` for repository integration verification and the relevant files under `achilles-cli/tests/` for package-local behavior.
-
-Run `fileSizesCheck.sh` when documentation or source layout changes; reported oversized implementation files are refactoring signals and do not authorize unrelated source changes.
+Tests should live beside the contract surface they verify and use descriptive `.test.mjs` names. Repository integration verification uses `node tests/run-all.mjs`; package behavior uses the relevant tests under `achilles-cli/tests/`. Documentation or source-layout changes must run `fileSizesCheck.sh`; oversized source files are refactoring signals, not permission for unrelated changes.
