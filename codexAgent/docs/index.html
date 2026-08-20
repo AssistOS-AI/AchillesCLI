@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Codex Agent Documentation</title>
-  <link rel="stylesheet" href="../../docs/styles.css">
+  <link rel="stylesheet" href="../../achilles-cli/docs/styles.css">
   <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
-  <script src="../../docs/partials-loader.js" defer></script>
+  <script src="../../achilles-cli/docs/partials-loader.js" defer></script>
 </head>
 <body>
   <div id="site-header"></div>
@@ -18,7 +18,7 @@
     <h2>Use Codex Agent</h2>
     <p>For direct interactive use, start the provider CLI through Ploinky:</p>
     <pre><code class="language-bash">ploinky cli codexAgent</code></pre>
-    <p>For a <a href="../../docs/wiki.html#definition-background-task">background task</a> owned by AchillesCLI, request Codex by name in WebChat or call the launcher skill:</p>
+    <p>For a <a href="../../achilles-cli/docs/wiki.html#definition-background-task">background task</a> owned by AchillesCLI, request Codex by name in WebChat or call the launcher skill:</p>
     <pre><code>Ask Codex to add regression tests for the parser.
 /exec launch-codex Add regression tests for the parser.</code></pre>
     <p>The launcher activates the manual-start worker when required, creates an asynchronous task, and returns <code>Task started.</code>. AchillesCLI can then inspect, stop, or continue the task:</p>
@@ -55,7 +55,7 @@
 
     <h2>Security and boundaries</h2>
     <p>The provider runs in the supplied project directory under Codex's workspace-write policy and the outer Ploinky runtime boundary. Commands that require writes outside the workspace fail without an interactive approval path. The continuation store rejects invalid handles and unsafe symlinked storage. Provider thread identifiers, filesystem paths, prompts, and credentials do not appear in the generic continuation descriptor.</p>
-    <p>The authoritative provider contract is <a href="../../docs/specsLoader.html?spec=DS013-codex-launcher-delegation.md">DS013 Codex launcher delegation</a>.</p>
+    <p>The authoritative provider contract is <a href="../../achilles-cli/docs/specsLoader.html?spec=DS013-codex-launcher-delegation.md">DS013 Codex launcher delegation</a>.</p>
   </article></main>
   <div id="site-footer"></div>
 </body>

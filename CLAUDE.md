@@ -5,7 +5,7 @@ Achilles CLI is the interactive and single-shot skill management CLI used by the
 ## Reading order
 
 1. Parent `~/work/file-parser/AssistOSExplorer/CLAUDE.md` for workspace conventions.
-2. `docs/specs/matrix.md` and the relevant DS file for the contract you are touching.
+2. `achilles-cli/docs/specs/matrix.md` and the relevant DS file for the contract you are touching.
 3. `achilles-cli/src/cli.mjs` for the trusted Broker entry point and `achilles-cli/src/index.mjs` for the sandboxed agent entry point.
 4. `achilles-cli/manifest.json` for the Ploinky agent declaration.
 5. `achilles-cli/src/skills/bash/` for the bundled bash skill.

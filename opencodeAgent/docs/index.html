@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenCode Agent Documentation</title>
-  <link rel="stylesheet" href="../../docs/styles.css">
+  <link rel="stylesheet" href="../../achilles-cli/docs/styles.css">
   <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
-  <script src="../../docs/partials-loader.js" defer></script>
+  <script src="../../achilles-cli/docs/partials-loader.js" defer></script>
 </head>
 <body>
   <div id="site-header"></div>
@@ -50,8 +50,8 @@
     <p>The models endpoint publishes OpenCode's provider/model catalog to Ploinky with coding-agent metadata. The non-streaming chat-completions endpoint converts OpenAI-style messages into one OpenCode prompt and runs it in Ploinky's effective <code>WORKSPACE_PATH</code>. These provider endpoints are separate from resumable asynchronous MCP tasks.</p>
 
     <h2>Security and persistence</h2>
-    <p>Every task, continuation, session lookup, and session export runs inside the task-local <a href="../../docs/wiki.html#definition-bubblewrap">Bubblewrap</a> boundary. The namespace exposes the selected project directory as the only writable workspace bind, limits separate writes to required OpenCode state directories, shares networking for provider calls, and filters raw Ploinky and provider credentials from the task environment. The worker remains unready if the nested sandbox cannot start.</p>
-    <p>The Ploinky agent home persists the installed OpenCode CLI, authentication, recent-model choices, provider sessions, and opaque continuation records. The full contract is recorded in <a href="../../docs/specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012 OpenCode launcher delegation</a>.</p>
+    <p>Every task, continuation, session lookup, and session export runs inside the task-local <a href="../../achilles-cli/docs/wiki.html#definition-bubblewrap">Bubblewrap</a> boundary. The namespace exposes the selected project directory as the only writable workspace bind, limits separate writes to required OpenCode state directories, shares networking for provider calls, and filters raw Ploinky and provider credentials from the task environment. The worker remains unready if the nested sandbox cannot start.</p>
+    <p>The Ploinky agent home persists the installed OpenCode CLI, authentication, recent-model choices, provider sessions, and opaque continuation records. The full contract is recorded in <a href="../../achilles-cli/docs/specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012 OpenCode launcher delegation</a>.</p>
   </article></main>
   <div id="site-footer"></div>
 </body>

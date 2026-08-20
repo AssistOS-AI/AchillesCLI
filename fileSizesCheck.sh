@@ -148,7 +148,7 @@ echo "📊 PROJECT SIZE"
 echo "==============="
 total_project_size=$(du -sk . 2>/dev/null | cut -f1)
 echo "Total: ${total_project_size} KB ($(echo "scale=1; $total_project_size/1024" | bc -l 2>/dev/null || echo "$(($total_project_size/1024))") MB)"
-for dir in docs docs/specs src config; do
+for dir in achilles-cli/docs achilles-cli/docs/specs GPTResearcher/docs codexAgent/docs piAgent/docs opencodeAgent/docs src config; do
   if [ -d "$dir" ]; then
     ds=$(du -sk "$dir" 2>/dev/null | cut -f1)
     echo "${dir}/: ${ds} KB ($(echo "scale=1; $ds/1024" | bc -l 2>/dev/null || echo "$(($ds/1024))") MB)"

@@ -1,6 +1,6 @@
 # achilles-cli (inner agent)
 
-Ploinky-agent layer for AchillesCLI under AssistOSExplorer. The outer `../CLAUDE.md` is the local guide; `../docs/specs/` has the canonical DS contracts.
+Ploinky-agent layer for AchillesCLI under AssistOSExplorer. The outer `../CLAUDE.md` is the local guide; `docs/specs/` has the canonical DS contracts.
 
 ## Entry points
 

@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GPTResearcher Agent Documentation</title>
-  <link rel="stylesheet" href="../../docs/styles.css">
+  <link rel="stylesheet" href="../../achilles-cli/docs/styles.css">
   <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
-  <script src="../../docs/partials-loader.js" defer></script>
+  <script src="../../achilles-cli/docs/partials-loader.js" defer></script>
 </head>
 <body>
   <div id="site-header"></div>
   <main class="page"><article class="page__panel">
     <p class="breadcrumbs"><a href="../../index.html">All agents</a> / GPTResearcher</p>
     <h1>GPTResearcher Agent</h1>
-    <p class="lead">GPTResearcher is a manual-start Ploinky worker that turns a research question into a Markdown report. It uses <a href="../../docs/wiki.html#definition-soul-gateway">Soul Gateway</a> for language and embedding models, SearchAgent for web results, and optional files from the selected workspace as local research material.</p>
+    <p class="lead">GPTResearcher is a manual-start Ploinky worker that turns a research question into a Markdown report. It uses <a href="../../achilles-cli/docs/wiki.html#definition-soul-gateway">Soul Gateway</a> for language and embedding models, SearchAgent for web results, and optional files from the selected workspace as local research material.</p>
 
     <h2>What it does</h2>
     <p>The agent runs the GPT Researcher pipeline, lets that pipeline form its own subqueries, collects web and optional local context, writes the report, and returns the report path together with available sources, cost data, collected context, and a bounded log tail. The report is saved in the request's working directory with a timestamped filename.</p>
@@ -58,7 +58,7 @@
 
     <h2>Boundaries</h2>
     <p>The research working directory must remain inside <code>WORKSPACE_PATH</code>. GPTResearcher does not call external search providers directly; every web query goes through SearchAgent. Local filenames are not concatenated into the web query, and local documents are exposed only when hybrid research is active. The worker is optional and starts only for a research request.</p>
-    <p>The shared integration requirements are recorded in <a href="../../docs/specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 ecosystem integration</a>.</p>
+    <p>The shared integration requirements are recorded in <a href="../../achilles-cli/docs/specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 ecosystem integration</a>.</p>
   </article></main>
   <div id="site-footer"></div>
 </body>

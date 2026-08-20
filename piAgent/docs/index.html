@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PI Agent Documentation</title>
-  <link rel="stylesheet" href="../../docs/styles.css">
+  <link rel="stylesheet" href="../../achilles-cli/docs/styles.css">
   <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
-  <script src="../../docs/partials-loader.js" defer></script>
+  <script src="../../achilles-cli/docs/partials-loader.js" defer></script>
 </head>
 <body>
   <div id="site-header"></div>
   <main class="page"><article class="page__panel">
     <p class="breadcrumbs"><a href="../../index.html">All agents</a> / PI Agent</p>
     <h1>PI Agent</h1>
-    <p class="lead">PI Agent packages the PI coding agent as a manual-start Ploinky worker. It runs asynchronous coding tasks in a task-specific <a href="../../docs/wiki.html#definition-bubblewrap">Bubblewrap</a> namespace, streams provider output, and preserves PI sessions for follow-up turns.</p>
+    <p class="lead">PI Agent packages the PI coding agent as a manual-start Ploinky worker. It runs asynchronous coding tasks in a task-specific <a href="../../achilles-cli/docs/wiki.html#definition-bubblewrap">Bubblewrap</a> namespace, streams provider output, and preserves PI sessions for follow-up turns.</p>
 
     <h2>Use PI Agent</h2>
     <p>Start PI directly through Ploinky when you want its native interactive CLI:</p>
@@ -51,7 +51,7 @@
 
     <h2>Security and boundaries</h2>
     <p>Every initial and continued provider process runs inside a nested Bubblewrap namespace. The canonical project directory is the only writable project bind; sibling projects and the broader workspace are not mounted. Provider configuration and session directories receive only the access required for PI to operate. The task environment excludes raw Ploinky credentials and provider secrets, while networking remains available for provider calls.</p>
-    <p>The worker fails closed when it cannot establish the task sandbox. Its readiness check proves that the selected sandbox mode can start PI before Ploinky marks the agent ready. The shared continuation, authentication, and sandbox requirements are defined in <a href="../../docs/specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 ecosystem integration</a>.</p>
+    <p>The worker fails closed when it cannot establish the task sandbox. Its readiness check proves that the selected sandbox mode can start PI before Ploinky marks the agent ready. The shared continuation, authentication, and sandbox requirements are defined in <a href="../../achilles-cli/docs/specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 ecosystem integration</a>.</p>
   </article></main>
   <div id="site-footer"></div>
 </body>
