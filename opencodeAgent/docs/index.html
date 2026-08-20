@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCode Agent Documentation</title>
+  <link rel="stylesheet" href="../../docs/styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="../../docs/partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="../../index.html">All agents</a> / OpenCode Agent</p>
+    <h1>OpenCode Agent</h1>
+    <p class="lead">OpenCode Agent packages the OpenCode CLI as a manual-start Ploinky worker. It supports resumable asynchronous coding tasks and also exposes OpenAI-compatible model discovery and chat-completions endpoints for Ploinky routing.</p>
+
+    <h2>Use OpenCode Agent</h2>
+    <p>Start the native OpenCode CLI directly through Ploinky:</p>
+    <pre><code class="language-bash">ploinky cli opencodeAgent</code></pre>
+    <p>For background work managed by AchillesCLI, request OpenCode by name or execute the launcher skill:</p>
+    <pre><code>Ask OpenCode to refactor the configuration loader.
+/exec launch-opencode Refactor the configuration loader.</code></pre>
+    <p>AchillesCLI releases the active conversation as soon as the asynchronous task starts. The standard <code>/tasks</code> and <code>/task</code> commands show logs, stop a running execution, or continue the provider session with a new prompt.</p>
+
+    <h2>Task lifecycle</h2>
+    <figure class="diagram">
+      <pre class="mermaid">flowchart TB
+  Prompt[Prompt and project directory] --> Sandbox[Task-local Bubblewrap namespace]
+  Sandbox --> OpenCode[OpenCode automatic task execution]
+  OpenCode --> Output[Native live output and exported final answer]
+  OpenCode --> Session[Private OpenCode session record]
+  Session --> Followup[Continued turn with current model state]
+  Followup --> Sandbox
+  classDef request fill:#e8f3ff,stroke:#2463a3,font-weight:bold
+  classDef boundary fill:#fff2cc,stroke:#8a6d1d
+  classDef result fill:#e9f7ef,stroke:#26734d
+  class Prompt request
+  class Sandbox,Session boundary
+  class OpenCode,Output,Followup result</pre>
+      <figcaption><em>OpenCode task sandbox and continuation lifecycle</em></figcaption>
+    </figure>
+
+    <h2>Execution and continuation</h2>
+    <p>Initial tasks run OpenCode in its formatted-output mode with automatic operation approval. The installed permission policy allows normal actions but denies external-directory access, and the independent Bubblewrap namespace limits writable project access to the canonical task directory. Provider stdout and stderr flow into the task log without wrapper prefixes or synthetic lifecycle messages.</p>
+    <p>After execution, the wrapper resolves the new OpenCode session and exports its messages to select the last assistant text as the structured result. Session lookup and export data do not enter the visible task log. The session identifier and original directory are stored behind a random opaque continuation handle. A continued turn reuses that session while AchillesCLI preserves the same local task identifier.</p>
+
+    <h2>Models and Ploinky endpoints</h2>
+    <p>The AchillesCLI launcher does not impose the main conversation's model on OpenCode. Before continuation, the worker reads OpenCode's recent provider, model, and non-default variant from its persistent state; missing state falls back to native resume behavior. The task-session control surface supports typed provider authentication flows without exposing private provider state to the browser.</p>
+    <p>The models endpoint publishes OpenCode's provider/model catalog to Ploinky with coding-agent metadata. The non-streaming chat-completions endpoint converts OpenAI-style messages into one OpenCode prompt and runs it in Ploinky's effective <code>WORKSPACE_PATH</code>. These provider endpoints are separate from resumable asynchronous MCP tasks.</p>
+
+    <h2>Security and persistence</h2>
+    <p>Every task, continuation, session lookup, and session export runs inside the task-local <a href="../../docs/wiki.html#definition-bubblewrap">Bubblewrap</a> boundary. The namespace exposes the selected project directory as the only writable workspace bind, limits separate writes to required OpenCode state directories, shares networking for provider calls, and filters raw Ploinky and provider credentials from the task environment. The worker remains unready if the nested sandbox cannot start.</p>
+    <p>The Ploinky agent home persists the installed OpenCode CLI, authentication, recent-model choices, provider sessions, and opaque continuation records. The full contract is recorded in <a href="../../docs/specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012 OpenCode launcher delegation</a>.</p>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Agent Documentation</title>
+  <link rel="stylesheet" href="../../docs/styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="../../docs/partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="../../index.html">All agents</a> / Codex Agent</p>
+    <h1>Codex Agent</h1>
+    <p class="lead">Codex Agent packages the official OpenAI Codex CLI as a Ploinky worker. It supports direct interactive use and asynchronous coding tasks that preserve a Codex thread for later continuation.</p>
+
+    <h2>Use Codex Agent</h2>
+    <p>For direct interactive use, start the provider CLI through Ploinky:</p>
+    <pre><code class="language-bash">ploinky cli codexAgent</code></pre>
+    <p>For a <a href="../../docs/wiki.html#definition-background-task">background task</a> owned by AchillesCLI, request Codex by name in WebChat or call the launcher skill:</p>
+    <pre><code>Ask Codex to add regression tests for the parser.
+/exec launch-codex Add regression tests for the parser.</code></pre>
+    <p>The launcher activates the manual-start worker when required, creates an asynchronous task, and returns <code>Task started.</code>. AchillesCLI can then inspect, stop, or continue the task:</p>
+    <pre><code>/tasks
+/task view &lt;task-id&gt;
+/task continue &lt;task-id&gt; Fix the remaining failing test.
+/task stop &lt;task-id&gt;</code></pre>
+
+    <h2>Task lifecycle</h2>
+    <figure class="diagram">
+      <pre class="mermaid">flowchart TB
+  Prompt[Prompt and project directory] --> Wrapper[Codex task wrapper]
+  Wrapper --> CLI[Codex CLI with workspace-write sandbox]
+  CLI --> Output[Live coding output and final answer]
+  CLI --> Thread[Private Codex thread record]
+  Thread --> Followup[Follow-up prompt through the same local task]
+  Followup --> CLI
+  classDef request fill:#e8f3ff,stroke:#2463a3,font-weight:bold
+  classDef boundary fill:#fff2cc,stroke:#8a6d1d
+  classDef result fill:#e9f7ef,stroke:#26734d
+  class Prompt request
+  class Wrapper,Thread boundary
+  class CLI,Output,Followup result</pre>
+      <figcaption><em>Codex task and continuation lifecycle</em></figcaption>
+    </figure>
+
+    <h2>Execution behavior</h2>
+    <p>Initial tasks run Codex non-interactively with JSON event output, a <code>workspace-write</code> sandbox, and approval prompts disabled. The wrapper forwards completed agent messages and command output to the Ploinky task log while keeping Codex control events and reasoning records out of the visible stream. The last bounded agent message becomes the structured final result.</p>
+    <p>When Codex reports a thread, the worker stores the thread identifier and original project directory behind a random opaque continuation handle. AchillesCLI stores only that handle and the fixed worker identity. A continued turn starts a new remote execution while preserving the same AchillesCLI task identifier.</p>
+
+    <h2>Model and authentication behavior</h2>
+    <p>The AchillesCLI launcher does not forward the model selected for the main conversation. A direct internal initial call may supply a Codex model override. Continuation does not persist or replay the initial model: it uses an explicit task-specific override when one is supplied and otherwise uses the Codex configuration active when the new turn starts. In generated-local Ploinky mode, the worker uses the scoped Soul Gateway provider contract. Outside that mode, Codex uses its own persistent login or supported provider environment.</p>
+    <p>The task-session control surface supports typed authentication operations without exposing provider session records to WebChat. The agent home persists the installed CLI, provider authentication, configuration, and Codex threads across worker recreation.</p>
+
+    <h2>Security and boundaries</h2>
+    <p>The provider runs in the supplied project directory under Codex's workspace-write policy and the outer Ploinky runtime boundary. Commands that require writes outside the workspace fail without an interactive approval path. The continuation store rejects invalid handles and unsafe symlinked storage. Provider thread identifiers, filesystem paths, prompts, and credentials do not appear in the generic continuation descriptor.</p>
+    <p>The authoritative provider contract is <a href="../../docs/specsLoader.html?spec=DS013-codex-launcher-delegation.md">DS013 Codex launcher delegation</a>.</p>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>

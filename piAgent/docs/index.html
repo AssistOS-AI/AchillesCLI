@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PI Agent Documentation</title>
+  <link rel="stylesheet" href="../../docs/styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="../../docs/partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="../../index.html">All agents</a> / PI Agent</p>
+    <h1>PI Agent</h1>
+    <p class="lead">PI Agent packages the PI coding agent as a manual-start Ploinky worker. It runs asynchronous coding tasks in a task-specific <a href="../../docs/wiki.html#definition-bubblewrap">Bubblewrap</a> namespace, streams provider output, and preserves PI sessions for follow-up turns.</p>
+
+    <h2>Use PI Agent</h2>
+    <p>Start PI directly through Ploinky when you want its native interactive CLI:</p>
+    <pre><code class="language-bash">ploinky cli piAgent</code></pre>
+    <p>For an AchillesCLI-owned background task, request PI by name or execute its launcher:</p>
+    <pre><code>Ask PI to investigate the failing integration test.
+/exec launch-pi Investigate the failing integration test.</code></pre>
+    <p>The worker runs independently after submission. Use AchillesCLI's <code>/tasks</code>, <code>/task view</code>, <code>/task continue</code>, and <code>/task stop</code> commands to manage the task.</p>
+
+    <h2>Task lifecycle</h2>
+    <figure class="diagram">
+      <pre class="mermaid">flowchart TB
+  Prompt[Prompt and project directory] --> Sandbox[Task-local Bubblewrap namespace]
+  Sandbox --> PI[PI JSON event-stream session]
+  PI --> Output[Live assistant and tool output]
+  PI --> Session[Private PI session record]
+  Session --> Followup[Continued turn with current PI settings]
+  Followup --> Sandbox
+  classDef request fill:#e8f3ff,stroke:#2463a3,font-weight:bold
+  classDef boundary fill:#fff2cc,stroke:#8a6d1d
+  classDef result fill:#e9f7ef,stroke:#26734d
+  class Prompt request
+  class Sandbox,Session boundary
+  class PI,Output,Followup result</pre>
+      <figcaption><em>PI task sandbox and continuation lifecycle</em></figcaption>
+    </figure>
+
+    <h2>Execution behavior</h2>
+    <p>PI runs in JSON event-stream mode with an explicit provider session identifier and session directory. The wrapper forwards assistant text and textual tool output as they arrive, removes duplicate cumulative tool updates, and uses the final assistant message as the task result. Thinking records, signatures, encrypted content, and usage metadata remain outside the visible task log.</p>
+    <p>The worker stores the provider session and original project directory behind an opaque continuation handle. A follow-up turn loads that private record and resumes the same PI session. AchillesCLI keeps its original local task identifier even though Ploinky creates a new remote task for the continued turn.</p>
+
+    <h2>Models and provider state</h2>
+    <p>Initial delegated work uses PI's provider-owned model selection unless an authorized task caller supplies an override. Before continuation, PI combines its persistent global settings with project-local PI settings and applies valid provider, model, and thinking-level choices. Missing or malformed settings fall back to PI's native session-resume behavior.</p>
+    <p>Generated-local mode can route PI through its repository-owned Soul Gateway extension and a scoped loopback broker. Ordinary provider authentication remains in PI's persistent home and can be managed through the typed task-session control flow.</p>
+
+    <h2>Security and boundaries</h2>
+    <p>Every initial and continued provider process runs inside a nested Bubblewrap namespace. The canonical project directory is the only writable project bind; sibling projects and the broader workspace are not mounted. Provider configuration and session directories receive only the access required for PI to operate. The task environment excludes raw Ploinky credentials and provider secrets, while networking remains available for provider calls.</p>
+    <p>The worker fails closed when it cannot establish the task sandbox. Its readiness check proves that the selected sandbox mode can start PI before Ploinky marks the agent ready. The shared continuation, authentication, and sandbox requirements are defined in <a href="../../docs/specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 ecosystem integration</a>.</p>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>

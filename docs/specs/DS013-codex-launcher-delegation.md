@@ -31,13 +31,13 @@ Codex stdout is JSONL control data. The wrapper parses it incrementally, capture
 
 After Codex reports a thread id, the provider stores it together with the resolved original project directory in an agent-private record behind a random UUID handle. The store rejects non-UUID handles and symlinked stores or records, writes atomically, and uses restrictive directory and file modes. The record must never contain the model, prompt, credentials, or Ploinky authorization data. The structured result exposes only bounded answer text and the generic versioned continuation descriptor.
 
-Continuation accepts only the opaque handle and a new non-empty prompt. It loads the provider thread and original directory, then runs:
+Continuation accepts the opaque handle, a new non-empty prompt, and an optional task-specific model override. It loads the provider thread and original directory, then runs:
 
 ```text
-codex --sandbox workspace-write --ask-for-approval never exec resume --json --skip-git-repo-check <thread-id> <prompt>
+codex --sandbox workspace-write --ask-for-approval never exec resume --json --skip-git-repo-check [--model <task-override>] <thread-id> <prompt>
 ```
 
-The resumed command must not receive `--model`. This omission is deliberate: the model configured when the continuation starts is authoritative, rather than the model used by the initial turn. The same opaque handle is returned after success. Ploinky creates a new remote AgentServer task for the turn while AchillesCLI keeps the stable local task id and increments its turn counter.
+The continuation record does not persist the initial model. An explicit task-specific override supplied for the continued turn is passed through `--model`; without that override, the model configured when continuation starts is authoritative. The same opaque handle is returned after success. Ploinky creates a new remote AgentServer task for the turn while AchillesCLI keeps the stable local task id and increments its turn counter.
 
 Both wrappers treat `SIGTERM` as controlled cancellation: they abort the Codex subprocess and, when Codex already reported a thread id, persist it through the same opaque handle and emit the structured continuation descriptor before exiting unsuccessfully. AgentServer therefore records cancellation while retaining the provider thread needed for a later turn on the same local task id. A queued cancellation that never starts Codex has no thread and is not continuable.
 
@@ -47,7 +47,7 @@ The provider remains `startup: manual` and absent from the AchillesCLI manifest 
 
 #### Question #1: Why does the continuation record omit the model?
 
-Response: Continuation must honor current user configuration. Persisting the initial model would make old provider state override a later model choice and would diverge from the provider-owned continuation behavior used by PI and OpenCode.
+Response: Continuation must honor the current task choice or current user configuration. Persisting the initial model would make old provider state override a later model choice. An explicit task-specific override applies only to the new turn; otherwise Codex resolves its active configuration when the continuation starts.
 
 #### Question #2: Why are only selected JSONL payloads visible?
 

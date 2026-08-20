@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GPTResearcher Agent Documentation</title>
+  <link rel="stylesheet" href="../../docs/styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="../../docs/partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="../../index.html">All agents</a> / GPTResearcher</p>
+    <h1>GPTResearcher Agent</h1>
+    <p class="lead">GPTResearcher is a manual-start Ploinky worker that turns a research question into a Markdown report. It uses <a href="../../docs/wiki.html#definition-soul-gateway">Soul Gateway</a> for language and embedding models, SearchAgent for web results, and optional files from the selected workspace as local research material.</p>
+
+    <h2>What it does</h2>
+    <p>The agent runs the GPT Researcher pipeline, lets that pipeline form its own subqueries, collects web and optional local context, writes the report, and returns the report path together with available sources, cost data, collected context, and a bounded log tail. The report is saved in the request's working directory with a timestamped filename.</p>
+
+    <h2>Start research from AchillesCLI</h2>
+    <p>GPTResearcher is designed primarily for agent-to-agent use. In AchillesCLI, request it by name through Ploinky WebChat or run its launcher skill explicitly:</p>
+    <pre><code>Ask GPTResearcher to compare the supported authentication flows.
+/exec launch-gpt-researcher Compare the supported authentication flows.</code></pre>
+    <p>The launcher starts SearchAgent and GPTResearcher when necessary, submits the research asynchronously, and returns control to AchillesCLI. Use <code>/tasks</code> and <code>/task view &lt;task-id&gt;</code> to follow the result.</p>
+
+    <h2>Research input</h2>
+    <table>
+      <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>query</code></td><td>The required research question used for web research.</td></tr>
+        <tr><td><code>context</code></td><td>Optional instructions or supporting data passed separately from the main query.</td></tr>
+        <tr><td><code>reportType</code></td><td>The GPT Researcher output type. The default is <code>research_report</code>; supported launcher values also include resource, outline, custom, subtopic, and deep reports.</td></tr>
+        <tr><td><code>workingDir</code></td><td>A directory confined to <code>WORKSPACE_PATH</code>. AchillesCLI supplies its active working directory and callers cannot redirect the launcher to another workspace.</td></tr>
+        <tr><td><code>useLocalDocs</code></td><td>Defaults to true. Existing local files select hybrid research; false or an empty directory selects web-only research.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Research flow</h2>
+    <figure class="diagram">
+      <pre class="mermaid">flowchart TB
+  Request[Research question and optional context] --> Runtime[GPT Researcher pipeline]
+  Models[Soul Gateway models and embeddings] --> Runtime
+  Search[SearchAgent web results] --> Runtime
+  Local[Optional workspace documents] --> Runtime
+  Runtime --> Report[Markdown report in the working directory]
+  classDef request fill:#e8f3ff,stroke:#2463a3,font-weight:bold
+  classDef service fill:#fff2cc,stroke:#8a6d1d
+  classDef result fill:#e9f7ef,stroke:#26734d
+  class Request request
+  class Models,Search,Local service
+  class Runtime,Report result</pre>
+      <figcaption><em>GPTResearcher report workflow</em></figcaption>
+    </figure>
+
+    <h2>Settings and persistence</h2>
+    <p>The agent persists non-secret choices for its fast, smart, and strategic language models, embedding model, and SearchAgent provider in its Ploinky home. The GPTResearcher settings panel reads model choices from Soul Gateway and lets the user update these values. Provider keys remain owned by SearchAgent or the configured model provider and are not written into the GPTResearcher settings file.</p>
+
+    <h2>Boundaries</h2>
+    <p>The research working directory must remain inside <code>WORKSPACE_PATH</code>. GPTResearcher does not call external search providers directly; every web query goes through SearchAgent. Local filenames are not concatenated into the web query, and local documents are exposed only when hybrid research is active. The worker is optional and starts only for a research request.</p>
+    <p>The shared integration requirements are recorded in <a href="../../docs/specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 ecosystem integration</a>.</p>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>
