@@ -51,7 +51,7 @@
 
     <h2>Security and persistence</h2>
     <p>Every task, continuation, session lookup, and session export runs inside the task-local <a href="../../achilles-cli/docs/wiki.html#definition-bubblewrap">Bubblewrap</a> boundary. The namespace exposes the selected project directory as the only writable workspace bind, limits separate writes to required OpenCode state directories, shares networking for provider calls, and filters raw Ploinky and provider credentials from the task environment. The worker remains unready if the nested sandbox cannot start.</p>
-    <p>The Ploinky agent home persists the installed OpenCode CLI, authentication, recent-model choices, provider sessions, and opaque continuation records. The full contract is recorded in <a href="../../achilles-cli/docs/specsLoader.html?spec=DS012-opencode-launcher-delegation.md">DS012 OpenCode launcher delegation</a>.</p>
+    <p>The Ploinky agent home persists the installed OpenCode CLI, authentication, recent-model choices, provider sessions, and opaque continuation records. The agent contracts are indexed in the <a href="specsLoader.html?spec=matrix.md">OpenCode Agent specification matrix</a>, with tasks, models, and authentication defined in <a href="specsLoader.html?spec=DS004-tasks-models-and-authentication.md">DS004</a>.</p>
   </article></main>
   <div id="site-footer"></div>
 </body>

@@ -51,7 +51,7 @@
 
     <h2>Security and boundaries</h2>
     <p>Every initial and continued provider process runs inside a nested Bubblewrap namespace. The canonical project directory is the only writable project bind; sibling projects and the broader workspace are not mounted. Provider configuration and session directories receive only the access required for PI to operate. The task environment excludes raw Ploinky credentials and provider secrets, while networking remains available for provider calls.</p>
-    <p>The worker fails closed when it cannot establish the task sandbox. Its readiness check proves that the selected sandbox mode can start PI before Ploinky marks the agent ready. The shared continuation, authentication, and sandbox requirements are defined in <a href="../../achilles-cli/docs/specsLoader.html?spec=DS010-ecosystem-integration.md">DS010 ecosystem integration</a>.</p>
+    <p>The worker fails closed when it cannot establish the task sandbox. Its readiness check proves that the selected sandbox mode can start PI before Ploinky marks the agent ready. The agent contracts are indexed in the <a href="specsLoader.html?spec=matrix.md">PI Agent specification matrix</a>, with task, model, and authentication behavior defined in <a href="specsLoader.html?spec=DS004-task-model-and-authentication.md">DS004</a>.</p>
   </article></main>
   <div id="site-footer"></div>
 </body>

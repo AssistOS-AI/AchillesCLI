@@ -33,7 +33,3 @@ The user initiates local command execution when the selected skill invokes the B
 ### Persistent delegated tasks
 
 The user initiates delegation by requesting a supported coding or research agent or by executing a launcher skill. AchillesCLI starts the target through Ploinky and AgentServer interfaces, records a stable local task identifier and lifecycle journal under `.achilles-cli/tasks/`, streams or stores provider output, and returns an immediate acknowledgement for asynchronous work. `/tasks` and `/task view|stop|continue` expose the observable lifecycle without transferring persistence ownership to WebChat. Continuation creates a new remote execution while retaining the local task identity and opaque provider handle. Provider-specific launch, sandbox, model, and output rules remain in [DS010](specsLoader.html?spec=DS010-ecosystem-integration.md), [DS012](specsLoader.html?spec=DS012-opencode-launcher-delegation.md), and [DS013](specsLoader.html?spec=DS013-codex-launcher-delegation.md).
-
-## Conclusion
-
-AchillesCLI fulfills its purpose when a user can submit work, apply and maintain reusable skills, run approved local commands within the chosen workspace, and manage delegated tasks through a consistent session contract. UI rendering, logging helpers, and narrow provider adapters support these behaviors but do not independently define the product.

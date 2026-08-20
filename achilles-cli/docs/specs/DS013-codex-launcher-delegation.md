@@ -45,22 +45,10 @@ The provider remains `startup: manual` and absent from the AchillesCLI manifest 
 
 ### Rationale and Boundaries
 
-#### Question #1: Why does the continuation record omit the model?
+Continuation must honor the current task choice or current user configuration. Persisting the initial model would make old provider state override a later model choice. An explicit task-specific override applies only to the new turn; otherwise Codex resolves its active configuration when the continuation starts.
 
-Response: Continuation must honor the current task choice or current user configuration. Persisting the initial model would make old provider state override a later model choice. An explicit task-specific override applies only to the new turn; otherwise Codex resolves its active configuration when the continuation starts.
+Codex JSONL contains transport and lifecycle records that are useful to the wrapper but are not native textual task output. Forwarding the textual agent and completed command payloads preserves live provider output without exposing control records or duplicating the final structured result.
 
-#### Question #2: Why are only selected JSONL payloads visible?
+WebChat cannot answer interactive CLI approval prompts, so the provider uses the `never` approval policy. Codex still enforces `workspace-write`, with the resolved project directory as its working root. This permits ordinary coding changes in the selected workspace while commands that need broader filesystem access fail instead of prompting or bypassing confinement. The Ploinky runtime remains an additional outer isolation boundary.
 
-Response: Codex JSONL contains transport and lifecycle records that are useful to the wrapper but are not native textual task output. Forwarding the textual agent and completed command payloads preserves live provider output without exposing control records or duplicating the final structured result.
-
-#### Question #3: Why does Codex use `workspace-write` with approvals disabled?
-
-Response: WebChat cannot answer interactive CLI approval prompts, so the provider uses the `never` approval policy. Codex still enforces `workspace-write`, with the resolved project directory as its working root. This permits ordinary coding changes in the selected workspace while commands that need broader filesystem access fail instead of prompting or bypassing confinement. The Ploinky runtime remains an additional outer isolation boundary.
-
-#### Question #4: Why is Codex installed under the agent home?
-
-Response: Linux host sandboxes expose system paths such as `/usr` read-only, while the per-instance home is writable and persists across runtime recreation. A home-relative installation therefore gives container and Bubblewrap execution one launcher contract and keeps provider state scoped to the enabled instance.
-
-## Conclusion
-
-Codex delegation is a fixed, router-mediated, resumable provider capability. It preserves live output, current-model continuation semantics, opaque provider state, manual worker startup, and the generic WebChat task contract.
+Linux host sandboxes expose system paths such as `/usr` read-only, while the per-instance home is writable and persists across runtime recreation. A home-relative installation therefore gives container and Bubblewrap execution one launcher contract and keeps provider state scoped to the enabled instance.

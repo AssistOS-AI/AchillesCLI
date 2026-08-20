@@ -55,7 +55,7 @@
 
     <h2>Security and boundaries</h2>
     <p>The provider runs in the supplied project directory under Codex's workspace-write policy and the outer Ploinky runtime boundary. Commands that require writes outside the workspace fail without an interactive approval path. The continuation store rejects invalid handles and unsafe symlinked storage. Provider thread identifiers, filesystem paths, prompts, and credentials do not appear in the generic continuation descriptor.</p>
-    <p>The authoritative provider contract is <a href="../../achilles-cli/docs/specsLoader.html?spec=DS013-codex-launcher-delegation.md">DS013 Codex launcher delegation</a>.</p>
+    <p>The agent contracts are indexed in the <a href="specsLoader.html?spec=matrix.md">Codex Agent specification matrix</a>. Task continuation and authentication are defined in <a href="specsLoader.html?spec=DS004-task-continuation-and-authentication.md">DS004</a>.</p>
   </article></main>
   <div id="site-footer"></div>
 </body>
