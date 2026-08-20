@@ -1,12 +1,7 @@
 ---
-id: DS003
-title: Global Architecture
-status: active
-owner: AchillesCLI Maintainers
+title: DS014-global-architecture
 summary: Defines the top-level runtime architecture, execution planes, and cross-module invariants.
 ---
-
-# DS003-global-architecture
 
 ## Introduction
 This DS defines AchillesCLI global architecture. It captures the stable runtime shape and the boundaries between bootstrapping, command handling, UI, schemas, and skills.
@@ -65,22 +60,19 @@ Communication prompt invariants:
 2. The orchestrator system prompt must not prefer one-word responses as a general optimization rule.
 3. User-facing brevity guidance must remain subordinate to the structured planner decision contract enforced by AchillesAgentLib.
 
-## Decisions & Questions
+### Rationale and Boundaries
 
-### Question #1: Why does the communication policy avoid preferring one-word answers?
+#### Question #1: Why does the communication policy avoid preferring one-word answers?
 
-Response:
-A one-word preference can remove context required for a useful answer and can interfere with an enclosing planner contract. Describing concise, direct responses as preferable preserves the intended user experience without turning minimum length into a higher-priority output rule.
+Response: A one-word preference can remove context required for a useful answer and can interfere with an enclosing planner contract. Describing concise, direct responses as preferable preserves the intended user experience without turning minimum length into a higher-priority output rule.
 
-### Question #2: Why does the trusted broker remain outside the persistent MainAgent sandbox?
+#### Question #2: Why does the trusted broker remain outside the persistent MainAgent sandbox?
 
-Response:
-The broker owns trusted permission state without exposing that authority to MainAgent, but it does not expose Bash execution or store reusable approvals. The local executor runs inside MainAgent and its child processes inherit the persistent Bubblewrap namespace. Keeping authorization outside also preserves a clean extension point for a future explicit escalation protocol.
+Response: The broker owns trusted permission state without exposing that authority to MainAgent, but it does not expose Bash execution or store reusable approvals. The local executor runs inside MainAgent and its child processes inherit the persistent Bubblewrap namespace. Keeping authorization outside also preserves a clean extension point for a future explicit escalation protocol.
 
-### Question #3: Why does WebChat approval suspend the original broker request?
+#### Question #3: Why does WebChat approval suspend the original broker request?
 
-Response:
-The command result belongs to the tool call that requested it. Holding that request open lets `allow`, `deny`, and `always allow` return through the same execution path without turning a control decision into a new conversation message or asking the planner to reconstruct a previous turn.
+Response: The command result belongs to the tool call that requested it. Holding that request open lets `allow`, `deny`, and `always allow` return through the same execution path without turning a control decision into a new conversation message or asking the planner to reconstruct a previous turn.
 
 ## Conclusion
 AchillesCLI architecture remains a layered CLI system where deterministic command execution and LLM orchestration coexist under a single runtime contract.

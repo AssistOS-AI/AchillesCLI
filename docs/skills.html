@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AchillesCLI Documentation</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="index.html">Home</a> / Skills</p>
+    <h1>AchillesCLI Documentation</h1>
+    <p class="lead">The built-in catalog under <code>achilles-cli/src/skills/</code> supplies the concrete operations used by slash commands and natural-language planning.</p>
+
+    <h2>Skill artifacts and discovery</h2>
+    <p>Each built-in directory contains a descriptor such as <code>cskill.md</code> or <code>oskill.md</code> and, when execution is required, a local <code>src/index.mjs</code> or orchestrator module. Launcher skills may also carry a <code>specs/</code> contract. AchillesCLI combines this built-in root with registered workspace roots and repeatable <code>--skill-root</code> values, then applies persisted workspace enablement before execution.</p>
+
+    <h2>Catalog groups</h2>
+    <table>
+      <thead><tr><th>Group</th><th>Distributed skills and role</th></tr></thead>
+      <tbody>
+        <tr><td>Discovery and CRUD</td><td><code>list-skills</code>, <code>read-skill</code>, <code>write-skill</code>, <code>delete-skill</code>, and <code>update-section</code> locate and change descriptors.</td></tr>
+        <tr><td>Validation and templates</td><td><code>validate-skill</code> applies the registered schema family; <code>get-template</code> returns a supported descriptor skeleton; <code>preview-changes</code> produces a reviewable diff.</td></tr>
+        <tr><td>Build and verification</td><td><code>generate-code</code>, <code>test-code</code>, <code>write-tests</code>, <code>run-tests</code>, and <code>skill-refiner</code> produce runtime modules and verify their behavior.</td></tr>
+        <tr><td>Execution and orchestration</td><td><code>execute-skill</code>, <code>skills-orchestrator</code>, and <code>bash</code> run selected operations. Bash delegates authorization to the Broker and execution to the sandbox-local executor.</td></tr>
+        <tr><td>Specifications and memory</td><td><code>read-specs</code>, <code>write-specs</code>, and <code>aku-memory</code> access skill-local contracts and deterministic Agentic Knowledge Unit storage.</td></tr>
+        <tr><td>External launchers</td><td><code>launch-codex</code>, <code>launch-opencode</code>, <code>launch-pi</code>, <code>launch-gpt-researcher</code>, <code>launch-open-interpreter</code>, and <code>launch-web-search</code> delegate work to named Ploinky agents.</td></tr>
+        <tr><td>Session bootstrap</td><td><code>intro-skill</code> supplies the model-guided introduction used when a new session has no conversation history.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Schema families</h2>
+    <p><code>achilles-cli/src/schemas/skillSchemas.mjs</code> recognizes the project's code, orchestrator, MCP, table, and dynamic-code descriptor families. Validation checks the required and optional sections for the detected family. Generated modules and tests remain inside the skill directory so a copied skill carries its implementation and verification artifacts with it.</p>
+
+    <h2>Enable or disable workspace skills</h2>
+    <p>AchillesCLI keeps skill state per workspace. Disabling a skill prevents normal execution and removes it from executable command suggestions, but does not delete the skill. It remains registered so it can be enabled again later.</p>
+
+    <h3>Change one skill</h3>
+    <p>Use the canonical skill name when only one skill should change.</p>
+    <pre><code>/skill disable experimental-search
+/skill enable experimental-search</code></pre>
+
+    <h3>Change a directory of skills</h3>
+    <p>Use a directory path relative to the current workspace to change every registered skill below that directory. The operation includes registered descendants in nested directories.</p>
+    <pre><code>/skills disable skills/experimental
+/skills enable skills/experimental</code></pre>
+    <p>Run <code>/skills</code> without arguments to inspect the registered catalog and its current state.</p>
+
+    <h3>CLI and WebChat</h3>
+    <p>The same persistent state applies in both interfaces. In the CLI, enter the slash commands with an exact skill name or relative directory. Ploinky WebChat exposes the skill catalog and state as interface controls, which makes selecting and toggling an individual skill or a whole skill directory more convenient.</p>
+
+    <h2>Execution boundary</h2>
+    <p>The <a href="wiki.html#definition-skill">skill</a> descriptor defines the operation presented to the planner. AchillesAgentLib performs discovery and agent-loop execution, while AchillesCLI provides built-in handlers, workspace state, UI adapters, and the Bash security boundary. Product requirements for discovery and execution are authoritative in <a href="specsLoader.html?spec=DS007-skills-runtime-and-builtins.md">DS007</a> and schema contracts in <a href="specsLoader.html?spec=DS008-schemas-and-skill-doc-contract.md">DS008</a>.</p>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>

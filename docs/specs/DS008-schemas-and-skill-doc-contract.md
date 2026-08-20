@@ -1,12 +1,7 @@
 ---
-id: DS008
-title: Schemas and Skill Documentation Contracts
-status: active
-owner: AchillesCLI Maintainers
+title: DS008-schemas-and-skill-doc-contract
 summary: Defines skill schema detection, validation rules, templates, and `specs/` integration.
 ---
-
-# DS008-schemas-and-skill-doc-contract
 
 ## Introduction
 This DS specifies how AchillesCLI interprets skill documents and sidecar specifications through schema utilities in `src/schemas/skillSchemas.mjs`.

@@ -1,12 +1,7 @@
 ---
-id: DS002
-title: LLM Tier and Model Strategy
-status: active
-owner: AchillesCLI Maintainers
+title: DS002-llm-model-strategy
 summary: Defines mandatory LLM routing, tier semantics, and persisted workspace model selection.
 ---
-
-# DS002-llm-model-strategy
 
 ## Introduction
 AchillesCLI executes both deterministic commands and LLM-mediated orchestration. This DS defines the mandatory model-routing strategy and the operational controls exposed by the runtime.
@@ -48,27 +43,23 @@ Safety and visibility:
 1. Debug logging may expose routing details only in debug mode.
 2. User-facing responses in normal mode must avoid leaking internal prompts, stack traces, and credentials.
 
-## Decisions & Questions
+### Rationale and Boundaries
 
-### Question #1: Why is hosted Soul Gateway fallback allowed for now?
+#### Question #1: Why is hosted Soul Gateway fallback allowed for now?
 
-Response:
-AchillesCLI currently needs to run from Explorer workspaces whose nearest parent `.env` may carry a hosted `SOUL_GATEWAY_API_KEY`. Letting that explicit key configure the initial LLM provider keeps startup working during the migration window, but it is not the canonical model-routing rule. DS010 records the exact manifest offset for this temporary agent-level opt-in.
+Response: AchillesCLI currently needs to run from Explorer workspaces whose nearest parent `.env` may carry a hosted `SOUL_GATEWAY_API_KEY`. Letting that explicit key configure the initial LLM provider keeps startup working during the migration window, but it is not the canonical model-routing rule. DS010 records the exact manifest offset for this temporary agent-level opt-in.
 
-### Question #2: Why does WebChat receive the complete model catalog instead of requesting pages from Soul Gateway?
+#### Question #2: Why does WebChat receive the complete model catalog instead of requesting pages from Soul Gateway?
 
-Response:
-Soul Gateway can expose hundreds of direct models and cascades, but the minimal credential-free catalog remains small enough to search locally. AchillesCLI returns it once, ordered with the current selection and common cascades first. The generic WebChat autocomplete keeps every matching model selectable while progressively adding bounded DOM batches behind a fixed-height scrollable viewport, avoiding both per-keystroke network requests and a single large render.
+Response: Soul Gateway can expose hundreds of direct models and cascades, but the minimal credential-free catalog remains small enough to search locally. AchillesCLI returns it once, ordered with the current selection and common cascades first. The generic WebChat autocomplete keeps every matching model selectable while progressively adding bounded DOM batches behind a fixed-height scrollable viewport, avoiding both per-keystroke network requests and a single large render.
 
-### Question #3: Why does AchillesCLI publish the settings model instead of Soul Gateway's effective response model?
+#### Question #3: Why does AchillesCLI publish the settings model instead of Soul Gateway's effective response model?
 
-Response:
-The header is a view of the current workspace configuration. AchillesCLI can read that value deterministically before any request and immediately after a slash-command change, while an effective cascade leaf belongs to one provider response and may differ between internal calls. Publishing the persisted selection keeps the UI useful without introducing per-message model metadata or requiring WebChat to understand Soul Gateway routing.
+Response: The header is a view of the current workspace configuration. AchillesCLI can read that value deterministically before any request and immediately after a slash-command change, while an effective cascade leaf belongs to one provider response and may differ between internal calls. Publishing the persisted selection keeps the UI useful without introducing per-message model metadata or requiring WebChat to understand Soul Gateway routing.
 
-### Question #4: Why does AchillesCLI provide an explicit Soul Gateway invoker?
+#### Question #4: Why does AchillesCLI provide an explicit Soul Gateway invoker?
 
-Response:
-The selectable catalog is a user-interface and automatic-selection aid, not a client-side model allowlist. Agent-backed model identifiers may contain repository, agent, provider, and model segments and may appear after an AchillesCLI process has initialized its local catalog snapshot. Supplying `providerKey: soul_gateway` at the central invoker boundary lets AchillesAgentLib select the transport adapter, base URL, and credential while forwarding the opaque model identifier unchanged. Soul Gateway then applies its current catalog and authorization policy without requiring WebChat refreshes or AchillesCLI process restarts.
+Response: The selectable catalog is a user-interface and automatic-selection aid, not a client-side model allowlist. Agent-backed model identifiers may contain repository, agent, provider, and model segments and may appear after an AchillesCLI process has initialized its local catalog snapshot. Supplying `providerKey: soul_gateway` at the central invoker boundary lets AchillesAgentLib select the transport adapter, base URL, and credential while forwarding the opaque model identifier unchanged. Soul Gateway then applies its current catalog and authorization policy without requiring WebChat refreshes or AchillesCLI process restarts.
 
 ## Conclusion
 All LLM execution in AchillesCLI must remain centralized through `LLMAgent`, governed by explicit tier/model policy, and controllable through workspace-aware runtime commands.

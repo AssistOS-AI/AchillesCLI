@@ -1,12 +1,7 @@
 ---
-id: DS011
-title: AKU-Aware Copilot Memory
-status: draft
-owner: AchillesCLI Maintainers
+title: DS011-aku-aware-copilot-memory
 summary: Defines how AchillesCLI Copilot uses the local AKU library to resolve, create, update, link, and retrieve Knowledge Units during prompt-driven work.
 ---
-
-# DS011-aku-aware-copilot-memory
 
 ## Introduction
 This DS defines the AchillesCLI contract for using Agentic Knowledge Units during Copilot-style prompt execution.
@@ -93,30 +88,12 @@ Postflight persistence:
 5. If the user rejects or discards a result, AchillesCLI should use AKU status/discard APIs rather than deleting by default.
 
 Provider result cache policy:
-1. AchillesCLI may cache only pure-information provider results whose launcher
-   output declares `cacheable: true`.
-2. Open Interpreter execution results must never be automatic cache hits.
-   The Open Interpreter launcher declares `cacheable: false`; repeated
-   execution prompts must execute again.
-3. Cache lookup and persistence belong to `AkuMemoryAdapter` methods such as
-   `lookupCachedAgentResult()`, `persistAgentResult()`, and
-   `recordAgentDurableOutcome()`. These methods must use only public
-   `AgenticKnowledgeUnits` APIs such as `exists()`, `loadAKU()`, `search()`,
-   `listResults()`, `initKU()`, and `recordResult()`.
-4. Cache keys are represented through generic AKU metadata, tags, keywords, and
-   result fields. AchillesCLI must not read or write `.aku` internals to
-   implement provider caching.
-5. Cache matching has two allowed paths. Exact cache hits require the same
-   backend, same working directory, matching normalized prompt hash, and an
-   unexpired TTL. Similar-prompt cache hits may come from AKU `search()` without
-   a matching prompt hash only when the record is an agent-result cache entry
-   for the same backend and working directory, the TTL is unexpired, and the
-   prompt terms overlap conservatively enough for AchillesCLI to treat the hit
-   as a paraphrase rather than a different question. Lexical AKU search results
-   must not be treated as vector similarity.
-6. Cache records and durable outcome records must not store secrets,
-   invocation tokens, hidden reasoning, raw private prompts, credentials, or
-   sensitive file content.
+1. AchillesCLI may cache only pure-information provider results whose launcher output declares `cacheable: true`.
+2. Open Interpreter execution results must never be automatic cache hits. The Open Interpreter launcher declares `cacheable: false`; repeated execution prompts must execute again.
+3. Cache lookup and persistence belong to `AkuMemoryAdapter` methods such as `lookupCachedAgentResult()`, `persistAgentResult()`, and `recordAgentDurableOutcome()`. These methods must use only public `AgenticKnowledgeUnits` APIs such as `exists()`, `loadAKU()`, `search()`, `listResults()`, `initKU()`, and `recordResult()`.
+4. Cache keys are represented through generic AKU metadata, tags, keywords, and result fields. AchillesCLI must not read or write `.aku` internals to implement provider caching.
+5. Cache matching has two allowed paths. Exact cache hits require the same backend, same working directory, matching normalized prompt hash, and an unexpired TTL. Similar-prompt cache hits may come from AKU `search()` without a matching prompt hash only when the record is an agent-result cache entry for the same backend and working directory, the TTL is unexpired, and the prompt terms overlap conservatively enough for AchillesCLI to treat the hit as a paraphrase rather than a different question. Lexical AKU search results must not be treated as vector similarity.
+6. Cache records and durable outcome records must not store secrets, invocation tokens, hidden reasoning, raw private prompts, credentials, or sensitive file content.
 
 Retrieval behavior:
 1. Scoped natural-language references should resolve within the active folder-scoped parent context first.
@@ -141,42 +118,38 @@ Testing obligations:
 5. Unit tests must prove ambiguous mutations ask for disambiguation instead of silently updating the wrong KU.
 6. Integration tests should verify that Explorer/WebChat folder scope hints reach AchillesCLI without creating a KU by themselves.
 
-## Decisions & Questions
-### Question #1: Where is the AKU data model defined?
+### Rationale and Boundaries
+#### Question #1: Where is the AKU data model defined?
 
 Response: The AKU data model is defined by AchillesAgentLib DS008 and implemented in `AgenticKnowledgeUnits/internal/schemas.mjs`, with search/index projections in `AgenticKnowledgeUnits/internal/indexing.mjs` and constants in `AgenticKnowledgeUnits/internal/constants.mjs`. AchillesCLI must treat those as the schema authority. This DS defines how AchillesCLI populates generic AKU fields such as `ku_name`, `ku_type`, `tags`, `keywords`, `summary`, `reusable_findings`, folder scopes, links, and results.
 
-### Question #2: Why is Copilot behavior not specified in AKU DS008?
+#### Question #2: Why is Copilot behavior not specified in AKU DS008?
 
 Response: AKU is a deterministic local library. Prompt interpretation, user-facing Copilot behavior, and semantic decisions about what to create or update belong to AchillesCLI. Ploinky WebChat remains generic transport and should not know about KUs. Keeping those responsibilities in this DS prevents the shared AKU library and transport layers from depending on one host surface.
 
-### Question #3: How should AchillesCLI represent user-facing labels such as "experiment 1" before AKU has a first-class alias field?
+#### Question #3: How should AchillesCLI represent user-facing labels such as "experiment 1" before AKU has a first-class alias field?
 
 Response: AchillesCLI should encode such labels through generic AKU metadata: `ku_name`, `keywords`, `tags`, summaries, result titles, and link summaries. If first-class `aliases` or `ordinal` fields become necessary, that change belongs first in AchillesAgentLib DS008 as a generic AKU data model refinement, then AchillesCLI can adopt it.
 
-### Question #4: When may AchillesCLI create KUs automatically?
+#### Question #4: When may AchillesCLI create KUs automatically?
 
 Response: Automatic creation is allowed only when the prompt clearly defines durable work units or durable outputs. Creating a folder and launching named experiments is sufficient. Merely opening Copilot in a folder, asking a question, or inspecting a file is not sufficient.
 
-### Question #5: How should linked experiments enter context?
+#### Question #5: How should linked experiments enter context?
 
 Response: The active KU inferred by AchillesCLI and any high-confidence natural-language matches should be included first. Link records may appear as lightweight hints. Linked target summaries should be opt-in or task-driven so sibling experiments do not swamp the current task context.
 
-### Question #6: Are experiments a special implementation path?
+#### Question #6: Are experiments a special implementation path?
 
 Response: No. Experiments are one common KU type and the folder-plus-experiments prompt is a useful regression example because it exercises multi-KU creation, scope registration, linking, result retrieval, and natural-language labels. The implementation must generalize the same lifecycle to every `ku_type`. AchillesCLI may maintain a type policy table for defaults and preferred AKU APIs, but the table must treat unknown/custom type strings with a generic fallback and must not become Copilot-specific schema.
 
-### Question #7: Is `ku_type` a closed enum?
+#### Question #7: Is `ku_type` a closed enum?
 
 Response: No. DS008 defines `ku_type` as an open caller-defined string. The recommended catalog exists for interoperability and default policies, not validation. AchillesCLI must not reject or remap a clear custom type solely because it is absent from the recommended catalog.
 
-### Question #8: Can a provider-result cache hit reuse a similar prompt?
+#### Question #8: Can a provider-result cache hit reuse a similar prompt?
 
-Response: Yes, but only as a conservative AKU search fallback after exact
-prompt-hash lookup misses. Similar-prompt reuse must keep the same backend, same
-working directory, unexpired TTL, and an agent-result-cache record marker. The
-adapter must still reject low-overlap or unrelated search results so a cached
-provider answer is not served for a materially different request.
+Response: Yes, but only as a conservative AKU search fallback after exact prompt-hash lookup misses. Similar-prompt reuse must keep the same backend, same working directory, unexpired TTL, and an agent-result-cache record marker. The adapter must still reject low-overlap or unrelated search results so a cached provider answer is not served for a materially different request.
 
 ## Conclusion
 AchillesCLI should make AKU memory feel automatic to the user while preserving a strict boundary: Copilot interprets prompts and chooses memory actions; AKU stores, indexes, searches, links, repairs, and packs local Knowledge Units deterministically.

@@ -1,12 +1,7 @@
 ---
-id: DS006
-title: UI System and Interaction Providers
-status: active
-owner: AchillesCLI Maintainers
+title: DS006-ui-system
 summary: Specifies terminal UI components, rendering contracts, and provider abstractions.
 ---
-
-# DS006-ui-system
 
 ## Introduction
 This DS defines AchillesCLI user-interface architecture under `src/ui/`, including rendering utilities, selectors, editor behavior, help flows, and provider abstraction.

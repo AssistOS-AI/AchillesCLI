@@ -1,12 +1,7 @@
 ---
-id: DS005
-title: REPL and Command Processing
-status: active
-owner: AchillesCLI Maintainers
+title: DS005-repl-and-command-processing
 summary: Defines interactive session behavior, hierarchical command routing, and natural-language processing flow.
 ---
-
-# DS005-repl-and-command-processing
 
 ## Introduction
 This DS documents the interactive runtime in `src/repl/`, including session lifecycle, hierarchical command routing, and natural-language execution.
@@ -103,51 +98,39 @@ Operational invariants:
 12. Local task status vocabulary must remain `ongoing`, `finished`, `stopped`, and `error`. Provider queue vocabulary, including `queued`, remains in `remoteStatus`; protocol event names such as `started`, `reattached`, and `update` must not be treated as statuses.
 13. The workspace settings object may persist `disabledSkills` as canonical names. Missing state means every discovered workspace skill is enabled, and writes must preserve model, permission, and current-session settings.
 
-## Decisions & Questions
+### Rationale and Boundaries
 
-### Question #1: Why does `/tasks` use one command path in terminal and WebChat?
+#### Question #1: Why does `/tasks` use one command path in terminal and WebChat?
 
-Response:
-Both runtimes already dispatch deterministic slash commands through `SlashCommandHandler`. Injecting the same workspace task formatter preserves identical filtering, limits, and output while allowing the browser command catalog to discover `/tasks` without a second protocol.
+Response: Both runtimes already dispatch deterministic slash commands through `SlashCommandHandler`. Injecting the same workspace task formatter preserves identical filtering, limits, and output while allowing the browser command catalog to discover `/tasks` without a second protocol.
 
-### Question #2: Why is runtime model state published only after settings persistence?
+#### Question #2: Why is runtime model state published only after settings persistence?
 
-Response:
-The browser badge represents the explicit workspace configuration, so the emitted value must not get ahead of the durable setting. Reading the saved value back before publication keeps runtime execution state and the WebChat header aligned even if settings normalization changes later.
+Response: The browser badge represents the explicit workspace configuration, so the emitted value must not get ahead of the durable setting. Reading the saved value back before publication keeps runtime execution state and the WebChat header aligned even if settings normalization changes later.
 
-### Question #3: Why does WebChat use a dedicated interaction instead of the next chat message?
+#### Question #3: Why does WebChat use a dedicated interaction instead of the next chat message?
 
-Response:
-Approval is runtime control, not conversation content. A dedicated interaction lets the browser present bounded choices while the original broker request remains pending, keeps the decision out of history and planner context, and correlates the response to exactly one command without ending the active turn.
+Response: Approval is runtime control, not conversation content. A dedicated interaction lets the browser present bounded choices while the original broker request remains pending, keeps the decision out of history and planner context, and correlates the response to exactly one command without ending the active turn.
 
-### Question #4: Why is the permission mode persisted while exact-call approvals are not?
+#### Question #4: Why is the permission mode persisted while exact-call approvals are not?
 
-Response:
-The mode is an explicit workspace preference and `full-access` still remains inside the workspace sandbox. Exact-call approvals suppress repeated prompts for one command but do not widen filesystem access, so they remain ephemeral session state rather than workspace configuration.
+Response: The mode is an explicit workspace preference and `full-access` still remains inside the workspace sandbox. Exact-call approvals suppress repeated prompts for one command but do not widen filesystem access, so they remain ephemeral session state rather than workspace configuration.
 
-### Question #5: Why are conversation history and command history separate?
+#### Question #5: Why are conversation history and command history separate?
 
-Response:
-Command history supports terminal navigation and includes deterministic slash commands. Durable conversation sessions distinguish semantic model context from presentation records: visible WebChat commands and their responses may be mirrored into the session with `context: false`, while `initialHistory` filters those records and task items out. This restores the browser transcript without polluting later MainAgent context or replacing terminal command-history navigation.
+Response: Command history supports terminal navigation and includes deterministic slash commands. Durable conversation sessions distinguish semantic model context from presentation records: visible WebChat commands and their responses may be mirrored into the session with `context: false`, while `initialHistory` filters those records and task items out. This restores the browser transcript without polluting later MainAgent context or replacing terminal command-history navigation.
 
-### Question #6: Why is post-turn skill refresh bounded independently from prompt execution?
+#### Question #6: Why is post-turn skill refresh bounded independently from prompt execution?
 
-Response:
-The assistant result and conversation record are already complete before final maintenance runs. A rejected or indefinitely pending refresh must not poison the serialized prompt chain and prevent later messages from reaching MainAgent. Keeping the queue recoverable and limiting only this post-turn maintenance wait preserves ordered prompts while allowing refresh failures to remain observable through logs.
+Response: The assistant result and conversation record are already complete before final maintenance runs. A rejected or indefinitely pending refresh must not poison the serialized prompt chain and prevent later messages from reaching MainAgent. Keeping the queue recoverable and limiting only this post-turn maintenance wait preserves ordered prompts while allowing refresh failures to remain observable through logs.
 
-### Question #7: Why does AchillesCLI own task commands and persistence?
+#### Question #7: Why does AchillesCLI own task commands and persistence?
 
-Response:
-AchillesCLI can be launched in terminal REPL, single-shot, or WebChat mode. Keeping the journal, log ingestion, reattachment, stop, and continuation logic inside AchillesCLI gives each mode the same task lifecycle, while WebChat remains a generic command and presentation surface.
+Response: AchillesCLI can be launched in terminal REPL, single-shot, or WebChat mode. Keeping the journal, log ingestion, reattachment, stop, and continuation logic inside AchillesCLI gives each mode the same task lifecycle, while WebChat remains a generic command and presentation surface.
 
-### Question #8: Why is a continuation prompt a task-log entry rather than chat output?
+#### Question #8: Why is a continuation prompt a task-log entry rather than chat output?
 
-Response:
-The prompt belongs to the continued task's execution timeline and must stay next
-to the provider output it caused. Persisting and publishing it from AchillesCLI
-keeps terminal and WebChat task inspection consistent, while suppressing the
-invisible `/task continue` acknowledgement prevents task controls from becoming
-unrelated messages in the main conversation.
+Response: The prompt belongs to the continued task's execution timeline and must stay next to the provider output it caused. Persisting and publishing it from AchillesCLI keeps terminal and WebChat task inspection consistent, while suppressing the invisible `/task continue` acknowledgement prevents task controls from becoming unrelated messages in the main conversation.
 
 ## Conclusion
 The REPL subsystem is the primary interactive contract for AchillesCLI and must keep deterministic commands, orchestrated prompting, and session-state controls coherent. The hierarchical command model provides uniform discovery and execution through the `/` menu.

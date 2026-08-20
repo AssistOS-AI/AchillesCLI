@@ -1,0 +1,17 @@
+{
+  "name": "@assistos-ai/achilles-cli-agent",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "achilles-cli": "bin/achilles-cli"
+  },
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "achillesAgentLib": "git+https://github.com/AssistOS-AI/achillesAgentLib.git"
+  }
+}

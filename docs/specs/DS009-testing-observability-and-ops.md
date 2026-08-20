@@ -1,12 +1,7 @@
 ---
-id: DS009
-title: Testing, Observability, and Operational Controls
-status: active
-owner: AchillesCLI Maintainers
+title: DS009-testing-observability-and-ops
 summary: Defines test surfaces, logging behavior, metrics hooks, and operational runtime controls.
 ---
-
-# DS009-testing-observability-and-ops
 
 ## Introduction
 This DS defines verification and operational visibility surfaces for AchillesCLI, including test entry points and runtime observability modules.
@@ -33,9 +28,7 @@ Operational controls:
 7. WebChat runtime errors must preserve the user-safe error message and may expose the first mapped source frame as a Markdown link through Ploinky's authenticated `/workspace-files/` route. Source mapping is restricted to known AchillesCLI, AchillesAgentLib, and bundled Ploinky runtime roots; arbitrary absolute stack paths must not enter conversation output.
 8. AchillesAgentLib errors must pass through without AchillesCLI reclassification. WebChat, the terminal REPL, and single-shot execution therefore show the same concise explanation, while only WebChat adds the mapped source link.
 9. The local Bash executor must capture child stdout and stderr as bounded tool results and must not relay them through the AchillesCLI process streams.
-10. Bubblewrap startup failures and broker protocol failures must be explicit and fail closed.
-    A parent-namespace procfs mismatch must name the process id and `/proc/self`
-    mismatch instead of surfacing Bubblewrap's lower-level namespace-open error.
+10. Bubblewrap startup failures and broker protocol failures must be explicit and fail closed. A parent-namespace procfs mismatch must name the process id and `/proc/self` mismatch instead of surfacing Bubblewrap's lower-level namespace-open error.
 
 Reliability invariants:
 1. Runtime failures should surface explicit diagnostics without leaking sensitive internals in non-debug output.
@@ -56,27 +49,23 @@ Cancellation test coverage requirements:
 10. Skill-state coverage must verify default-enabled discovery, canonical disabled-name persistence, workspace path confinement, recursive directory targeting, session-tool refresh, WebChat envelope output, restoration after MainAgent replacement, exclusion from executable slash completions, and continued availability under `/skill enable`.
 11. Task-management coverage must verify AchillesCLI-owned metadata and log persistence, preservation of `queued` as a remote status, action-specific autocomplete, exact remote cancellation, stable local ids across continuation turns, stale-turn rejection, and identical slash-command behavior in terminal and WebChat modes.
 
-## Decisions & Questions
+### Rationale and Boundaries
 
-### Question #1: Why are ongoing logs excluded from `/tasks`?
+#### Question #1: Why are ongoing logs excluded from `/tasks`?
 
-Response:
-The command is a bounded status snapshot rather than a second live-monitoring surface. WebChat already receives lifecycle updates through dedicated task envelopes, while terminal callers only need durable task state and bounded final diagnostics.
+Response: The command is a bounded status snapshot rather than a second live-monitoring surface. WebChat already receives lifecycle updates through dedicated task envelopes, while terminal callers only need durable task state and bounded final diagnostics.
 
-### Question #2: Why do WebChat errors link only mapped runtime sources?
+#### Question #2: Why do WebChat errors link only mapped runtime sources?
 
-Response:
-The authenticated workspace-file route provides a useful path from an error to editable source without publishing raw container paths. Restricting links to known package and runtime roots keeps internal or provider-specific absolute paths out of persisted conversation history.
+Response: The authenticated workspace-file route provides a useful path from an error to editable source without publishing raw container paths. Restricting links to known package and runtime roots keeps internal or provider-specific absolute paths out of persisted conversation history.
 
-### Question #3: Why does AchillesCLI not wrap clarified AchillesAgentLib errors?
+#### Question #3: Why does AchillesCLI not wrap clarified AchillesAgentLib errors?
 
-Response:
-The library now distinguishes missing model text, invalid planner response shapes, provider status failures, and execution limits at their original source. Passing those errors through preserves the useful stack frame and keeps terminal and WebChat wording consistent; WebChat only adds the authenticated source link.
+Response: The library now distinguishes missing model text, invalid planner response shapes, provider status failures, and execution limits at their original source. Passing those errors through preserves the useful stack frame and keeps terminal and WebChat wording consistent; WebChat only adds the authenticated source link.
 
-### Question #4: Why does a failed sandboxed Bash command not trigger an outside retry?
+#### Question #4: Why does a failed sandboxed Bash command not trigger an outside retry?
 
-Response:
-Bubblewrap propagates ordinary child-process failures and does not provide a semantic outside-workspace event. Treating a non-zero exit as proof that host access is required would be unsafe and would misclassify normal application errors. The current executor therefore returns every failure as an ordinary tool result and has no host-execution path.
+Response: Bubblewrap propagates ordinary child-process failures and does not provide a semantic outside-workspace event. Treating a non-zero exit as proof that host access is required would be unsafe and would misclassify normal application errors. The current executor therefore returns every failure as an ordinary tool result and has no host-execution path.
 
 ## Conclusion
 Testing and observability contracts ensure AchillesCLI remains maintainable, diagnosable, and operationally predictable as the runtime evolves.

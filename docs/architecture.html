@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AchillesCLI Documentation</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+    await mermaid.run();
+
+    document.querySelectorAll('.diagram svg').forEach((svg) => {
+      svg.querySelectorAll('g.cluster').forEach((cluster) => {
+        const rect = cluster.querySelector(':scope > rect');
+        const label = cluster.querySelector(':scope > g.cluster-label');
+        const labelBox = label?.querySelector('foreignObject');
+        if (!rect || !label || !labelBox) return;
+
+        const x = Number(rect.getAttribute('x')) + 12;
+        const y = Number(rect.getAttribute('y')) + Number(rect.getAttribute('height')) - (Number(labelBox.getAttribute('height')) / 2);
+        label.setAttribute('transform', `translate(${x}, ${y})`);
+        labelBox.setAttribute('width', String(Number(labelBox.getAttribute('width')) + 8));
+        const labelSurface = labelBox.querySelector('div');
+        if (labelSurface) {
+          labelSurface.style.backgroundColor = '#fcfcfc';
+          labelSurface.style.padding = '0 4px';
+        }
+      });
+
+      const viewBox = svg.viewBox.baseVal;
+      svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height + 8}`);
+    });
+  </script>
+  <script src="partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="index.html">Home</a> / Architecture</p>
+    <h1>AchillesCLI Architecture</h1>
+    <p class="lead"><a href="wiki.html#definition-achilles-cli">AchillesCLI</a> is a local agent runtime built around one fixed workspace, a trusted authorization boundary, and a sandboxed execution environment. Its architecture stays fundamentally the same whether the user starts it directly or reaches it through Ploinky; Ploinky adds lifecycle management, authenticated routing, WebChat transport, and access to other agents around the same core runtime.</p>
+
+    <h2>System at a glance</h2>
+    <p>The architecture separates the component that decides whether a Bash command may run from the component that executes it. The trusted side establishes the session boundary and handles approval decisions. The sandboxed side interprets requests, chooses skills, calls language models, and runs approved commands. This separation prevents the agent from granting itself broader permission while it is working.</p>
+
+    <figure class="diagram">
+      <pre class="mermaid">flowchart TB
+  User[Terminal or WebChat user]
+  subgraph Trusted[Trusted CLI process]
+    Broker[AchillesBroker: permissions and lifecycle]
+  end
+  subgraph Sandbox[Bubblewrap workspace namespace]
+    Agent[MainAgent: prompts and skills]
+    Bash[LocalBashExecutor: captured child process]
+    Agent --> Bash
+  end
+  User --> Broker
+  Broker --> Agent
+  Agent --> User
+  classDef person fill:#e8f3ff,stroke:#2463a3,font-weight:bold
+  classDef trusted fill:#fff2cc,stroke:#8a6d1d,font-weight:bold
+  classDef sandboxed fill:#e9f7ef,stroke:#26734d
+  class User person
+  class Broker trusted
+  class Agent,Bash sandboxed
+  linkStyle 1,2,3 stroke:#596675,stroke-width:1.25px</pre>
+      <figcaption><em>Trusted and sandboxed runtime boundaries</em></figcaption>
+    </figure>
+
+    <h2>Core components</h2>
+
+    <h3>Session controller</h3>
+    <p>The session controller converts a launch request into one running AchillesCLI session. It resolves the selected working directory, fixes that directory as the <a href="wiki.html#definition-workspace-boundary">workspace boundary</a>, loads the requested runtime settings, and chooses the interaction mode. A prompt supplied at startup produces a single result and then ends the process. An interactive terminal starts a <a href="wiki.html#definition-repl">REPL</a>. A Ploinky WebChat launch selects the structured message loop used by the browser interface. Once the session starts, the agent cannot silently replace the workspace with a broader directory.</p>
+
+    <h3>Trusted authorization broker</h3>
+    <p><a href="wiki.html#definition-achilles-broker">AchillesBroker</a> is the small trusted process outside the sandbox. It owns the permission mode, receives authorization requests for Bash, presents approval choices to the active user interface, and controls the lifetime of the sandboxed agent process. The broker never runs the requested Bash command itself. It only decides whether the sandboxed executor may run that exact request, which keeps execution and authorization under different authorities.</p>
+    <p>In <code>ask-for-approval</code> mode, the broker can allow one call, deny it, or approve that exact call for reuse during the session. A denial becomes a normal tool result so the agent can continue planning without pretending that the command ran. In <code>full-access</code> mode, Bash no longer pauses for approval, but every command remains inside the same workspace sandbox; the name refers to automatic execution within the workspace, not unrestricted access to the host.</p>
+
+    <h3>Workspace sandbox and Bash executor</h3>
+    <p><a href="wiki.html#definition-bubblewrap">Bubblewrap</a> creates the filesystem view used by the agent and every Bash child process it starts. The selected workspace is writable, required runtime resources are mounted with limited access, and unrelated host paths are absent. The Bash executor lives inside this environment, starts approved commands there, captures their output, and returns that output to the agent as a tool result. A failed or blocked command is never retried outside the sandbox.</p>
+    <p>This is a filesystem confinement boundary, not a separate network security boundary. Network access follows the surrounding runtime, while filesystem visibility remains restricted to what the session explicitly exposes.</p>
+
+    <h3>Agent runtime</h3>
+    <p>AchillesAgentLib <a href="wiki.html#definition-main-agent">MainAgent</a> is the reasoning and tool-execution core inside the sandbox. It receives the user's request and the conversation state, discovers the skills available to the session, decides which skill or tool should act, and returns the resulting answer. Natural-language requests may require several planning and execution steps. Slash commands bypass that open-ended planning when the user has already named the exact operation.</p>
+    <p>The runtime also coordinates cancellation, refreshes the skill catalog after relevant changes, and keeps the interaction interface separate from skill execution. Terminal and WebChat users therefore reach the same underlying agent behavior even though their messages and progress updates use different transports.</p>
+
+    <h3>Command and skill layer</h3>
+    <p>A <a href="wiki.html#definition-skill">skill</a> packages one reusable operation together with the instructions and optional executable behavior needed to perform it. The skill layer discovers built-in and workspace-provided skills, validates their descriptors, exposes direct slash commands, and makes enabled skills available to MainAgent. Deterministic commands such as reading, validating, or testing a named skill route directly to the corresponding behavior; broader requests let MainAgent coordinate multiple skills.</p>
+    <p>Skill enablement belongs to the workspace, while extra skill roots supplied at launch belong only to that process. Ploinky can contribute additional managed repository roots, but their skills enter the same catalog and follow the same enablement and sandbox rules as locally discovered skills.</p>
+
+    <h3>Language-model boundary</h3>
+    <p>All language-model calls pass through AchillesAgentLib <a href="wiki.html#definition-llm-agent">LLMAgent</a>. AchillesCLI selects a tier or an explicit model and supplies the conversation context, but it does not call individual model vendors directly. The <a href="wiki.html#definition-soul-gateway">Soul Gateway</a> validates the requested model and applies the configured provider routing. Runtime configuration may come from environment-derived defaults or explicit host overrides, while the selected workspace may persist the user's model choice.</p>
+
+    <h3>Workspace state</h3>
+    <p>AchillesCLI keeps durable state with the workspace so that a later process can resume the same user context. This state includes conversation sessions, selected runtime preferences, skill enablement, and journals for background work. Process-only state, such as a reusable approval for one exact Bash call, disappears when the running agent ends. Keeping these two lifetimes separate prevents a temporary authorization decision from becoming a permanent workspace permission.</p>
+
+    <h2>Independent execution</h2>
+    <p>When AchillesCLI runs independently, the user starts the local executable from the directory in which the agent should work. The local process owns the complete session lifecycle: it selects the workspace, starts the broker and sandbox, reads terminal input, displays approvals, and prints the final response. The user may run one prompt or remain in the interactive terminal. AchillesAgentLib is installed as the CLI's npm dependency, operating-system prerequisites are installed separately, and model-routing credentials and endpoints are supplied by the local environment.</p>
+    <p>Independent mode does not require a Ploinky workspace, Router, AgentServer, or browser interface. It provides the local agent, its skills, its workspace state, and the same Bash confinement directly in the terminal. Features that depend on Ploinky services—such as the dedicated WebChat transport, managed agent discovery, or delegation to another registered agent—are not supplied by the standalone process itself.</p>
+
+    <h2>Execution through Ploinky</h2>
+    <p>Ploinky surrounds AchillesCLI with a managed runtime. It installs and starts the agent, chooses the mounted workspace, provides an authenticated identity, makes the local Soul Gateway available, and connects AchillesCLI to Ploinky's routing and service lifecycle. AchillesCLI still creates its own broker and Bubblewrap boundary inside that managed environment. Ploinky does not grant Bash permission on behalf of the user and does not replace MainAgent's skill execution.</p>
+    <p>The user can enter the same CLI through Ploinky's terminal command or use the dedicated <a href="wiki.html#definition-webchat">WebChat</a> interface. In WebChat mode, ordinary terminal text is replaced by structured messages. User prompts arrive as message envelopes, and AchillesCLI publishes answer, progress, approval, session, skill-state, workspace-file, and background-task events that the browser can render. Approval remains attached to the original pending Bash request, so a browser decision resolves the same authorization flow used by the terminal.</p>
+    <p>Ploinky also makes optional delegation possible. Launcher skills can ask a registered <a href="wiki.html#definition-agentserver">AgentServer</a> to start work in another agent and return immediately with a background task. AchillesCLI remains the user-facing owner of the task journal, status, cancellation, and continuation handle, while the target agent owns its provider-specific process and session. WebChat displays this state but does not become its persistence owner.</p>
+
+    <h2>Independent and Ploinky-managed responsibilities</h2>
+    <table>
+      <thead><tr><th>Concern</th><th>Independent</th><th>Through Ploinky</th></tr></thead>
+      <tbody>
+        <tr><td>Startup and lifecycle</td><td>The local executable starts and stops the complete session.</td><td>Ploinky installs, starts, monitors, and routes to the AchillesCLI runtime.</td></tr>
+        <tr><td>User interface</td><td>Single-shot shell output or the interactive terminal REPL.</td><td>Ploinky terminal access or the dedicated WebChat interface.</td></tr>
+        <tr><td>Workspace</td><td>The directory selected by the local user becomes the sandbox boundary.</td><td>Ploinky selects and mounts the working directory; AchillesCLI fixes it as its sandbox boundary.</td></tr>
+        <tr><td>Model access</td><td>The local environment supplies the configured model-routing connection.</td><td>Ploinky supplies authenticated access to its managed Soul Gateway.</td></tr>
+        <tr><td>Skills</td><td>Built-in, workspace, explicitly added, and locally installed skill roots are discovered.</td><td>The same roots are available, with additional managed Ploinky repository roots when present.</td></tr>
+        <tr><td>Approvals</td><td>The terminal presents and resolves Bash approval choices.</td><td>The terminal or WebChat carries the choice, while AchillesBroker remains the authorization owner.</td></tr>
+        <tr><td>Delegation</td><td>The local process executes its own skills and tools.</td><td>Launcher skills may create work in other registered agents through Ploinky services.</td></tr>
+        <tr><td>Persistent state</td><td colspan="2">AchillesCLI stores conversations, preferences, skill state, and task journals with the workspace in both modes.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Invariants shared by both modes</h2>
+    <p>The selected workspace remains the only automatically writable filesystem tree. AchillesBroker remains outside the sandbox and never executes Bash. MainAgent and Bash children remain inside the sandbox. Every language-model request goes through LLMAgent. Permission choices change whether a command needs confirmation, not which host files it can reach. Durable user state remains associated with the workspace, while temporary execution authority remains associated with the running process.</p>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>

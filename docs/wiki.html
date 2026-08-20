@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AchillesCLI Documentation</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="index.html">Home</a> / Wiki</p>
+    <h1>AchillesCLI Documentation</h1>
+    <p class="lead">This page is the canonical source for project-specific terms used by the HTML documentation and design specifications.</p>
+    <dl>
+      <dt id="definition-achilles-cli">AchillesCLI</dt>
+      <dd>AchillesCLI is primarily the local, skill-oriented command-line agent implemented under <code>achilles-cli/</code>. A user runs it on their system inside a selected project directory to submit prompts, work with files, manage Achilles skill definitions, and control delegated tasks. Ploinky can also host the agent, route work to it, and expose its dedicated WebChat interface. The trusted entry point establishes the workspace and Bash approval authority; the sandboxed entry point owns agent reasoning, skills, sessions, and output. AchillesCLI depends on AchillesAgentLib for agent primitives and uses Ploinky for managed deployment and inter-agent routing, while retaining ownership of its conversation and task records.</dd>
+
+      <dt id="definition-achilles-agent-lib">AchillesAgentLib</dt>
+      <dd>AchillesAgentLib is the authorized shared runtime dependency that provides <code>MainAgent</code>, <code>LLMAgent</code>, skill discovery, planning, and execution primitives. AchillesCLI configures and extends those primitives through repository entry points and runtime adapters. The library is resolved through the Ploinky or development runtime rather than copied into this repository, and AchillesCLI must route model calls through its <code>LLMAgent</code> abstraction.</dd>
+
+      <dt id="definition-main-agent">MainAgent</dt>
+      <dd><code>MainAgent</code> is the AchillesAgentLib agent instance that interprets prompts, selects skills, records exact-call approvals, and composes final answers. AchillesCLI creates it in <code>src/index.mjs</code> inside the Bubblewrap workspace sandbox. It may start local Bash children only through <code>LocalBashExecutor</code> after the Broker-backed supervisor authorizes them. It does not own the trusted permission-mode control capability.</dd>
+
+      <dt id="definition-llm-agent">LLMAgent</dt>
+      <dd><code>LLMAgent</code> is the only authorized model-invocation abstraction for AchillesCLI. Runtime configuration, environment variables, workspace tier selection, or an explicit Soul Gateway model configure its behavior. Repository modules may decorate its invoker for Soul Gateway routing, but they must not bypass it with direct vendor HTTP requests. Soul Gateway remains responsible for validating an effective model identifier and selecting a provider.</dd>
+
+      <dt id="definition-achilles-broker">AchillesBroker</dt>
+      <dd><code>AchillesBroker</code> is the trusted process-side object created by <code>src/cli.mjs</code> before the MainAgent sandbox starts. It owns the authoritative Bash permission mode, terminal or WebChat approval interactions, the private control token, and sandbox-child lifecycle. It accepts structured authorization requests but exposes no Bash execution operation; approved commands are executed by <code>LocalBashExecutor</code> inside the sandbox.</dd>
+
+      <dt id="definition-bubblewrap">Bubblewrap</dt>
+      <dd>Bubblewrap, invoked as <code>bwrap</code>, creates the Linux mount namespace that confines the sandboxed AchillesCLI process. The namespace exposes the selected workspace as writable and runtime dependencies as controlled read-only mounts, with isolated temporary storage and a private or safe fallback <code>/proc</code>. Bash approvals never alter these mounts. When platform prerequisites cannot establish the required boundary, the trusted launcher fails instead of starting an unconstrained MainAgent.</dd>
+
+      <dt id="definition-workspace-boundary">Workspace boundary</dt>
+      <dd>The workspace boundary is the real directory selected from the invocation directory or <code>--dir</code>. It determines the files visible and writable to the MainAgent and its Bash child processes, the location of <code>.achilles-cli</code> settings and persistence, and the scope of workspace skill discovery. Permission decisions affect whether a Bash call starts; they do not add sibling projects, the user's complete home directory, or other host paths to this boundary.</dd>
+
+      <dt id="definition-permission-mode">Permission mode</dt>
+      <dd>The permission mode is the Broker-owned choice between <code>ask-for-approval</code> and <code>full-access</code>. The first requires a decision for a new exact Bash tool call, while the second starts Bash calls without the approval interaction. A validated value is stored per workspace in <code>.achilles-cli/settings.json</code>, and a startup flag can override it for one process. Both modes retain the same Bubblewrap filesystem restriction, and only the trusted control channel may change the live Broker value.</dd>
+
+      <dt id="definition-skill">Skill</dt>
+      <dd>A skill is a registered Achilles operation described by a family-specific Markdown descriptor and, when needed, local executable modules, tests, or sidecar specifications. Users invoke skills through natural-language planning or slash commands. AchillesCLI distributes built-ins under <code>achilles-cli/src/skills/</code>, discovers workspace and additional roots, validates descriptor families, and applies persistent enablement controls. A skill's portable artifacts remain in its directory rather than depending on a shared generated-code tree.</dd>
+
+      <dt id="definition-repl">REPL</dt>
+      <dd>The read-evaluate-print loop is AchillesCLI's interactive terminal mode, selected when the sandboxed runtime has a TTY and receives no one-shot prompt. <code>REPLSession</code> reads natural language and slash commands, manages history, supports command selection and ESC cancellation, and renders results through the configured UI provider. Conversation-session persistence is separate from terminal command history, and exiting the REPL ends the process without changing the workspace boundary.</dd>
+
+      <dt id="definition-webchat">WebChat</dt>
+      <dd>WebChat is the non-TTY transport in which AchillesCLI reads structured Ploinky envelopes from standard input and writes answers plus hidden UI-control envelopes to standard output. It presents approvals, sessions, task events, runtime model state, and workspace-file snapshots. AchillesCLI remains the owner of conversation and task persistence; WebChat carries and displays the state but does not store authoritative records or widen local filesystem access.</dd>
+
+      <dt id="definition-background-task">Background task</dt>
+      <dd>A background task is an asynchronous execution delegated through a launcher skill and AgentServer to another Ploinky agent. AchillesCLI assigns a stable local identifier, stores metadata in an append-only journal, stores output in task logs, polls the remote execution, and supports view, stop, and compatible continuation operations. A continuation may create a new remote task and opaque provider handle while retaining the local task identifier and ordered log.</dd>
+
+      <dt id="definition-agentic-knowledge-unit">Agentic Knowledge Unit</dt>
+      <dd>An Agentic Knowledge Unit, abbreviated AKU, is a deterministic AchillesAgentLib memory record used by AchillesCLI's Copilot behavior. AchillesCLI interprets prompt intent, chooses relevant units, invokes the library API, and supplies compact context to the agent loop. AchillesAgentLib owns storage, search, locking, recovery, and the data model; AchillesCLI does not redefine those rules and must not treat provider-result similarity as sufficient authority to create durable memory.</dd>
+
+      <dt id="definition-soul-gateway">Soul Gateway</dt>
+      <dd>Soul Gateway is the authenticated local routing service used by AchillesCLI for model discovery and invocation. The <code>/model</code> command searches its catalog and stores the chosen identifier, while the runtime forwards that identifier through an <code>LLMAgent</code> invoker configured with the <code>soul_gateway</code> provider key. The local catalog supports selection and display but is not an execution allowlist; Soul Gateway validates and routes each request.</dd>
+
+      <dt id="definition-agentserver">AgentServer</dt>
+      <dd>AgentServer is the Ploinky-facing interface that exposes agent tools, asynchronous task operations, and AchillesCLI's MCP skill catalog. Launcher skills use it through authenticated router calls to start and follow external work. AchillesCLI stores local task state and forwards request-bound assertions where required; AgentServer owns the target operation and remote status, not the user's local conversation records.</dd>
+    </dl>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>

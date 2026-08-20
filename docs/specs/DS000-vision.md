@@ -1,12 +1,7 @@
 ---
-id: DS000
-title: Repository Vision
-status: active
-owner: AchillesCLI Maintainers
+title: DS000-vision
 summary: Defines AchillesCLI mission, boundaries, and the authoritative documentation model.
 ---
-
-# DS000-vision
 
 ## Introduction
 AchillesCLI is a skill-oriented CLI runtime built on AchillesAgentLib and packaged as a Ploinky-ready agent surface. The repository must stay focused on executable runtime behavior and auditable technical contracts, not on detached conceptual narratives.

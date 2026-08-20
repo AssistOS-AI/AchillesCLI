@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AchillesCLI Documentation</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="index.html">Home</a> / Usage</p>
+    <h1>AchillesCLI Command Reference</h1>
+    <p class="lead">AchillesCLI accepts startup options and natural-language prompts from the shell, then exposes slash commands for direct control inside an interactive session. Every command operates inside the selected <a href="wiki.html#definition-workspace-boundary">workspace boundary</a>.</p>
+
+    <div class="command-layout">
+      <aside class="command-sidebar">
+        <nav aria-label="Usage shortcuts">
+          <h2>Shortcuts</h2>
+          <ul>
+            <li><a href="#start">Start and configure</a></li>
+            <li><a href="#navigation">Help and navigation</a></li>
+            <li><a href="#skill-files">Skill discovery and files</a></li>
+            <li><a href="#build-test">Build and test</a></li>
+            <li><a href="#repositories">Repositories</a></li>
+            <li><a href="#runtime">Runtime settings</a></li>
+            <li><a href="#sessions">Sessions and tasks</a></li>
+          </ul>
+        </nav>
+      </aside>
+      <div class="command-content">
+
+    <section class="command-group" id="start">
+      <h2>Start and configure</h2>
+
+      <h3><code>achilles-cli</code></h3>
+      <p>Starts an interactive REPL in the current directory. A prompt runs one request and exits. <code>--dir</code> selects another workspace, and repeatable <code>--skill-root</code> options add skill roots for this process.</p>
+      <p><strong>Usage:</strong></p>
+      <pre><code>achilles-cli [options] [prompt]</code></pre>
+      <p><strong>Examples:</strong></p>
+      <pre><code>achilles-cli
+achilles-cli --dir /path/to/project
+achilles-cli "explain the authentication flow"
+achilles-cli --skill-root /path/to/shared-skills</code></pre>
+
+      <h3><code>achilles-cli --permissions</code></h3>
+      <p>Selects the initial Bash <a href="wiki.html#definition-permission-mode">permission mode</a>. <code>ask-for-approval</code> requests approval for each new command; <code>full-access</code> skips prompts without widening the workspace sandbox.</p>
+      <p><strong>Usage:</strong></p>
+      <pre><code>achilles-cli --permissions &lt;ask-for-approval|full-access&gt;</code></pre>
+      <p><strong>Examples:</strong></p>
+      <pre><code>achilles-cli --permissions ask-for-approval
+achilles-cli --permissions full-access --dir /path/to/project</code></pre>
+
+      <h3><code>achilles-cli --fast</code> and <code>--deep</code></h3>
+      <p>Selects the fast or deep LLM tier alias for the process.</p>
+      <p><strong>Usage and examples:</strong></p>
+      <pre><code>achilles-cli --fast "list the files changed in this branch"
+achilles-cli --deep "review the repository architecture"</code></pre>
+
+      <h3><code>achilles-cli --ui</code></h3>
+      <p>Selects <code>claude-code</code>, the default interactive presentation, or the simpler <code>minimal</code> terminal interface.</p>
+      <p><strong>Usage:</strong></p>
+      <pre><code>achilles-cli --ui &lt;claude-code|minimal&gt;</code></pre>
+      <p><strong>Examples:</strong></p>
+      <pre><code>achilles-cli --ui minimal
+achilles-cli --ui-claude-code</code></pre>
+
+      <h3><code>achilles-cli --help</code> and <code>--version</code></h3>
+      <p>Prints process-level help or the CLI version without starting an agent session.</p>
+      <p><strong>Usage and examples:</strong></p>
+      <pre><code>achilles-cli --help
+achilles-cli --version</code></pre>
+    </section>
+
+    <section class="command-group" id="navigation">
+      <h2>Help and navigation</h2>
+
+      <h3><code>/help</code></h3>
+      <p>Opens the help picker or prints help for a named topic.</p>
+      <p><strong>Usage:</strong> <code>/help [topic]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/help
+/help commands
+/help testing</code></pre>
+
+      <h3><code>/history</code></h3>
+      <p>Shows history, limits it to the latest entries, searches for text, or clears it. <code>history</code> and <code>hist</code> also work without the slash.</p>
+      <p><strong>Usage:</strong> <code>/history [clear|&lt;n&gt;|&lt;query&gt;]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/history
+/history 20
+/history authentication
+/history clear</code></pre>
+
+      <h3><code>/reload</code></h3>
+      <p>Refreshes registered skills from disk so edits become available during the session. <code>reload</code> also works without the slash.</p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/reload</code></pre>
+
+      <h3><code>/exit</code> and <code>/quit</code></h3>
+      <p>Ends the interactive REPL. <code>/q</code> is an additional alias.</p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/exit
+/quit</code></pre>
+    </section>
+
+    <section class="command-group" id="skill-files">
+      <h2>Skill discovery and files</h2>
+
+      <h3><code>/list skills</code></h3>
+      <p>Lists registered user skills. Adding <code>all</code> includes built-in skills. The quick commands <code>list</code>, <code>ls</code>, <code>list all</code>, and <code>ls -a</code> provide the same common listings.</p>
+      <p><strong>Usage:</strong> <code>/list skills [all]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/list skills
+/list skills all</code></pre>
+
+      <h3><code>/read</code></h3>
+      <p>Reads the descriptor file for one registered skill.</p>
+      <p><strong>Usage:</strong> <code>/read &lt;skill-name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/read inventory</code></pre>
+
+      <h3><code>/write</code></h3>
+      <p>Creates or updates a skill descriptor. The optional type selects the descriptor family for a new skill.</p>
+      <p><strong>Usage:</strong> <code>/write &lt;skill-name&gt; [type]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/write inventory cskill
+/write inventory</code></pre>
+
+      <h3><code>/delete</code> and <code>/remove skill</code></h3>
+      <p>Deletes the directory for a named skill. Both forms run the same deletion behavior.</p>
+      <p><strong>Usage:</strong></p>
+      <pre><code>/delete &lt;skill-name&gt;
+/remove skill &lt;skill-name&gt;</code></pre>
+      <p><strong>Example:</strong></p>
+      <pre><code>/delete obsolete-skill</code></pre>
+
+      <h3><code>/template</code></h3>
+      <p>Returns the blank descriptor template for a supported skill type.</p>
+      <p><strong>Usage:</strong> <code>/template &lt;type&gt;</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/template cskill
+/template oskill</code></pre>
+
+      <h3><code>/validate</code></h3>
+      <p>Validates a skill descriptor against the schema for its registered type.</p>
+      <p><strong>Usage:</strong> <code>/validate &lt;skill-name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/validate inventory</code></pre>
+
+      <h3><code>/specs</code></h3>
+      <p>Reads Markdown files from a skill's <code>specs/</code> directory.</p>
+      <p><strong>Usage:</strong> <code>/specs &lt;skill-name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/specs inventory</code></pre>
+
+      <h3><code>/specs-write</code></h3>
+      <p>Creates or updates specification content for a skill.</p>
+      <p><strong>Usage:</strong> <code>/specs-write &lt;skill-name&gt; [content]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/specs-write inventory
+/specs-write inventory Require every item identifier to be unique.</code></pre>
+
+      <h3><code>/update</code></h3>
+      <p>Updates one named section of a skill descriptor while preserving the rest of the file.</p>
+      <p><strong>Usage:</strong> <code>/update &lt;skill-name&gt; &lt;section&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/update inventory Description</code></pre>
+
+      <h3><code>/scaffold</code></h3>
+      <p>Creates a documentation-oriented skill structure with <code>SKILL.md</code>, resources, and scripts.</p>
+      <p><strong>Usage:</strong> <code>/scaffold &lt;doc-type&gt; &lt;skill-name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/scaffold research product-research</code></pre>
+
+      <h3><code>/skill</code></h3>
+      <p>Enables or disables one registered workspace skill. Disabled skills remain available to the enable command.</p>
+      <p><strong>Usage:</strong> <code>/skill &lt;enable|disable&gt; &lt;skill-name&gt;</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/skill disable experimental-search
+/skill enable experimental-search</code></pre>
+
+      <h3><code>/skills</code></h3>
+      <p>Lists workspace skill state or changes every registered skill below a relative workspace directory.</p>
+      <p><strong>Usage:</strong></p>
+      <pre><code>/skills
+/skills &lt;enable|disable&gt; &lt;relative-directory&gt;</code></pre>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/skills
+/skills disable skills/experimental
+/skills enable skills/experimental</code></pre>
+    </section>
+
+    <section class="command-group" id="build-test">
+      <h2>Build and test</h2>
+
+      <h3><code>/build</code></h3>
+      <p>Builds skills that have pending generated-code work.</p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/build</code></pre>
+
+      <h3><code>/generate</code></h3>
+      <p>Generates runtime modules for a supported <code>tskill</code>, database-table skill, or <code>cskill</code>.</p>
+      <p><strong>Usage:</strong> <code>/generate &lt;skill-name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/generate inventory</code></pre>
+
+      <h3><code>/write-tests</code></h3>
+      <p>Generates a test file for one skill.</p>
+      <p><strong>Usage:</strong> <code>/write-tests &lt;skill-name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/write-tests inventory</code></pre>
+
+      <h3><code>/test</code></h3>
+      <p>Runs the test-code skill for one named skill. Without a name, AchillesCLI opens a picker.</p>
+      <p><strong>Usage:</strong> <code>/test [skill-name]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/test
+/test inventory</code></pre>
+
+      <h3><code>/run-tests</code></h3>
+      <p>Runs discovered <code>.tests.mjs</code> files for one skill or all skills. Without an argument, AchillesCLI opens a picker.</p>
+      <p><strong>Usage:</strong> <code>/run-tests [skill-name|all]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/run-tests inventory
+/run-tests all</code></pre>
+
+      <h3><code>/refine</code></h3>
+      <p>Uses test results to improve a named skill iteratively until the configured stopping condition.</p>
+      <p><strong>Usage:</strong> <code>/refine &lt;skill-name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/refine inventory</code></pre>
+
+      <h3><code>/exec</code></h3>
+      <p>Executes any enabled registered skill. Text after the skill name becomes its input.</p>
+      <p><strong>Usage:</strong> <code>/exec &lt;skill-name&gt; [input]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/exec web-search latest Node.js release notes
+/exec inventory</code></pre>
+    </section>
+
+    <section class="command-group" id="repositories">
+      <h2>Repositories</h2>
+
+      <h3><code>/add repo</code></h3>
+      <p>Clones a Git repository into the managed repository area. The optional name overrides the URL-derived name.</p>
+      <p><strong>Usage:</strong> <code>/add repo &lt;URL&gt; [name]</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/add repo https://github.com/AssistOS-AI/example-skills.git example-skills</code></pre>
+
+      <h3><code>/list repos</code></h3>
+      <p>Lists repositories cloned through AchillesCLI.</p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/list repos</code></pre>
+
+      <h3><code>/update repos</code></h3>
+      <p>Pulls updates for every cloned repository.</p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/update repos</code></pre>
+
+      <h3><code>/remove repo</code></h3>
+      <p>Removes one cloned repository by its managed name.</p>
+      <p><strong>Usage:</strong> <code>/remove repo &lt;name&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/remove repo example-skills</code></pre>
+    </section>
+
+    <section class="command-group" id="runtime">
+      <h2>Runtime settings</h2>
+
+      <h3><code>/tier</code></h3>
+      <p>Shows available LLM tiers or selects a tier alias. Selecting a tier clears an explicit model selection.</p>
+      <p><strong>Usage:</strong> <code>/tier [name]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/tier
+/tier fast
+/tier deep</code></pre>
+
+      <h3><code>/model</code></h3>
+      <p>Shows available models or stores one exact model selection for the workspace. Names come from the authenticated <a href="wiki.html#definition-soul-gateway">Soul Gateway</a> catalog.</p>
+      <p><strong>Usage:</strong> <code>/model [model-name]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/model
+/model provider/model-name</code></pre>
+
+      <h3><code>/permissions</code></h3>
+      <p>Shows or changes the persistent Bash permission mode for the current workspace.</p>
+      <p><strong>Usage:</strong> <code>/permissions [ask-for-approval|full-access]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/permissions
+/permissions ask-for-approval
+/permissions full-access</code></pre>
+
+      <h3><code>/raw</code></h3>
+      <p>Toggles terminal Markdown rendering for the active session.</p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/raw</code></pre>
+    </section>
+
+    <section class="command-group" id="sessions">
+      <h2>Sessions and tasks</h2>
+      <p>These commands are summarized here as part of the command reference. See <a href="tasks.html">Sessions and Asynchronous Tasks</a> for the lifecycle, persistence model, delegation boundary, and WebChat workflow.</p>
+
+      <h3><code>/session</code></h3>
+      <p>Opens the session picker. <code>new</code> creates a durable conversation; <code>resume</code> selects a saved session.</p>
+      <p><strong>Usage:</strong></p>
+      <pre><code>/session
+/session new
+/session resume &lt;session-id&gt;</code></pre>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/session new
+/session resume &lt;session-id-from-the-picker&gt;</code></pre>
+
+      <h3><code>/tasks</code></h3>
+      <p>Shows workspace-local <a href="wiki.html#definition-background-task">background task</a> status and bounded final log tails. A number limits the results; <code>all</code> returns every stored summary.</p>
+      <p><strong>Usage:</strong> <code>/tasks [count|all]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/tasks
+/tasks 10
+/tasks all</code></pre>
+
+      <h3><code>/task view</code></h3>
+      <p>Shows stored metadata and the latest stored log lines for one task.</p>
+      <p><strong>Usage:</strong> <code>/task view &lt;task-id&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/task view task-7</code></pre>
+
+      <h3><code>/task continue</code></h3>
+      <p>Continues a compatible terminal task with a new prompt while retaining its local identifier.</p>
+      <p><strong>Usage:</strong> <code>/task continue &lt;task-id&gt; &lt;prompt&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/task continue task-7 add tests for the new parser</code></pre>
+
+      <h3><code>/task stop</code></h3>
+      <p>Requests cancellation of a queued or running task.</p>
+      <p><strong>Usage:</strong> <code>/task stop &lt;task-id&gt;</code></p>
+      <p><strong>Example:</strong></p>
+      <pre><code>/task stop task-7</code></pre>
+
+      <h3><code>/task model</code></h3>
+      <p>Shows model choices for a continuable task or selects its execution model.</p>
+      <p><strong>Usage:</strong> <code>/task model &lt;task-id&gt; [model-key]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/task model task-7
+/task model task-7 provider/model-name</code></pre>
+
+      <h3><code>/task login</code></h3>
+      <p>Starts a provider connection flow inside the task agent. Optional arguments select a provider and login method.</p>
+      <p><strong>Usage:</strong> <code>/task login &lt;task-id&gt; [provider] [method]</code></p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>/task login task-7
+/task login task-7 codex device-code</code></pre>
+    </section>
+
+    <section class="command-group">
+      <h2>Natural-language requests</h2>
+      <p>Text that does not match a quick or slash command is sent to the local agent for planning and execution. Use natural language for work requiring several tools or decisions.</p>
+      <p><strong>Examples:</strong></p>
+      <pre><code>explain how requests reach the Soul Gateway
+create a cskill that summarizes JSON files
+run the relevant tests and fix any failures</code></pre>
+    </section>
+      </div>
+    </div>
+  </article></main>
+  <div id="site-footer"></div>
+  <script>
+    const shortcutLinks = [...document.querySelectorAll('.command-sidebar a')];
+    const commandSections = [...document.querySelectorAll('.command-group[id]')];
+
+    shortcutLinks.forEach((link) => {
+      link.addEventListener('click', (event) => {
+        const target = document.querySelector(link.getAttribute('href'));
+        if (!target) return;
+        event.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        history.pushState(null, '', link.getAttribute('href'));
+      });
+    });
+
+    function updateActiveShortcut() {
+      let current = commandSections[0]?.id || '';
+      commandSections.forEach((section) => {
+        if (section.getBoundingClientRect().top <= 120) current = section.id;
+      });
+      shortcutLinks.forEach((link) => {
+        const active = link.getAttribute('href') === `#${current}`;
+        link.classList.toggle('active', active);
+        if (active) link.setAttribute('aria-current', 'location');
+        else link.removeAttribute('aria-current');
+      });
+    }
+
+    window.addEventListener('scroll', updateActiveShortcut, { passive: true });
+    updateActiveShortcut();
+  </script>
+</body>
+</html>

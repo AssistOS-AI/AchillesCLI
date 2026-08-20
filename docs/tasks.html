@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sessions and Asynchronous Tasks | AchillesCLI Documentation</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  <script src="partials-loader.js" defer></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main class="page"><article class="page__panel">
+    <p class="breadcrumbs"><a href="index.html">Home</a> / Sessions and Tasks</p>
+    <h1>Sessions and Asynchronous Tasks</h1>
+    <p class="lead">A conversation session preserves your work with AchillesCLI. A delegated task sends a bounded piece of work to another agent and lets it run independently while your current conversation remains available.</p>
+
+    <h2>Multiple sessions in one folder</h2>
+    <p>AchillesCLI can keep multiple durable conversation sessions for the same selected project folder. Each session has its own transcript and model context, but all sessions operate against the same workspace and therefore see the current state of its files. Creating a session does not copy the project, and resuming an older session does not roll files back.</p>
+    <table>
+      <thead><tr><th>Command</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>/session</code></td><td>Opens or refreshes the session picker, including the option to create a session and the saved sessions for this workspace.</td></tr>
+        <tr><td><code>/session new</code></td><td>Creates a new conversation history in the current folder and selects it.</td></tr>
+        <tr><td><code>/session resume &lt;session-id&gt;</code></td><td>Loads a saved conversation and makes it the active session.</td></tr>
+      </tbody>
+    </table>
+    <pre><code>/session new
+/session
+/session resume &lt;session-id-from-the-picker&gt;</code></pre>
+    <p>Session data is stored under the selected workspace's <code>.achilles-cli/sessions/</code> directory. The active session selection is also workspace-local, so moving to another folder gives you that folder's own session list and current selection.</p>
+
+    <h2>Delegate work asynchronously</h2>
+    <p>Through Ploinky, AchillesCLI can delegate coding work to Codex, OpenCode, or PI. A launcher submits the request to the named agent and creates a persistent local <a href="wiki.html#definition-background-task">background task</a>. Submission does not block the main AchillesCLI conversation: you can keep asking questions, work on another part of the project, or start another delegated task while the agent runs.</p>
+    <p>You can request a named agent in natural language through Ploinky WebChat, for example:</p>
+    <pre><code>Ask Codex to add tests for the parser.
+Use OpenCode to refactor the configuration loader.
+Have PI investigate the failing integration test.</code></pre>
+    <p>AchillesCLI selects the matching launcher for explicit Codex, OpenCode, or PI task requests. Each agent keeps its own execution context; the model selected for the main AchillesCLI conversation is not silently imposed on the delegated agent.</p>
+
+    <figure class="diagram">
+      <pre class="mermaid">flowchart LR
+  Request[Submit work to Codex, OpenCode, or PI] --> Task[AchillesCLI records a local task]
+  Task --> Background[The delegated agent runs asynchronously]
+  Background --> Inspect[Inspect status and logs]
+  Inspect --> Continue[Continue with a follow-up prompt]
+  Continue --> Background
+  classDef request fill:#e8f3ff,stroke:#2463a3,font-weight:bold
+  classDef task fill:#fff2cc,stroke:#8a6d1d
+  classDef action fill:#e9f7ef,stroke:#26734d
+  class Request request
+  class Task task
+  class Background,Inspect,Continue action</pre>
+      <figcaption><em>Asynchronous delegated-task lifecycle</em></figcaption>
+    </figure>
+
+    <h2>Inspect and control tasks</h2>
+    <p>AchillesCLI gives every delegated execution a stable local task identifier. The workspace journal retains the target agent, remote task reference, status, and logs needed for later inspection and supported controls.</p>
+    <table>
+      <thead><tr><th>Command</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>/tasks [count|all]</code></td><td>Lists recent or all stored task summaries for the current workspace.</td></tr>
+        <tr><td><code>/task view &lt;task-id&gt;</code></td><td>Shows the stored task metadata and latest log content.</td></tr>
+        <tr><td><code>/task continue &lt;task-id&gt; &lt;prompt&gt;</code></td><td>Sends a follow-up prompt through the task's stored continuation capability and keeps the same local task identifier.</td></tr>
+        <tr><td><code>/task stop &lt;task-id&gt;</code></td><td>Requests cancellation of a queued or running task.</td></tr>
+      </tbody>
+    </table>
+    <pre><code>/tasks
+/task view task-7
+/task continue task-7 add regression tests for the edge case
+/task stop task-7</code></pre>
+
+    <h2>Continue a delegated task</h2>
+    <p>Continuation is useful when the first result needs another iteration. Instead of restating the original assignment in a new task, send a follow-up prompt to the existing task. AchillesCLI resolves the delegated agent and its opaque continuation handle from workspace-owned storage, appends the prompt to the task timeline, and preserves the same local task identifier.</p>
+    <p>Only a task with a compatible stored continuation capability can be continued. If a provider or completed task does not expose that capability, AchillesCLI reports that boundary instead of inventing a new unrelated execution.</p>
+
+    <h2>WebChat workflow</h2>
+    <p>Ploinky WebChat uses the same session and task contracts as the terminal CLI, but presents their structured state through interface controls. Session lists make it easier to create or select a conversation without typing its opaque identifier. Task entries expose current status, logs, and supported controls, so viewing, continuing, or stopping work is more convenient than entering each slash command manually.</p>
+    <p>Actions initiated by these controls still pass through AchillesCLI's session and task managers. Switching interfaces does not create a second source of truth: CLI and WebChat observe the same workspace-local records.</p>
+
+    <h2>Standalone and Ploinky boundaries</h2>
+    <p>Conversation sessions are a core AchillesCLI feature and are available when the CLI runs independently. Delegation to Codex, OpenCode, and PI depends on Ploinky because Ploinky supplies the managed target agents, lifecycle activation, routing, and authorization used by the launchers. A standalone AchillesCLI process without those Ploinky services can continue local conversations and use local skills, but it cannot provide the managed cross-agent delegation workflow described on this page.</p>
+    <p>For the exact slash syntax, including task model and provider-login controls, see the <a href="usage.html#sessions">Usage command reference</a>. For skill availability controls, see <a href="skills.html">Skills</a>.</p>
+  </article></main>
+  <div id="site-footer"></div>
+</body>
+</html>
