@@ -13,6 +13,20 @@
                     "optional": true
                 }
             }
+        },
+        {
+            "name": "list_achilles_skills",
+            "title": "List Achilles Skills",
+            "description": "Return the Achilles skills discovered for the active workspace.",
+            "command": "/code/src/mcp/list-skills.mjs",
+            "cwd": "/code",
+            "inputSchema": {
+                "dir": {
+                    "type": "string",
+                    "description": "Workspace directory to inspect. Defaults to the runtime WORKSPACE_PATH.",
+                    "optional": true
+                }
+            }
         }
     ]
 }

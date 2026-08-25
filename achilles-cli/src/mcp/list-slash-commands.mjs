@@ -61,6 +61,35 @@ function discoverBuiltInSkills() {
         .map((skill) => ({ ...skill, isInternal: true }));
 }
 
+function discoverAvailableSkills(dir) {
+    return [
+        ...discoverSkills(dir || process.cwd(), { logger: NOOP_LOGGER }),
+        ...discoverBuiltInSkills(),
+    ];
+}
+
+export function buildAchillesSkillCatalog(dir) {
+    const catalog = new Map();
+    const workspaceDir = dir || process.env.WORKSPACE_PATH || process.cwd();
+    for (const skill of discoverAvailableSkills(workspaceDir)) {
+        const key = String(skill?.name || skill?.shortName || '').trim().toLowerCase();
+        const name = String(skill?.shortName || skill?.name || '').trim();
+        if (!key || !name || catalog.has(key)) {
+            continue;
+        }
+        catalog.set(key, {
+            key,
+            name,
+            type: String(skill?.type || '').trim(),
+            isInternal: Boolean(skill?.isInternal),
+        });
+    }
+    return {
+        skills: Array.from(catalog.values())
+            .sort((left, right) => left.name.localeCompare(right.name)),
+    };
+}
+
 function readStdin() {
     return new Promise((resolve) => {
         if (process.stdin.isTTY) {
@@ -108,10 +137,8 @@ function extractInput(payload) {
 
 export function buildSkillCompletions(dir, { includeDisabled = false } = {}) {
     const disabledNames = includeDisabled || !dir ? new Set() : new Set(getDisabledSkills(dir));
-    const skills = [
-        ...discoverSkills(dir || process.cwd(), { logger: NOOP_LOGGER }),
-        ...discoverBuiltInSkills(),
-    ].filter((skill) => !disabledNames.has(skill.name));
+    const skills = discoverAvailableSkills(dir)
+        .filter((skill) => !disabledNames.has(skill.name));
     const completions = new Map();
     for (const skill of skills) {
         const name = String(skill?.shortName || skill?.name || '').trim();

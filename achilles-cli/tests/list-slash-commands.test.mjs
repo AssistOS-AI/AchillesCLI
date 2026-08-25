@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, symlink, unlink, lstat, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, symlink, unlink, lstat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,6 +61,49 @@ test('command catalog exposes skill Help as argument completion description', as
         'Use this for WebAdmin requests.',
         'Example: /exec admin-flow change admin email to user@example.com',
     ].join('\n'));
+});
+
+test('public skill catalog uses Achilles discovery and returns deterministic records', async () => {
+    const createdDependencyLink = await ensureLocalAchillesAgentLib();
+    let buildAchillesSkillCatalog;
+    try {
+        ({ buildAchillesSkillCatalog } = await import(`../src/mcp/list-slash-commands.mjs?catalog=${Date.now()}`));
+    } finally {
+        if (createdDependencyLink) {
+            await unlink(localDependencyPath);
+        }
+    }
+
+    const tempRoot = await mkdtemp(join(tmpdir(), 'achilles-cli-public-catalog-'));
+    try {
+        const skillDir = join(tempRoot, 'skills', 'workspace-tool');
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(join(skillDir, 'cskill.md'), '# Workspace Tool\n');
+
+        const catalog = buildAchillesSkillCatalog(tempRoot);
+        const workspaceSkill = catalog.skills.find((skill) => skill.name === 'workspace-tool');
+
+        assert.ok(workspaceSkill);
+        assert.equal(workspaceSkill.type, 'cskill');
+        assert.equal(workspaceSkill.isInternal, false);
+        assert.deepEqual(Object.keys(workspaceSkill), ['key', 'name', 'type', 'isInternal']);
+        assert.deepEqual(
+            catalog.skills.map((skill) => skill.name),
+            catalog.skills.map((skill) => skill.name).toSorted((left, right) => left.localeCompare(right)),
+        );
+        assert.equal(new Set(catalog.skills.map((skill) => skill.key)).size, catalog.skills.length);
+    } finally {
+        await rm(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('MCP configuration publishes the Achilles-owned skill catalog tool', async () => {
+    const config = JSON.parse(await readFile(new URL('../mcp-config.json', import.meta.url), 'utf8'));
+    const tool = config.tools.find((entry) => entry.name === 'list_achilles_skills');
+
+    assert.ok(tool);
+    assert.equal(tool.command, '/code/src/mcp/list-skills.mjs');
+    assert.equal(tool.inputSchema.dir.optional, true);
 });
 
 test('command catalog includes built-in AchillesCLI skills in skill completions', async () => {
