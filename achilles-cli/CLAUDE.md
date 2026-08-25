@@ -22,7 +22,7 @@ Ploinky-agent layer for AchillesCLI under AssistOSExplorer. The outer `../CLAUDE
 
 ## Conventions
 
-- All LLM invocation goes through `LLMAgent` from `achillesAgentLib`, which is workspace-shared at `~/work/file-parser/ploinky/node_modules/achillesAgentLib`.
+- All LLM invocation goes through `LLMAgent` from the single `achillesAgentLib` source selected and mounted by Ploinky. Standalone development must expose one explicit checkout through the same package-link contract.
 - Built-in skills follow the same `SKILL.md` plus `skill.json` schema as user-authored skills.
 - Bash skills only parse and delegate execution. Approval policy belongs to the outer Broker.
 

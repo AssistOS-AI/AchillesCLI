@@ -9,13 +9,13 @@ This DS owns the path from the `achilles-cli` executable to a ready sandboxed ag
 
 ## Core Content
 
-The package must support Node.js 20 or newer, declare AchillesAgentLib as a package dependency, expose `bin/achilles-cli`, and provide `npm start` as the repository entry path. A standalone checkout must become locally runnable through `npm install` plus the prerequisite script; Ploinky dependency caches are optional to this path.
+The package must support Node.js 20 or newer, expose `bin/achilles-cli`, and provide `npm start` as the repository entry path. It must not declare, install, or clone AchillesAgentLib. Ploinky must expose its one workspace-selected AgentLib source through the standard package link. A standalone development checkout must use an explicit link to its selected AgentLib checkout after `npm install` and the prerequisite script.
 
 `src/cli.mjs` must resolve the selected workspace and supported CLI options before starting the trusted broker. `--dir` selects the workspace, `--skill-root` adds read-only skill roots, and `--permissions` accepts only `ask-for-approval` or `full-access`. An explicit permission option applies to that process; otherwise startup restores the workspace value and falls back safely when it is absent or invalid.
 
 Startup must then create one persistent Bubblewrap namespace and run `src/index.mjs` inside it. The sandbox exposes required system runtime paths, read-only AchillesCLI code and dependencies, isolated temporary storage, the broker socket, and the selected workspace as the writable project tree. Network access remains shared. Startup must fail closed when Bubblewrap, the broker connection, required dependencies, or the process-namespace safety checks are unavailable.
 
-The sandboxed entrypoint must resolve AchillesAgentLib from supported runtime mounts, explicit overrides, parent paths, or `node_modules` without hardcoded workstation paths. It must construct `MainAgent`, register built-in and discovered skill roots, apply persisted workspace settings, and then choose exactly one mode.
+The sandboxed entrypoint must resolve AchillesAgentLib from the single source exposed by the hosting runtime through standard bare-package resolution. An explicit development link may provide that source outside Ploinky. The entrypoint must not search for, install, or clone a competing checkout and must not embed a workstation path. It must construct `MainAgent`, register built-in and discovered skill roots, apply persisted workspace settings, and then choose exactly one mode.
 
 | Input condition | Execution mode |
 | --- | --- |

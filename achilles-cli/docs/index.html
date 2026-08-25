@@ -19,10 +19,12 @@
     <p>Ploinky integration adds managed startup, agent-to-agent delegation, and a dedicated <a href="wiki.html#definition-webchat">Ploinky WebChat</a> interface. These integration surfaces use the same AchillesCLI skill discovery, model routing, workspace confinement, conversation, and task contracts as the local CLI.</p>
 
     <h2>Quick Setup</h2>
-    <p>After cloning the repository, install the prerequisites and npm dependencies, then add the AchillesCLI wrapper to Bash's persistent <code>PATH</code>.</p>
+    <p>After cloning the repository, install the prerequisites and package-local npm dependencies, expose the selected development AchillesAgentLib checkout through the standard package link, then add the AchillesCLI wrapper to Bash's persistent <code>PATH</code>. A Ploinky launch creates this link from its one workspace-selected AgentLib source automatically.</p>
     <pre><code class="language-bash">cd AchillesCLI/achilles-cli
 sudo sh scripts/installPrerequisites.sh
 npm install
+mkdir -p node_modules
+ln -s /absolute/path/to/achillesAgentLib node_modules/achillesAgentLib
 echo "export PATH=\"\$PATH:$PWD/bin\"" &gt;&gt; ~/.bashrc
 source ~/.bashrc
 cd /path/to/your/project

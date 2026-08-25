@@ -11,7 +11,7 @@ The repository includes the AchillesCLI agent plus Ploinky manifests for the opt
 ## Prerequisites
 
 - Node.js 20 or newer for the ES-module runtime and test suite.
-- Ploinky with the workspace-shared `achillesAgentLib` dependency and Soul Gateway proxy used by `achilles-cli/manifest.json`.
+- Ploinky, which supplies the one workspace-selected `achillesAgentLib` source and the Soul Gateway proxy used by `achilles-cli/manifest.json`.
 - Bubblewrap on Linux. `achilles-cli/scripts/installPrerequisites.sh` installs it through the agent image's supported package manager when necessary.
 
 ## Installation and startup
@@ -28,11 +28,13 @@ Pass a prompt after the agent name for one-shot execution:
 ploinky cli achilles-cli "list all skills"
 ```
 
-The manifest runs `node /code/src/cli.mjs`. For standalone use without Ploinky, install the package dependencies and start the same runtime from the agent directory:
+The manifest runs `node /code/src/cli.mjs`. AchillesCLI does not install or clone its own AchillesAgentLib copy. For standalone development without Ploinky, install package-local dependencies, expose the selected development checkout through the standard package link, and start the same runtime from the agent directory:
 
 ```bash
 cd achilles-cli
 npm install
+mkdir -p node_modules
+ln -s /absolute/path/to/achillesAgentLib node_modules/achillesAgentLib
 npm start -- --dir ./example-workspace
 ```
 

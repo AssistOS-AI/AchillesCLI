@@ -17,7 +17,7 @@ This DS owns only contracts that cross from AchillesCLI into another repository 
 | Ploinky WebChat | Sends generic text, command, attachment, workspace-reference, and control envelopes; it does not own AchillesCLI sessions or task persistence. |
 | Worker agents | GPTResearcher, Codex Agent, PI Agent, and OpenCode Agent execute provider-specific work and retain their private provider sessions. |
 
-AchillesCLI must use supported AchillesAgentLib imports and must not duplicate its model invocation, skill discovery, or AKU storage internals. Dependency resolution may use package installation or Ploinky runtime mounts, but feature modules must not assume a workstation-specific checkout path.
+AchillesCLI must use supported AchillesAgentLib imports and must not duplicate its model invocation, skill discovery, or AKU storage internals. Ploinky supplies the one workspace-selected AgentLib source through its runtime mount and package link. AchillesCLI must not declare, install, or clone another copy. Standalone development may expose one explicit checkout through the same package-link contract, and feature modules must not assume a workstation-specific path.
 
 Ploinky integration must use generated agent identity and router-mediated interfaces. AchillesCLI may expose its skill and slash-command catalogs through AgentServer for WebChat discovery, but the browser payload must contain only presentation-safe command, model, session, skill, workspace-file, and task metadata. Credentials, invocation grants, raw provider configuration, and private continuation handles must remain outside browser state.
 
