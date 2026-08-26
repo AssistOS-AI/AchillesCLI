@@ -3,7 +3,7 @@
   "id": "achilles-cli-copilot",
   "component": "achilles-cli-tool-button",
   "location": ["file-exp:toolbar-plugins-dropdown"],
-  "label": "Copilot",
+  "label": "Open Copilot here",
   "tooltip": "Open Achilles CLI Copilot in the current folder",
   "icon": "./icon.svg",
   "presenter": "AchillesCliToolButton",
