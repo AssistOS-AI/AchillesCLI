@@ -13,9 +13,6 @@ temp_*
 .idea
 # >>> ploinky default-skills >>>
 .claude
-.agents/skills/achilles-skill-builder/
-.agents/skills/antropic-skill-build/
-.agents/skills/cskill-build/
-.agents/skills/dgskill-build/
-.agents/skills/oskill-build/
+.agents/skills/manage-ploinky-agents/
+.agents/skills/webskel-ui-engineering/
 # <<< ploinky default-skills <<<

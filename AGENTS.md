@@ -1,6 +1,6 @@
 # Scope
 
-These instructions apply to the AchillesCLI repository. The runnable Ploinky agent lives under `achilles-cli/`; sibling agent directories provide optional task workers and their manifests.
+These instructions apply to the AchillesCLI repository. The runnable AchillesCLI Ploinky agent lives under `achilles-cli/`; sibling agent directories provide optional task workers and their manifests, while `roboTeamAgent/` provides the independent RoboTeam profile and desktop manager.
 
 # Mandatory Reading Order
 
@@ -8,6 +8,8 @@ These instructions apply to the AchillesCLI repository. The runnable Ploinky age
 2. Read `achilles-cli/docs/wiki.html` for canonical project terminology.
 3. Read `achilles-cli/docs/specs/matrix.md`, the relevant DS files, and `achilles-cli/docs/specs/DS001-coding-style.md` for coding style, source layout, and test organization.
 4. Read `achilles-cli/src/cli.mjs`, `achilles-cli/src/index.mjs`, and the relevant implementation and tests before changing behavior.
+
+When work affects RoboTeam, read `roboTeamAgent/docs/index.html`, `roboTeamAgent/docs/wiki.html`, `roboTeamAgent/docs/specs/matrix.md`, and the relevant RoboTeam DS files before editing its source, configuration, or documentation.
 
 The DS specifications are the source of truth for project requirements and boundaries.
 
@@ -47,4 +49,6 @@ The CLI uses the invocation directory unless `--dir` selects another workspace. 
 - `achilles-cli/src/cli.mjs` — trusted Broker entry point.
 - `achilles-cli/src/index.mjs` — sandboxed agent entry point.
 - `achilles-cli/src/skills/` — built-in product skills.
+- `roboTeamAgent/docs/index.html` — RoboTeam profile and desktop manager documentation.
+- `roboTeamAgent/docs/specs/` — authoritative RoboTeam design specifications.
 - `tests/` and `achilles-cli/tests/` — integration and package-local tests.

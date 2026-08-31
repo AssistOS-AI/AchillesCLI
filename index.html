@@ -13,14 +13,14 @@
     <nav class="site-nav" aria-label="Primary navigation">
       <div class="nav-menu">
         <button class="nav-trigger" type="button" aria-expanded="false" aria-haspopup="true"><span>Agents</span><span class="submenu-indicator" aria-hidden="true">▾</span></button>
-        <div class="nav-panel"><a href="achilles-cli/docs/index.html">AchillesCLI</a><a href="GPTResearcher/docs/index.html">GPTResearcher</a><a href="codexAgent/docs/index.html">Codex Agent</a><a href="piAgent/docs/index.html">PI Agent</a><a href="opencodeAgent/docs/index.html">OpenCode Agent</a></div>
+        <div class="nav-panel"><a href="achilles-cli/docs/index.html">AchillesCLI</a><a href="GPTResearcher/docs/index.html">GPTResearcher</a><a href="codexAgent/docs/index.html">Codex Agent</a><a href="piAgent/docs/index.html">PI Agent</a><a href="opencodeAgent/docs/index.html">OpenCode Agent</a><a href="roboTeamAgent/docs/index.html">RoboTeam Agent</a></div>
       </div>
     </nav>
   </header>
   <main class="page"><article class="page__panel">
     <p class="breadcrumbs">Agent repository</p>
     <h1>AchillesCLI Agent Suite</h1>
-    <p class="lead">This repository combines AchillesCLI with four optional Ploinky workers. AchillesCLI is the user-facing local and WebChat agent; GPTResearcher performs research, while Codex, PI, and OpenCode execute delegated coding tasks.</p>
+    <p class="lead">This repository combines AchillesCLI with five optional Ploinky agents. AchillesCLI is the user-facing local and WebChat agent; GPTResearcher performs research; Codex, PI, and OpenCode execute delegated coding tasks; and RoboTeam manages persistent virtual employee profiles and their interactive desktops.</p>
 
     <h2>Agents in this repository</h2>
     <table>
@@ -31,6 +31,7 @@
         <tr><td>Codex Agent</td><td>Runs OpenAI Codex coding tasks asynchronously and preserves provider threads for later continuation.</td><td><a href="codexAgent/docs/index.html">Open Codex Agent docs</a></td></tr>
         <tr><td>PI Agent</td><td>Runs PI coding sessions inside a task-specific filesystem sandbox and exposes resumable task execution.</td><td><a href="piAgent/docs/index.html">Open PI Agent docs</a></td></tr>
         <tr><td>OpenCode Agent</td><td>Runs OpenCode coding sessions, exposes resumable tasks, and provides model and chat-completions integration to Ploinky.</td><td><a href="opencodeAgent/docs/index.html">Open OpenCode Agent docs</a></td></tr>
+        <tr><td>RoboTeam Agent</td><td>Manages persistent virtual employee profiles, private workspaces, browser state, and authenticated interactive Linux desktops.</td><td><a href="roboTeamAgent/docs/index.html">Open RoboTeam Agent docs</a></td></tr>
       </tbody>
     </table>
 
@@ -39,6 +40,7 @@
     <figure class="diagram">
       <pre class="mermaid">flowchart TB
   User[CLI or Ploinky WebChat user] --> Achilles[AchillesCLI conversation and task owner]
+  User --> RoboTeam[RoboTeam manages profiles and interactive desktops]
   Achilles --> Research[GPTResearcher creates a research report]
   Achilles --> Codex[Codex Agent runs a coding task]
   Achilles --> PI[PI Agent runs a coding task]
@@ -47,20 +49,21 @@
   Codex --> Workspace
   PI --> Workspace
   OpenCode --> Workspace
+  RoboTeam --> Profiles[Persistent virtual employee profiles]
   classDef user fill:#e8f3ff,stroke:#2463a3,font-weight:bold
   classDef coordinator fill:#fff2cc,stroke:#8a6d1d,font-weight:bold
   classDef worker fill:#e9f7ef,stroke:#26734d
   class User user
   class Achilles coordinator
-  class Research,Codex,PI,OpenCode,Workspace worker</pre>
+  class Research,Codex,PI,OpenCode,RoboTeam,Workspace,Profiles worker</pre>
       <figcaption><em>AchillesCLI repository agent relationships</em></figcaption>
     </figure>
 
     <h2>Choose an agent</h2>
-    <p>Use AchillesCLI for interactive project work, local skill execution, session management, and coordination. Ask GPTResearcher for a sourced report that may combine the web with workspace documents. Ask Codex, PI, or OpenCode when you want a coding provider to work asynchronously and preserve its own task context for follow-up prompts. The three coding workers implement the same general Ploinky task contract but retain their provider's native execution and session behavior.</p>
+    <p>Use AchillesCLI for interactive project work, local skill execution, session management, and coordination. Ask GPTResearcher for a sourced report that may combine the web with workspace documents. Ask Codex, PI, or OpenCode when you want a coding provider to work asynchronously and preserve its own task context for follow-up prompts. Use RoboTeam to create persistent virtual employee profiles and enter their browser-accessible Linux desktops. The three coding workers implement the same general Ploinky task contract but retain their provider's native execution and session behavior.</p>
 
     <h2>Shared operational boundary</h2>
-    <p>The four workers are optional and use manual startup. They do not join the AchillesCLI startup graph until a request needs them. Ploinky supplies agent activation, router authorization, persistent agent homes, and task transport. AchillesCLI remains responsible for the user-visible session and local task identifier, while each worker keeps provider-specific continuation state private.</p>
+    <p>The delegated workers are optional and use manual startup. They do not join the AchillesCLI startup graph until a request needs them. RoboTeam is also optional, but it runs as an independent profile and desktop manager rather than as an AchillesCLI delegated-task worker. Ploinky supplies agent activation, router authorization, persistent agent homes, and task transport. AchillesCLI remains responsible for its user-visible sessions and local task identifiers, while each delegated worker keeps provider-specific continuation state private.</p>
   </article></main>
   <footer class="site-footer">Select an agent above to open its dedicated documentation.</footer>
   <script>

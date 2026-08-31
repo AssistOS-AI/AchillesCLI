@@ -8,7 +8,8 @@
     "ACHILLES_DEBUG"
   ],
   "enable": [
-    "proxies/soul-gateway no-wait"
+    "proxies/soul-gateway no-wait",
+    "roboTeamAgent no-wait"
   ],
   "webchat": {
     "auth": "static",
