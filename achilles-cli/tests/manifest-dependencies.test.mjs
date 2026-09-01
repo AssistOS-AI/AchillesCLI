@@ -14,6 +14,13 @@ test('AchillesCLI starts Soul Gateway asynchronously before model discovery', as
     assert.ok(manifest.enable.includes('proxies/soul-gateway no-wait'));
 });
 
+test('AchillesCLI starts RoboTeam asynchronously as an exact dependency', async () => {
+    const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
+
+    assert.ok(Array.isArray(manifest.enable));
+    assert.ok(manifest.enable.includes('roboTeamAgent no-wait'));
+});
+
 test('AchillesCLI opts into structured WebChat envelopes', async () => {
     const manifest = JSON.parse(await readFile(join(REPO_ROOT, 'manifest.json'), 'utf8'));
 
