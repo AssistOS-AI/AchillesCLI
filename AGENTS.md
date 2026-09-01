@@ -1,6 +1,6 @@
 # Scope
 
-These instructions apply to the AchillesCLI repository. The runnable AchillesCLI Ploinky agent lives under `achilles-cli/`; sibling agent directories provide optional task workers and their manifests, while `roboTeamAgent/` provides the independent RoboTeam profile and desktop manager.
+These instructions apply to the AchillesCLI repository. The runnable AchillesCLI Ploinky agent lives under `achilles-cli/`; sibling agent directories provide optional task workers and their manifests, while `roboTeamAgent/` provides the independent persistent-robot and nested-container manager.
 
 # Mandatory Reading Order
 
@@ -49,6 +49,6 @@ The CLI uses the invocation directory unless `--dir` selects another workspace. 
 - `achilles-cli/src/cli.mjs` — trusted Broker entry point.
 - `achilles-cli/src/index.mjs` — sandboxed agent entry point.
 - `achilles-cli/src/skills/` — built-in product skills.
-- `roboTeamAgent/docs/index.html` — RoboTeam profile and desktop manager documentation.
+- `roboTeamAgent/docs/index.html` — RoboTeam robot and nested-container manager documentation.
 - `roboTeamAgent/docs/specs/` — authoritative RoboTeam design specifications.
 - `tests/` and `achilles-cli/tests/` — integration and package-local tests.
