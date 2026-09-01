@@ -37,7 +37,7 @@ test('task descriptions prefer prompt-like arguments and remain bounded', () => 
 
 test('ongoing task restoration ignores malformed lines and terminal tasks', () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-journal-'));
-    const history = path.join(workspace, '.achilles-cli', 'tasks');
+    const history = path.join(workspace, '.data', 'achilles-cli', 'tasks');
     fs.mkdirSync(history, { recursive: true });
     const ongoingId = 'task_aaaaaaaaaaaaaaaaaaaaaaaa';
     const finishedId = 'task_bbbbbbbbbbbbbbbbbbbbbbbb';

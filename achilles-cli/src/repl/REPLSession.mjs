@@ -25,7 +25,7 @@ import { showHelp, getHelpTopics, getCommandHelp } from '../ui/HelpSystem.mjs';
 import { UIContext } from '../ui/UIContext.mjs';
 import { buildOrchestratorSystemPrompt } from '../prompts/orchestrator-prompt.mjs';
 import { IOServices } from 'achillesAgentLib';
-import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from '../lib/repoManager.mjs';
+import { ensureAgentLibLinksForRepos } from '../lib/repoManager.mjs';
 import { showHistory, searchHistory } from '../ui/HelpPrinter.mjs';
 import { startIntroSkill } from '../lib/introSkillBoot.mjs';
 import {
@@ -95,8 +95,6 @@ export class REPLSession {
         this.builtInSkillsDir = options.builtInSkillsDir || null;
         this.debug = options.debug || false;
 
-        // Ensure .achilles-cli directory structure exists
-        ensureAchillesCliDir(this.workingDir);
         ensureAgentLibLinksForRepos(this.workingDir);
         installWorkspaceSkillRefreshHook(agent);
 

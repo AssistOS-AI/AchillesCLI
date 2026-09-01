@@ -40,7 +40,8 @@ test('AchillesCLI creates and restores workspace conversation sessions', (t) => 
     assert.equal(restored.messages[0].role, 'user');
     assert.deepEqual(restored.messages[1].progress, ['Reading files']);
     assert.deepEqual(restored.messages[2], { type: 'task', taskId: 'task_1234567890abcdef12345678' });
-    assert.equal(fs.existsSync(path.join(workingDir, '.achilles-cli', 'sessions', `${created.sessionId}.json`)), true);
+    assert.equal(fs.existsSync(path.join(workingDir, '.data', 'achilles-cli', 'sessions', `${created.sessionId}.json`)), true);
+    assert.equal(fs.existsSync(path.join(workingDir, '.achilles-cli')), false);
     assert.equal(fs.existsSync(path.join(workingDir, '.copilot_history')), false);
 
     assert.deepEqual(buildConversationInitialHistory(restored), [
@@ -50,6 +51,49 @@ test('AchillesCLI creates and restores workspace conversation sessions', (t) => 
         },
         { role: 'assistant', message: 'The project is ready.' },
     ]);
+});
+
+test('conversation storage rejects a symlinked owned sessions directory', (t) => {
+    const workingDir = workspace(t);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-sessions-outside-'));
+    t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(workingDir, '.data', 'achilles-cli'), { recursive: true });
+    fs.symlinkSync(outside, path.join(workingDir, '.data', 'achilles-cli', 'sessions'), 'dir');
+
+    assert.throws(
+        () => new ConversationSessionStore({ workingDir }),
+        /sessions directory must not be a symbolic link/,
+    );
+    assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+test('conversation storage revalidates sessions after construction', (t) => {
+    const workingDir = workspace(t);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-sessions-replaced-'));
+    t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+    const store = new ConversationSessionStore({ workingDir });
+    const sessionsDirectory = path.join(workingDir, '.data', 'achilles-cli', 'sessions');
+
+    fs.rmSync(sessionsDirectory, { recursive: true, force: true });
+    fs.symlinkSync(outside, sessionsDirectory, 'dir');
+
+    assert.throws(
+        () => store.createSession(),
+        /sessions directory must not be a symbolic link/,
+    );
+    assert.deepEqual(fs.readdirSync(outside), []);
+
+    const outsideSessionId = '123e4567-e89b-42d3-a456-426614174000';
+    fs.writeFileSync(path.join(outside, `${outsideSessionId}.json`), JSON.stringify({
+        sessionId: outsideSessionId,
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+        messages: [{ role: 'user', text: 'outside-secret' }],
+    }));
+    assert.throws(
+        () => store.loadSession(outsideSessionId),
+        /sessions directory must not be a symbolic link/,
+    );
 });
 
 test('new and resumed sessions update the selected session and list', (t) => {

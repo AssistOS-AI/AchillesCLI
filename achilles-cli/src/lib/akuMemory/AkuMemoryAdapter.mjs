@@ -8,6 +8,7 @@ import { analyzeAKUMemoryIntent } from './akuIntentAnalyzer.mjs';
 import { buildAKUPlanningPacket } from './akuPlanningPacket.mjs';
 import { applyAKUTypePolicyDefaults } from './akuTypePolicies.mjs';
 import { createAKUSessionState } from './akuSessionState.mjs';
+import { resolveAchillesPrivateDataRoot } from '../privateDataRoot.mjs';
 
 const require = createRequire(import.meta.url);
 const HIGH_IMPACT_OPERATIONS = new Set([
@@ -59,6 +60,10 @@ export class AkuMemoryAdapter {
     constructor(options = {}) {
         this.rootDir = path.resolve(options.rootDir ?? options.workingDir ?? process.cwd());
         this.workspaceRoot = options.workspaceRoot ? path.resolve(options.workspaceRoot) : null;
+        this.persistenceRoot = path.join(
+            resolveAchillesPrivateDataRoot(this.workspaceRoot ?? this.rootDir),
+            'aku',
+        );
         this.actor = options.actor ?? 'achilles-cli';
         this.contextBudgetChars = options.contextBudgetChars ?? 5000;
         this.AgenticKnowledgeUnitsClass = options.AgenticKnowledgeUnitsClass ?? null;
@@ -693,6 +698,7 @@ export class AkuMemoryAdapter {
             ?? await loadDefaultAgenticKnowledgeUnits();
         const aku = new AgenticKnowledgeUnits({
             rootDir: resolvedRoot,
+            persistenceRoot: this.persistenceRoot,
             actor: this.actor,
             contextBudgetChars: this.contextBudgetChars,
         });

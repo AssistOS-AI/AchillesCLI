@@ -76,7 +76,7 @@ Ploinky integration boundary:
    provider backend ids, provider agent ids, or provider MCP tool names to the
    WebChat URL; the visible Explorer action remains the
    normal `Open Copilot here` action.
-12. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
+12. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.data/achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
 13. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
 14. In webchat runtime mode, AchillesCLI preserves the sanitized
     `origin.publicBaseUrl` field from forwarded WebChat envelopes in launcher
@@ -84,8 +84,8 @@ Ploinky integration boundary:
     user-facing browser links, while ignoring malformed or non-HTTP origin
     hints.
 15. AchillesCLI owns conversation sessions for both terminal and WebChat launches.
-    It stores them under `<cwd>/.achilles-cli/sessions/`, stores the selected
-    `currentSessionId` beside model and permissions in `.achilles-cli/settings.json`,
+    It stores them under `<workspace>/.data/achilles-cli/sessions/`, stores the selected
+    `currentSessionId` beside model and permissions in `.data/achilles-cli/settings.json`,
     and supplies prior natural-language turns once as `initialHistory` on the
     first normal prompt after startup or session selection. Incoming WebChat
     envelopes cannot supply history. Slash commands do not consume pending
@@ -107,7 +107,7 @@ Ploinky integration boundary:
     carrying `taskId` metadata is offered to that observer instead of entering
     client-owned blocking polling. AchillesCLI must identify such work by target
     agent plus remote task id, persist lifecycle metadata and logs under
-    `<cwd>/.achilles-cli/tasks/`, and continue polling through the
+    `<workspace>/.data/achilles-cli/tasks/`, and continue polling through the
     router-mediated task-status path. A recreated AchillesCLI process must
     reattach tasks recorded as ongoing. WebChat mode additionally emits
     `__webchatTask` list, view, lifecycle, log, and action envelopes for the

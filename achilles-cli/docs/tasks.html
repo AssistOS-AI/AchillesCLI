@@ -28,7 +28,7 @@
     <pre><code>/session new
 /session
 /session resume &lt;session-id-from-the-picker&gt;</code></pre>
-    <p>Session data is stored under the selected workspace's <code>.achilles-cli/sessions/</code> directory. The active session selection is also workspace-local, so moving to another folder gives you that folder's own session list and current selection.</p>
+    <p>Session data is stored under the selected workspace's <code>.data/achilles-cli/sessions/</code> directory. The active session selection is also workspace-local, so moving to another folder gives you that folder's own session list and current selection.</p>
 
     <h2>Delegate work asynchronously</h2>
     <p>Through Ploinky, AchillesCLI can delegate coding work to Codex, OpenCode, or PI. A launcher submits the request to the named agent and creates a persistent local <a href="wiki.html#definition-background-task">background task</a>. Submission does not block the main AchillesCLI conversation: you can keep asking questions, work on another part of the project, or start another delegated task while the agent runs.</p>

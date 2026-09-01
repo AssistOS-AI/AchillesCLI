@@ -52,7 +52,7 @@ test('/permissions restores the previous Broker mode when settings persistence f
             workingDir: invalidWorkingDir,
             mode: 'full-access',
         }),
-        /ENOTDIR/,
+        /must be a real directory|ENOTDIR/,
     );
     assert.deepEqual(permissionControlClient.writes, [
         'full-access',

@@ -10,15 +10,23 @@ import { setDisabledSkills } from '../src/lib/achillesSettings.mjs';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const localDependencyPath = join(repoRoot, 'node_modules', 'achillesAgentLib');
-const workspaceDependencyPath = resolve(repoRoot, '../../../../ploinky/node_modules/achillesAgentLib');
+const workspaceDependencyPath = resolve(repoRoot, '../../achillesAgentLib');
 
 async function ensureLocalAchillesAgentLib() {
+    await mkdir(join(repoRoot, 'node_modules'), { recursive: true });
     try {
         await lstat(localDependencyPath);
         return false;
     } catch {
-        await symlink(workspaceDependencyPath, localDependencyPath, 'dir');
-        return true;
+        try {
+            await symlink(workspaceDependencyPath, localDependencyPath, 'dir');
+            return true;
+        } catch (error) {
+            if (error?.code === 'EEXIST') {
+                return false;
+            }
+            throw error;
+        }
     }
 }
 

@@ -107,7 +107,7 @@ test('generated-local invoker rejects URL-shaped and otherwise unbranded descrip
 test('real AgentLib composition routes an uncatalogued opaque model and preserves its wire id', () => {
     const workspaceRoot = path.resolve(import.meta.dirname, '../..', '..');
     const fixtureRoot = path.join(workspaceRoot, 'ploinky', 'tests', 'fixtures', 'router-descriptor');
-    const agentLibRoot = path.join(workspaceRoot, 'ploinky', 'node_modules', 'achillesAgentLib');
+    const agentLibRoot = path.join(workspaceRoot, 'achillesAgentLib');
     const fixtureEnv = JSON.parse(fs.readFileSync(
         path.join(fixtureRoot, 'public-environment.json'),
         'utf8',

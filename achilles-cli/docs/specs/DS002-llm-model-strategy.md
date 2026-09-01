@@ -19,7 +19,7 @@ AchillesCLI routes every language-model request through AchillesAgentLib and Sou
 | `/model <name>` | Selects an exact Soul Gateway model for the workspace. |
 | `/tier` | Selects the session tier and removes an explicit workspace model. |
 
-The explicit model must be stored under `model` in `<workspace>/.achilles-cli/settings.json` and restored in later processes. Prompt execution, skills, and startup-intro requests must observe that selection. A model identifier may be forwarded even when it is absent from an older process-local catalog snapshot.
+The explicit model must be stored under `model` in `<workspace>/.data/achilles-cli/settings.json` and restored in later processes. Prompt execution, skills, and startup-intro requests must observe that selection. A model identifier may be forwarded even when it is absent from an older process-local catalog snapshot.
 
 Selectable names must come from the authenticated local Soul Gateway models route. Compatibility-only aliases must be excluded while direct models and named cascades remain available. AchillesCLI may order common choices for usability, but the returned catalog is not a client-side allowlist.
 

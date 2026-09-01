@@ -1,11 +1,19 @@
 import fs from 'node:fs';
-import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { normalizePermissionMode, PERMISSION_MODES } from '../permissions/protocol.mjs';
+import {
+    assertSafeAchillesPrivatePath,
+    ensureAchillesPrivateDataRoot,
+} from './privateDataRoot.mjs';
 
 const SETTINGS_FILE_NAME = 'settings.json';
 
-export function getAchillesSettingsPath(workingDir = process.cwd()) {
-    return path.join(path.resolve(workingDir), '.achilles-cli', SETTINGS_FILE_NAME);
+export function getAchillesSettingsPath(workingDir = process.cwd(), options = {}) {
+    return assertSafeAchillesPrivatePath(workingDir, SETTINGS_FILE_NAME, {
+        ...options,
+        label: 'AchillesCLI settings file',
+        type: 'file',
+    });
 }
 
 export function readAchillesSettings(workingDir = process.cwd()) {
@@ -49,14 +57,16 @@ export function getDisabledSkills(workingDir = process.cwd()) {
 }
 
 function writeAchillesSettings(workingDir, settings) {
+    ensureAchillesPrivateDataRoot(workingDir);
     const settingsPath = getAchillesSettingsPath(workingDir);
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    const temporaryPath = `${settingsPath}.${process.pid}.${Date.now()}.tmp`;
+    const temporaryPath = `${settingsPath}.${process.pid}.${randomUUID()}.tmp`;
     try {
         fs.writeFileSync(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, {
             encoding: 'utf8',
             mode: 0o600,
+            flag: 'wx',
         });
+        getAchillesSettingsPath(workingDir);
         fs.renameSync(temporaryPath, settingsPath);
     } finally {
         try {

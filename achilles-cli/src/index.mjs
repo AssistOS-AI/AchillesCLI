@@ -21,7 +21,7 @@ import { UIContext } from './ui/UIContext.mjs';
 import { createProvider, getProviderNames } from './ui/providers/index.mjs';
 import { BUILT_IN_SKILLS, TIERS } from './lib/constants.mjs';
 import { buildOrchestratorSystemPrompt } from './prompts/orchestrator-prompt.mjs';
-import { ensureAchillesCliDir, ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
+import { ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
 import {
     isWebchatMessageEnvelope,
@@ -248,8 +248,6 @@ async function main() {
         process.exit(1);
     }
 
-    // Ensure .achilles-cli directory structure exists
-    ensureAchillesCliDir(workingDir);
     ensureAgentLibLinksForRepos(workingDir);
     const persistedModel = getSelectedModel(workingDir);
 
@@ -1514,7 +1512,7 @@ MODES:
   Single-shot Mode   Pass a prompt as arguments to execute and exit
 
 HISTORY:
-  Command history is stored per working directory in .achilles-cli-history
+  Command history is stored in <workspace>/.data/achilles-cli/history
   Use ↑/↓ arrows to navigate history, "history" command to view/search
 
 BUILT-IN SKILLS:

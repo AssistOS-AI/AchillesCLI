@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import {
+    assertSafeAchillesPrivatePath,
+    ensureAchillesPrivateDataRoot,
+    resolveAchillesPrivateDataRoot,
+} from '../lib/privateDataRoot.mjs';
 
-const ACHILLES_CLI_DIR = '.achilles-cli';
 const HISTORY_FILENAME = 'history';
 const DEFAULT_MAX_ENTRIES = 1000;
 
@@ -17,8 +22,11 @@ export class HistoryManager {
         maxEntries = DEFAULT_MAX_ENTRIES,
     } = {}) {
         this.workingDir = path.resolve(workingDir);
-        this.achillesCliDir = path.join(this.workingDir, ACHILLES_CLI_DIR);
-        this.historyPath = path.join(this.achillesCliDir, HISTORY_FILENAME);
+        this.achillesCliDir = resolveAchillesPrivateDataRoot(this.workingDir);
+        this.historyPath = assertSafeAchillesPrivatePath(this.workingDir, HISTORY_FILENAME, {
+            label: 'AchillesCLI history file',
+            type: 'file',
+        });
         this.maxEntries = maxEntries;
         this.history = [];
         this.currentIndex = -1;
@@ -44,6 +52,7 @@ export class HistoryManager {
                 }
             }
         } catch (error) {
+            if (error?.code === 'ACHILLES_PRIVATE_PATH_UNSAFE') throw error;
             // Silently ignore read errors, start with empty history
             this.history = [];
         }
@@ -54,11 +63,32 @@ export class HistoryManager {
      */
     _save() {
         try {
-            if (!fs.existsSync(this.achillesCliDir)) {
-                fs.mkdirSync(this.achillesCliDir, { recursive: true });
+            ensureAchillesPrivateDataRoot(this.workingDir);
+            assertSafeAchillesPrivatePath(this.workingDir, HISTORY_FILENAME, {
+                label: 'AchillesCLI history file',
+                type: 'file',
+            });
+            const temporaryPath = `${this.historyPath}.${process.pid}.${randomUUID()}.tmp`;
+            try {
+                fs.writeFileSync(temporaryPath, this.history.join('\n') + '\n', {
+                    encoding: 'utf8',
+                    mode: 0o600,
+                    flag: 'wx',
+                });
+                assertSafeAchillesPrivatePath(this.workingDir, HISTORY_FILENAME, {
+                    label: 'AchillesCLI history file',
+                    type: 'file',
+                });
+                fs.renameSync(temporaryPath, this.historyPath);
+            } finally {
+                try {
+                    fs.unlinkSync(temporaryPath);
+                } catch (error) {
+                    if (error?.code !== 'ENOENT') throw error;
+                }
             }
-            fs.writeFileSync(this.historyPath, this.history.join('\n') + '\n', 'utf-8');
         } catch (error) {
+            if (error?.code === 'ACHILLES_PRIVATE_PATH_UNSAFE') throw error;
             // Silently ignore write errors
         }
     }

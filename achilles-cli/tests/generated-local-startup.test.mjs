@@ -10,7 +10,7 @@ import { validateGeneratedLocalStartup } from '../src/lib/soulGatewayModels.mjs'
 
 const workspaceRoot = path.resolve(import.meta.dirname, '../..', '..');
 const fixtureRoot = path.join(workspaceRoot, 'ploinky', 'tests', 'fixtures', 'router-descriptor');
-const agentLibRoot = path.join(workspaceRoot, 'ploinky', 'node_modules', 'achillesAgentLib');
+const agentLibRoot = path.join(workspaceRoot, 'achillesAgentLib');
 
 function sha256(bytes) {
     return createHash('sha256').update(bytes).digest('hex');

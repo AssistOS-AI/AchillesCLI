@@ -967,7 +967,7 @@ export class SlashCommandHandler {
             try {
                 const result = updateRepos();
                 if (result.updated.length === 0) {
-                    return { handled: true, result: 'No repositories in .achilles-cli/repos/.' };
+                    return { handled: true, result: 'No repositories in .data/achilles-cli/repos/.' };
                 }
                 const lines = [`Updated repositories (${result.updated.length}):`];
                 for (const repo of result.updated) {
@@ -985,7 +985,7 @@ export class SlashCommandHandler {
             try {
                 const repos = listRepos();
                 if (repos.length === 0) {
-                    return { handled: true, result: 'No repositories in .achilles-cli/repos/.' };
+                    return { handled: true, result: 'No repositories in .data/achilles-cli/repos/.' };
                 }
                 const lines = [`Repositories (${repos.length}):`, ''];
                 for (const repo of repos) {
@@ -1008,7 +1008,7 @@ export class SlashCommandHandler {
             const url = parts[0];
             const name = parts[1];
             if (!url) {
-                return { handled: true, error: `Usage: /add repo <URL> [name]\n  Clone a repository into .achilles-cli/repos/` };
+                return { handled: true, error: `Usage: /add repo <URL> [name]\n  Clone a repository into .data/achilles-cli/repos/` };
             }
             try {
                 const result = addRepo(url, name);
@@ -1023,7 +1023,7 @@ export class SlashCommandHandler {
             const { removeRepo } = await import('../lib/repoManager.mjs');
             const name = args.trim();
             if (!name) {
-                return { handled: true, error: `Usage: /remove repo <name>\n  Remove a cloned repository from .achilles-cli/repos/` };
+                return { handled: true, error: `Usage: /remove repo <name>\n  Remove a cloned repository from .data/achilles-cli/repos/` };
             }
             try {
                 removeRepo(name);

@@ -1,8 +1,8 @@
 /**
- * repoManager - Manages cloned repositories within .achilles-cli/repos/.
+ * repoManager - Manages cloned repositories within .data/achilles-cli/repos/.
  *
  * Provides add, list, and remove operations for git repositories.
- * Repositories are cloned into .achilles-cli/repos/<name>/ and are
+ * Repositories are cloned into .data/achilles-cli/repos/<name>/ and are
  * automatically discovered by MainAgent's recursive skill scanning.
  */
 
@@ -10,28 +10,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import {
+    assertSafeAchillesPrivatePath,
+    ensureSafeAchillesPrivateDirectory,
+} from './privateDataRoot.mjs';
 
-const ACHILLES_CLI_DIR = '.achilles-cli';
 const REPOS_SUBDIR = 'repos';
 const require = createRequire(import.meta.url);
 
 /**
- * Ensure the .achilles-cli directory structure exists.
- * Creates .achilles-cli/ and .achilles-cli/repos/ if they don't exist.
+ * Ensure the AchillesCLI private repository structure exists.
+ * Creates .data/achilles-cli/ and .data/achilles-cli/repos/ if they do not exist.
  *
- * @param {string} [baseDir=process.cwd()] - Base directory to create .achilles-cli in
+ * @param {string} [baseDir=process.cwd()] - Selected workspace directory
  * @returns {{ achillesCliDir: string, reposDir: string }}
  */
 export function ensureAchillesCliDir(baseDir = process.cwd()) {
-    const achillesCliDir = path.join(baseDir, ACHILLES_CLI_DIR);
-    const reposDir = path.join(achillesCliDir, REPOS_SUBDIR);
-
-    if (!fs.existsSync(achillesCliDir)) {
-        fs.mkdirSync(achillesCliDir, { recursive: true });
-    }
-    if (!fs.existsSync(reposDir)) {
-        fs.mkdirSync(reposDir, { recursive: true });
-    }
+    const reposDir = ensureSafeAchillesPrivateDirectory(baseDir, REPOS_SUBDIR, {
+        label: 'AchillesCLI repositories directory',
+    });
+    const achillesCliDir = path.dirname(reposDir);
 
     return { achillesCliDir, reposDir };
 }
@@ -111,17 +109,24 @@ export function ensureAgentLibLinkForRepo(repoPath) {
 }
 
 /**
- * Repair achillesAgentLib symlinks for all cloned repos in .achilles-cli/repos/.
+ * Repair achillesAgentLib symlinks for all cloned repos in .data/achilles-cli/repos/.
  *
  * @param {string} [baseDir=process.cwd()]
  * @returns {Array<{ repo: string, status: string, path: string, target: string }>}
  */
 export function ensureAgentLibLinksForRepos(baseDir = process.cwd()) {
-    const { reposDir } = ensureAchillesCliDir(baseDir);
+    const reposDir = assertSafeAchillesPrivatePath(baseDir, REPOS_SUBDIR, {
+        label: 'AchillesCLI repositories directory',
+        type: 'directory',
+    });
+    if (!fs.existsSync(reposDir)) return [];
     const entries = fs.readdirSync(reposDir, { withFileTypes: true });
     const results = [];
 
     for (const entry of entries) {
+        if (entry.isSymbolicLink()) {
+            throw new Error('AchillesCLI repository entry is unsafe.');
+        }
         if (!entry.isDirectory() || entry.name.startsWith('.')) {
             continue;
         }
@@ -151,11 +156,11 @@ export function extractRepoNameFromUrl(url) {
 }
 
 /**
- * Add (clone) a repository into .achilles-cli/repos/.
+ * Add (clone) a repository into .data/achilles-cli/repos/.
  *
  * @param {string} url - Git repository URL
  * @param {string} [name] - Optional name for the repo directory (derived from URL if not provided)
- * @param {string} [baseDir=process.cwd()] - Base directory for .achilles-cli
+ * @param {string} [baseDir=process.cwd()] - Selected workspace directory
  * @returns {{ status: string, path: string, name: string }}
  */
 export function addRepo(url, name, baseDir = process.cwd()) {
@@ -169,11 +174,18 @@ export function addRepo(url, name, baseDir = process.cwd()) {
     if (!repoName) {
         throw new Error('Could not determine repository name. Provide a name explicitly.');
     }
+    if (repoName !== path.basename(repoName) || repoName === '.' || repoName === '..') {
+        throw new Error('Repository name must be one directory name.');
+    }
 
     const { reposDir } = ensureAchillesCliDir(baseDir);
     const repoPath = path.join(reposDir, repoName);
 
     if (fs.existsSync(repoPath)) {
+        const stat = fs.lstatSync(repoPath);
+        if (stat.isSymbolicLink() || !stat.isDirectory()) {
+            throw new Error('AchillesCLI repository entry is unsafe.');
+        }
         ensureAgentLibLinkForRepo(repoPath);
         return { status: 'exists', path: repoPath, name: repoName };
     }
@@ -187,7 +199,7 @@ export function addRepo(url, name, baseDir = process.cwd()) {
 }
 
 /**
- * List all cloned repositories in .achilles-cli/repos/.
+ * List all cloned repositories in .data/achilles-cli/repos/.
  *
  * @param {string} [baseDir=process.cwd()]
  * @returns {Array<{name: string, path: string, url: string|null}>}
@@ -198,6 +210,9 @@ export function listRepos(baseDir = process.cwd()) {
 
     const repos = [];
     for (const entry of entries) {
+        if (entry.isSymbolicLink()) {
+            throw new Error('AchillesCLI repository entry is unsafe.');
+        }
         if (!entry.isDirectory() || entry.name.startsWith('.')) {
             continue;
         }
@@ -225,7 +240,7 @@ export function listRepos(baseDir = process.cwd()) {
 }
 
 /**
- * Remove a cloned repository from .achilles-cli/repos/.
+ * Remove a cloned repository from .data/achilles-cli/repos/.
  *
  * @param {string} name - Repository name (directory name)
  * @param {string} [baseDir=process.cwd()]
@@ -237,10 +252,18 @@ export function removeRepo(name, baseDir = process.cwd()) {
     }
 
     const { reposDir } = ensureAchillesCliDir(baseDir);
-    const repoPath = path.join(reposDir, name.trim());
+    const normalizedName = name.trim();
+    if (normalizedName !== path.basename(normalizedName) || normalizedName === '.' || normalizedName === '..') {
+        throw new Error('Repository name must be one directory name.');
+    }
+    const repoPath = path.join(reposDir, normalizedName);
 
     if (!fs.existsSync(repoPath)) {
-        throw new Error(`Repository '${name}' not found in .achilles-cli/repos/.`);
+        throw new Error(`Repository '${name}' not found in .data/achilles-cli/repos/.`);
+    }
+    const stat = fs.lstatSync(repoPath);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new Error('AchillesCLI repository entry is unsafe.');
     }
 
     fs.rmSync(repoPath, { recursive: true, force: true });
@@ -263,7 +286,7 @@ function formatUpdateRepoFailures(failures) {
 }
 
 /**
- * Update all cloned repositories in .achilles-cli/repos/ with git pull.
+ * Update all cloned repositories in .data/achilles-cli/repos/ with git pull.
  *
  * @param {string} [baseDir=process.cwd()]
  * @returns {{ status: string, updated: Array<{ name: string, path: string, output: string }> }}
@@ -275,6 +298,9 @@ export function updateRepos(baseDir = process.cwd()) {
     const failures = [];
 
     for (const entry of entries) {
+        if (entry.isSymbolicLink()) {
+            throw new Error('AchillesCLI repository entry is unsafe.');
+        }
         if (!entry.isDirectory() || entry.name.startsWith('.')) {
             continue;
         }

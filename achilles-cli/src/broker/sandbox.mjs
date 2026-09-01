@@ -68,6 +68,7 @@ export function buildSandboxArgs({
     command,
     args = [],
     extraReadOnlyPaths = [],
+    extraWritablePaths = [],
     privateProc = canMountPrivateProc(),
 } = {}) {
     const resolvedWorkspace = fs.realpathSync(workspace);
@@ -92,7 +93,7 @@ export function buildSandboxArgs({
     }
     sandboxArgs.push('--dev', '/dev', '--tmpfs', '/tmp');
 
-    const writablePaths = [resolvedWorkspace];
+    const writablePaths = [resolvedWorkspace, ...extraWritablePaths];
     if (socketDir) writablePaths.push(fs.realpathSync(socketDir));
     for (const mountPath of uniqueVisiblePaths([...extraReadOnlyPaths])) {
         addParentDirs(sandboxArgs, mountPath);

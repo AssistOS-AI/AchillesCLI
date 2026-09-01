@@ -16,12 +16,12 @@ import {
     setSelectedModel,
 } from '../src/lib/achillesSettings.mjs';
 
-test('selected model is stored under the workspace .achilles-cli directory', async () => {
+test('selected model is stored under the workspace .data/achilles-cli directory', async () => {
     const workingDir = await mkdtemp(join(tmpdir(), 'achilles-settings-'));
     setSelectedModel(workingDir, 'anthropic/claude-sonnet');
 
     assert.equal(getSelectedModel(workingDir), 'anthropic/claude-sonnet');
-    const stored = JSON.parse(await readFile(join(workingDir, '.achilles-cli', 'settings.json'), 'utf8'));
+    const stored = JSON.parse(await readFile(join(workingDir, '.data', 'achilles-cli', 'settings.json'), 'utf8'));
     assert.deepEqual(stored, {
         model: 'anthropic/claude-sonnet',
     });
@@ -38,18 +38,18 @@ test('disabled skills are stored per workspace and preserve unrelated settings',
         'beta-cskill',
     ]);
     assert.deepEqual(getDisabledSkills(workingDir), ['alpha-oskill', 'beta-cskill']);
-    const stored = JSON.parse(await readFile(join(workingDir, '.achilles-cli', 'settings.json'), 'utf8'));
+    const stored = JSON.parse(await readFile(join(workingDir, '.data', 'achilles-cli', 'settings.json'), 'utf8'));
     assert.equal(stored.model, 'test/model');
 
     setDisabledSkills(workingDir, []);
     assert.deepEqual(getDisabledSkills(workingDir), []);
-    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(workingDir, '.achilles-cli', 'settings.json'), 'utf8')), 'disabledSkills'), false);
+    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(workingDir, '.data', 'achilles-cli', 'settings.json'), 'utf8')), 'disabledSkills'), false);
 });
 
 test('malformed settings fall back without destroying the file', async () => {
     const workingDir = await mkdtemp(join(tmpdir(), 'achilles-settings-invalid-'));
-    const settingsDir = join(workingDir, '.achilles-cli');
-    await mkdir(settingsDir);
+    const settingsDir = join(workingDir, '.data', 'achilles-cli');
+    await mkdir(settingsDir, { recursive: true });
     await writeFile(join(settingsDir, 'settings.json'), '{invalid');
 
     assert.equal(getSelectedModel(workingDir), null);
@@ -66,7 +66,7 @@ test('permission mode is stored per workspace beside the selected model', async 
     assert.equal(getPermissionMode(firstWorkspace), 'full-access');
     assert.equal(getPermissionMode(secondWorkspace), 'ask-for-approval');
 
-    const stored = JSON.parse(await readFile(join(firstWorkspace, '.achilles-cli', 'settings.json'), 'utf8'));
+    const stored = JSON.parse(await readFile(join(firstWorkspace, '.data', 'achilles-cli', 'settings.json'), 'utf8'));
     assert.deepEqual(stored, {
         model: 'anthropic/claude-sonnet',
         permissions: 'full-access',
@@ -84,7 +84,7 @@ test('current conversation session is stored beside model and permissions', asyn
     setCurrentSessionId(workingDir, sessionId);
 
     assert.equal(getCurrentSessionId(workingDir), sessionId);
-    assert.deepEqual(JSON.parse(await readFile(join(workingDir, '.achilles-cli', 'settings.json'), 'utf8')), {
+    assert.deepEqual(JSON.parse(await readFile(join(workingDir, '.data', 'achilles-cli', 'settings.json'), 'utf8')), {
         model: 'anthropic/claude-sonnet',
         permissions: 'full-access',
         currentSessionId: sessionId,
@@ -93,8 +93,8 @@ test('current conversation session is stored beside model and permissions', asyn
 
 test('invalid persisted permission modes fall back safely and invalid writes are rejected', async () => {
     const workingDir = await mkdtemp(join(tmpdir(), 'achilles-permissions-invalid-'));
-    const settingsDir = join(workingDir, '.achilles-cli');
-    await mkdir(settingsDir);
+    const settingsDir = join(workingDir, '.data', 'achilles-cli');
+    await mkdir(settingsDir, { recursive: true });
     await writeFile(join(settingsDir, 'settings.json'), JSON.stringify({
         version: 1,
         permissions: 'unrestricted',
@@ -106,8 +106,8 @@ test('invalid persisted permission modes fall back safely and invalid writes are
 
 test('a settings write removes the legacy version property', async () => {
     const workingDir = await mkdtemp(join(tmpdir(), 'achilles-settings-legacy-version-'));
-    const settingsDir = join(workingDir, '.achilles-cli');
-    await mkdir(settingsDir);
+    const settingsDir = join(workingDir, '.data', 'achilles-cli');
+    await mkdir(settingsDir, { recursive: true });
     await writeFile(join(settingsDir, 'settings.json'), JSON.stringify({
         version: 1,
         permissions: 'full-access',

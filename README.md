@@ -40,7 +40,7 @@ npm start -- --dir ./example-workspace
 
 ## Configuration
 
-`--dir <path>` selects the sandboxed working directory, and repeatable `--skill-root <path>` options add session-only skill roots. `--permissions ask-for-approval` requires a decision for each new Bash call; `--permissions full-access` starts Bash calls without prompting but does not widen the workspace sandbox. `/permissions` persists the selected mode in `<workspace>/.achilles-cli/settings.json`, while an explicit startup option overrides the saved value only for that process.
+`--dir <path>` selects the sandboxed working directory, and repeatable `--skill-root <path>` options add session-only skill roots. `--permissions ask-for-approval` requires a decision for each new Bash call; `--permissions full-access` starts Bash calls without prompting but does not widen the workspace sandbox. `/permissions` persists the selected mode in `<workspace>/.data/achilles-cli/settings.json`, while an explicit startup option overrides the saved value only for that process. When Ploinky supplies `PLOINKY_WORKSPACE_ROOT`, all AchillesCLI-owned state is anchored to that workspace root even if `--dir` selects a nested directory.
 
 `/model <model-name>` stores an explicit Soul Gateway model selection in the same settings file. `/tier` removes that explicit selection and returns routing to the configured tier strategy. All model calls go through AchillesAgentLib `LLMAgent`; repository code does not call a model provider directly.
 

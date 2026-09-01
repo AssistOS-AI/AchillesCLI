@@ -19,7 +19,7 @@
                 },
                 "projectDir": {
                     "type": "string",
-                    "description": "Directory where opencode will run. A .opencode/skills symlink is created here pointing to /code/skills. Task-specific skills may create subdirectories as needed inside this directory.",
+                    "description": "Directory where OpenCode will run and write caller-requested project artifacts. Task-specific skills may create subdirectories as needed inside this directory.",
                     "optional": false
                 },
                 "model": {

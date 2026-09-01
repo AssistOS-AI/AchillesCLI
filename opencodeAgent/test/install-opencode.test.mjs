@@ -12,6 +12,7 @@ const agentDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const installScript = path.join(agentDir, 'scripts', 'install-opencode.sh');
 const configTemplate = path.join(agentDir, 'opencode.json');
 const manifestPath = path.join(agentDir, 'manifest.json');
+const mcpConfigPath = path.join(agentDir, 'mcp-config.json');
 
 async function writeFakeCurl(binDir) {
     const curlPath = path.join(binDir, 'curl');
@@ -123,4 +124,13 @@ test('config uses only the task-scoped Soul broker credential', async () => {
         JSON.stringify(manifest),
         /SOUL_GATEWAY_(?:API_KEY|BASE_URL)|PLOINKY_ROUTER_(?:URL|HOST|PORT)/,
     );
+});
+
+test('MCP project directory description makes only runtime-supported claims', async () => {
+    const config = JSON.parse(await fs.readFile(mcpConfigPath, 'utf8'));
+    const executeTask = config.tools.find((tool) => tool.name === 'execute-task');
+    const description = executeTask?.inputSchema?.projectDir?.description;
+
+    assert.match(description, /write caller-requested project artifacts/);
+    assert.doesNotMatch(description, /\.opencode\/skills|symlink/i);
 });

@@ -40,7 +40,7 @@
     runs Bash automatically only inside the current workspace. Approvals never widen the filesystem sandbox,
     and there is no outside retry in the current implementation.
     The selected mode is stored per workspace under the <code>permissions</code> key in
-    <code>.achilles-cli/settings.json</code> and restored at startup. Missing or invalid values fall back to
+    <code>.data/achilles-cli/settings.json</code> and restored at startup. Missing or invalid values fall back to
     <code>ask-for-approval</code>. The same settings object keeps the selected model and conversation
     <code>currentSessionId</code>. It is unversioned and contains no <code>version</code> key;
     reusable exact-command approvals remain session-local.
@@ -101,7 +101,7 @@
     AchillesCLI acknowledges the start with
     the generic text <code>Task started.</code>, while the task module shows the target runtime id and description,
     follows the remote task through the router, and persists lifecycle metadata and logs under
-    <code>.achilles-cli/tasks/</code>. Ongoing tasks are reattached whenever an AchillesCLI process is recreated;
+    <code>.data/achilles-cli/tasks/</code>. Ongoing tasks are reattached whenever an AchillesCLI process is recreated;
     WebChat mode additionally emits dedicated lifecycle and log envelopes.
     Resumable coding tasks forward a generic opaque continuation handle after completion. The provider session stays
     private to its agent; AchillesCLI starts later turns as new remote executions while keeping one stable local task id.
@@ -113,8 +113,8 @@
 
   <h2>Conversation Sessions</h2>
   <div class="card">
-    Durable conversations live under <code>.achilles-cli/sessions/</code>. The selected
-    <code>currentSessionId</code> is stored in <code>.achilles-cli/settings.json</code> beside model and permissions.
+    Durable conversations live under <code>.data/achilles-cli/sessions/</code>. The selected
+    <code>currentSessionId</code> is stored in <code>.data/achilles-cli/settings.json</code> beside model and permissions.
     The same workspace settings object stores canonical disabled skill names. The <code>/skills</code> command lists enabled and disabled workspace skills, while singular <code>/skill</code> and plural <code>/skills</code> mutations update one skill or every registered skill below a relative directory.
     Terminal users can open the selector with <code>/session</code>, create a conversation with
     <code>/session new</code>, and resume one with <code>/session resume &lt;session-id&gt;</code>.
@@ -127,7 +127,7 @@
 
   <h2>Repository Maintenance</h2>
   <div class="card">
-    Cloned skill repositories live under <code>.achilles-cli/repos/</code>.
+    Cloned skill repositories live under <code>.data/achilles-cli/repos/</code>.
     The slash command <code>/update repos</code> runs <code>git pull</code> in each cloned repository and reports
     aggregated per-repository failures with a <code>failed to update repos:</code> message.
   </div>
@@ -172,7 +172,7 @@
   <h2>Workspace Model Selection</h2>
   <div class="card">
     <code>/model &lt;model-name&gt;</code> selects an exact model or cascade from the authenticated local
-    Soul Gateway catalog and stores it in <code>.achilles-cli/settings.json</code> for the current workspace.
+    Soul Gateway catalog and stores it in <code>.data/achilles-cli/settings.json</code> for the current workspace.
     WebChat keeps the full catalog searchable inside a fixed-height, progressively rendered suggestion list;
     typing part of a model, provider, tag, or description narrows the list. The terminal uses an interactive
     search selector. The WebChat runtime publishes that explicit settings value through generic runtime-state

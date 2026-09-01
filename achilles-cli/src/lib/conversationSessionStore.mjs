@@ -6,6 +6,11 @@ import {
     getCurrentSessionId,
     setCurrentSessionId,
 } from './achillesSettings.mjs';
+import {
+    assertSafeAchillesPrivatePath,
+    ensureAchillesPrivateDataRoot,
+    resolveAchillesPrivateDataRoot,
+} from './privateDataRoot.mjs';
 
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TASK_ID_RE = /^task_[0-9a-f]{24}$/;
@@ -42,6 +47,7 @@ function atomicWriteJson(filePath, value) {
             mode: 0o600,
             flag: 'wx',
         });
+        assertRegularFileOrMissing(filePath);
         fs.renameSync(temporaryPath, filePath);
     } finally {
         try {
@@ -142,23 +148,34 @@ export function buildConversationInitialHistory(session) {
 export class ConversationSessionStore {
     constructor({ workingDir = process.cwd() } = {}) {
         this.workingDir = fs.realpathSync(path.resolve(workingDir));
-        this.achillesDirectory = path.join(this.workingDir, '.achilles-cli');
-        this.sessionsDirectory = path.join(this.achillesDirectory, 'sessions');
+        this.achillesDirectory = resolveAchillesPrivateDataRoot(this.workingDir);
+        this.sessionsDirectory = assertSafeAchillesPrivatePath(this.workingDir, 'sessions', {
+            label: 'AchillesCLI sessions directory',
+            type: 'directory',
+        });
         this.ensureDirectory();
     }
 
     ensureDirectory() {
-        fs.mkdirSync(this.achillesDirectory, { recursive: true, mode: 0o700 });
+        ensureAchillesPrivateDataRoot(this.workingDir);
+        assertSafeAchillesPrivatePath(this.workingDir, 'sessions', {
+            label: 'AchillesCLI sessions directory',
+            type: 'directory',
+        });
         try {
             const stat = fs.lstatSync(this.sessionsDirectory);
             if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('unsafe_sessions_directory');
             const real = fs.realpathSync(this.sessionsDirectory);
-            if (!isInside(this.workingDir, real)) throw new Error('unsafe_sessions_directory');
+            if (!isInside(this.achillesDirectory, real)) throw new Error('unsafe_sessions_directory');
         } catch (error) {
             if (error?.code !== 'ENOENT') throw error;
             fs.mkdirSync(this.sessionsDirectory, { mode: 0o700 });
         }
         const gitignorePath = path.join(this.sessionsDirectory, '.gitignore');
+        assertSafeAchillesPrivatePath(this.workingDir, 'sessions/.gitignore', {
+            label: 'AchillesCLI session metadata file',
+            type: 'file',
+        });
         if (!fs.existsSync(gitignorePath)) {
             fs.writeFileSync(gitignorePath, SESSION_STORE_GITIGNORE, {
                 encoding: 'utf8',
@@ -170,8 +187,16 @@ export class ConversationSessionStore {
 
     sessionPath(sessionId) {
         const normalized = assertSessionId(sessionId);
+        // The directory can be replaced after construction. Revalidate the
+        // complete owned path at every operation instead of trusting the
+        // constructor's one-time check.
+        this.ensureDirectory();
         const filePath = path.join(this.sessionsDirectory, `${normalized}.json`);
         if (!isInside(this.sessionsDirectory, filePath)) throw new Error('invalid_session_id');
+        assertSafeAchillesPrivatePath(this.workingDir, `sessions/${normalized}.json`, {
+            label: 'AchillesCLI session file',
+            type: 'file',
+        });
         return filePath;
     }
 
@@ -216,6 +241,7 @@ export class ConversationSessionStore {
     listSessions() {
         const current = this.ensureCurrentSession();
         const sessions = [];
+        this.ensureDirectory();
         for (const entry of fs.readdirSync(this.sessionsDirectory, { withFileTypes: true })) {
             if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith('.json')) continue;
             const sessionId = entry.name.slice(0, -5);

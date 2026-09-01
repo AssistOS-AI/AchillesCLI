@@ -9,7 +9,7 @@ This DS owns AchillesCLI policy for Agentic Knowledge Units (AKU). AchillesAgent
 
 ## Core Content
 
-AchillesCLI may prepare AKU context when a prompt refers to durable work, prior results, scoped project knowledge, or reusable findings. A missing `.aku` directory must not block ordinary prompts and must be initialized only when the requested work needs durable AKU state.
+AchillesCLI may prepare AKU context when a prompt refers to durable work, prior results, scoped project knowledge, or reusable findings. A missing `<workspace>/.data/achilles-cli/aku/` persistence root must not block ordinary prompts and must be initialized only when the requested work needs durable AKU state.
 
 | Phase | AchillesCLI responsibility |
 | --- | --- |
@@ -28,4 +28,4 @@ After execution, AchillesCLI should persist the durable consequence rather than 
 
 Provider-result caching may use AKU only when a launcher declares its result cacheable. An exact hit must match backend, working directory, normalized prompt hash, and an unexpired lifetime. A conservative similar-prompt hit must additionally match an agent-result cache record and sufficient prompt terms; lexical search must not be described as vector similarity. Execution results from providers marked non-cacheable must run again.
 
-All access must use the public `AgenticKnowledgeUnits` interface. AchillesCLI must not read, write, or infer private `.aku` layout. Generic WebChat folder, attachment, and path hints may help resolution after workspace validation, but they must never create or mutate a KU without AchillesCLI interpreting a user request.
+All access must use the public `AgenticKnowledgeUnits` interface and provide `<workspace>/.data/achilles-cli/aku/` as its explicit persistence root. AchillesCLI must not read, write, or infer the library's private persistence layout. Generic WebChat folder, attachment, and path hints may help resolution after workspace validation, but they must never create or mutate a KU without AchillesCLI interpreting a user request.

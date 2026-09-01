@@ -16,11 +16,13 @@ This DS provides the architectural map for AchillesCLI. It names component owner
 | Interaction runtime | Converts terminal or WebChat input into slash commands, natural-language prompts, session actions, and task actions. |
 | AchillesAgentLib | Provides model-backed planning, skill discovery, and tool execution inside the sandbox. |
 | Presentation system | Collects terminal input and renders choices, progress, help, Markdown, and results without owning domain state. |
-| Workspace services | Persist settings, conversations, disabled skills, task journals, logs, and optional AKU memory below the selected workspace. |
+| Workspace services | Persist settings, conversations, disabled skills, task journals, logs, repositories, and optional AKU memory below `<workspace>/.data/achilles-cli/`. |
+
+Direct launches anchor private state to the real selected workspace. Ploinky launches anchor it to the real `PLOINKY_WORKSPACE_ROOT`, including when the selected working directory is a nested path. A nested launch must expose the validated outer `.data/achilles-cli` directory as a separate writable Bubblewrap mount without exposing the rest of the outer workspace. The owned children are `settings.json`, `sessions/`, `tasks/`, `repos/`, `history`, and `aku/`; every storage service must reject a symbolic link at its owned child before reads, writes, scans, or removal, and no component may probe another storage root.
 
 Slash commands form the deterministic path and must call their named handler or skill without unnecessary model routing. Natural-language input forms the orchestrated path and may let MainAgent select several skills. Both paths share the same workspace, skill catalog, persisted settings, and error boundary.
 
-The broker process must remain outside Bubblewrap and must not execute Bash commands. MainAgent, skill code, the local Bash executor, and approved Bash children must remain inside the persistent sandbox. The selected workspace is the only automatic writable project tree. Network access is shared, so filesystem confinement must not be described as network isolation.
+The broker process must remain outside Bubblewrap and must not execute Bash commands. MainAgent, skill code, the local Bash executor, and approved Bash children must remain inside the persistent sandbox. The selected workspace is the only automatic writable project tree; a separately validated outer AchillesCLI private-state mount is storage, not another project tree. Network access is shared, so filesystem confinement must not be described as network isolation.
 
 Only Bash requires broker authorization. `ask-for-approval` requires a per-call decision unless MainAgent holds a matching session-local reusable approval; `full-access` skips the prompt but does not widen the sandbox. The untrusted runtime may request a mode change or resolve an interaction only through the one-time trusted control capability. A denial must skip execution and return an ordinary tool result to the planner.
 

@@ -57,7 +57,7 @@ start, but never widen its filesystem sandbox.
 The Bash executor runs inside MainAgent and starts commands as ordinary child
 processes that inherit the existing sandbox; it does not create another bwrap.
 The mode selected with `/permissions` is persisted beside the selected model
-in `<workspace>/.achilles-cli/settings.json`. An explicit `--permissions`
+in `<workspace>/.data/achilles-cli/settings.json`. An explicit `--permissions`
 option overrides that saved mode for the current process without rewriting it.
 
 ### REPL Mode

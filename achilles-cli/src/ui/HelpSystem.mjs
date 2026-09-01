@@ -495,7 +495,7 @@ ${C.dim}Type /help or just "help" for quick reference.${C.reset}
         content: `
 ${C.bold}${C.cyan}Repository Management${C.reset}
 
-Achilles CLI stores cloned repositories in ${C.cyan}.achilles-cli/repos/${C.reset}.
+Achilles CLI stores cloned repositories in ${C.cyan}.data/achilles-cli/repos/${C.reset}.
 Skills inside these repos are automatically discovered by MainAgent
 after a ${C.green}reload${C.reset} command.
 
@@ -505,10 +505,10 @@ ${C.bold}${C.yellow}Adding a Repository:${C.reset}
   The name is optional — derived from the URL if omitted.
 
   ${C.green}>${C.reset} /add-repo https://github.com/foo/bar.git
-  ${C.dim}Clones into .achilles-cli/repos/bar/${C.reset}
+  ${C.dim}Clones into .data/achilles-cli/repos/bar/${C.reset}
 
   ${C.green}>${C.reset} /add-repo https://github.com/foo/bar.git my-repo
-  ${C.dim}Clones into .achilles-cli/repos/my-repo/${C.reset}
+  ${C.dim}Clones into .data/achilles-cli/repos/my-repo/${C.reset}
 
 ${C.bold}${C.yellow}Listing Repositories:${C.reset}
   ${C.green}>${C.reset} /list-repos
@@ -520,12 +520,12 @@ ${C.bold}${C.yellow}Updating Repositories:${C.reset}
 
 ${C.bold}${C.yellow}Removing a Repository:${C.reset}
   ${C.green}>${C.reset} /remove-repo <name>
-  ${C.dim}Deletes .achilles-cli/repos/<name>/${C.reset}
+  ${C.dim}Deletes .data/achilles-cli/repos/<name>/${C.reset}
 
 ${C.bold}${C.yellow}After Cloning:${C.reset}
   Run ${C.green}reload${C.reset} to re-scan skills from the new repository.
 
-${C.dim}Repositories are stored locally in .achilles-cli/repos/.${C.reset}
+${C.dim}Repositories are stored locally in .data/achilles-cli/repos/.${C.reset}
 `,
     },
 };
@@ -836,7 +836,7 @@ ${C.bold}${C.yellow}Description:${C.reset}
   Updates a specific section of a skill definition. The LLM will
   analyze the skill and generate new content for the specified section.
   With ${C.green}/update repos${C.reset}, pulls every cloned repository in
-  .achilles-cli/repos/ and reports any per-repository git errors.
+  .data/achilles-cli/repos/ and reports any per-repository git errors.
 
 ${C.bold}${C.yellow}Common Sections:${C.reset}
   ${C.cyan}tskill:${C.reset} Table Purpose, Fields, Business Rules
@@ -922,7 +922,7 @@ ${C.bold}${C.yellow}Usage:${C.reset}
   ${C.green}/skill enable <skill-name>${C.reset}           Enable one canonical skill
   ${C.green}/skill disable <skill-name>${C.reset}          Disable one canonical skill
 
-Only registered skills below the current working directory are mutable. Disabled names are persisted in <workspace>/.achilles-cli/settings.json.
+Only registered skills below the current working directory are mutable. Disabled names are persisted in <workspace>/.data/achilles-cli/settings.json.
 `,
     },
     skill: {
@@ -1077,7 +1077,7 @@ ${C.bold}${C.yellow}Usage:${C.reset}
 
 ${C.bold}${C.yellow}Description:${C.reset}
   Selects the model used for subsequent AchillesCLI LLM calls and stores
-  it in .achilles-cli/settings.json for the current workspace. WebChat
+  it in .data/achilles-cli/settings.json for the current workspace. WebChat
   provides searchable autocomplete after typing /model and a space.
   Switching tiers with /tier removes the saved model selection.
 
@@ -1107,7 +1107,7 @@ ${C.bold}${C.yellow}Description:${C.reset}
   still confined to the current workspace. Paths outside that workspace are
   unavailable in both modes; approval never widens the filesystem sandbox.
 
-  The selected mode is saved in .achilles-cli/settings.json for this
+  The selected mode is saved in .data/achilles-cli/settings.json for this
   workspace and restored the next time AchillesCLI starts in the folder.
 
   Always allow is remembered only for the exact Bash tool parameters and
@@ -1125,15 +1125,15 @@ ${C.bold}${C.yellow}Usage:${C.reset}
   ${C.green}/add-repo <URL> <name>${C.reset}    Clone with custom name
 
 ${C.bold}${C.yellow}Description:${C.reset}
-  Clones a git repository into .achilles-cli/repos/.
+  Clones a git repository into .data/achilles-cli/repos/.
   If no name is provided, it is derived from the URL.
 
 ${C.bold}${C.yellow}Examples:${C.reset}
   ${C.green}>${C.reset} /add-repo https://github.com/foo/bar.git
-  ${C.dim}Clones into .achilles-cli/repos/bar/${C.reset}
+  ${C.dim}Clones into .data/achilles-cli/repos/bar/${C.reset}
 
   ${C.green}>${C.reset} /add-repo https://github.com/foo/bar.git my-repo
-  ${C.dim}Clones into .achilles-cli/repos/my-repo/${C.reset}
+  ${C.dim}Clones into .data/achilles-cli/repos/my-repo/${C.reset}
 
 ${C.bold}${C.yellow}After Cloning:${C.reset}
   Run ${C.cyan}reload${C.reset} to re-scan skills from the new repository.
@@ -1149,7 +1149,7 @@ ${C.bold}${C.yellow}Usage:${C.reset}
   ${C.green}/list-repos${C.reset}
 
 ${C.bold}${C.yellow}Description:${C.reset}
-  Shows all repositories cloned into .achilles-cli/repos/,
+  Shows all repositories cloned into .data/achilles-cli/repos/,
   including their git remote URLs and local paths.
 
 ${C.bold}${C.yellow}Example Output:${C.reset}
@@ -1157,11 +1157,11 @@ ${C.bold}${C.yellow}Example Output:${C.reset}
 
     my-skill-repo
       URL: https://github.com/foo/skills.git
-      Path: /path/to/.achilles-cli/repos/my-skill-repo
+      Path: /path/to/.data/achilles-cli/repos/my-skill-repo
 
     utils
       URL: https://github.com/bar/utils.git
-      Path: /path/to/.achilles-cli/repos/utils${C.reset}
+      Path: /path/to/.data/achilles-cli/repos/utils${C.reset}
 `,
     },
 
@@ -1174,12 +1174,12 @@ ${C.bold}${C.yellow}Usage:${C.reset}
   ${C.green}/remove-repo <name>${C.reset}
 
 ${C.bold}${C.yellow}Description:${C.reset}
-  Removes a cloned repository from .achilles-cli/repos/.
+  Removes a cloned repository from .data/achilles-cli/repos/.
   This permanently deletes the repository directory.
 
 ${C.bold}${C.yellow}Examples:${C.reset}
   ${C.green}>${C.reset} /remove-repo my-repo
-  ${C.dim}Deletes .achilles-cli/repos/my-repo/${C.reset}
+  ${C.dim}Deletes .data/achilles-cli/repos/my-repo/${C.reset}
 
 ${C.bold}${C.red}Warning:${C.reset} This permanently deletes the repository!
 `,

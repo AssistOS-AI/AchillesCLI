@@ -100,6 +100,61 @@ test('sandbox uses an empty proc directory when nested proc mounts are unavailab
     }
 });
 
+test('sandbox exposes an outer AchillesCLI private root as a separate writable mount', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-nested-private-mount-'));
+    const workspaceRoot = path.join(root, 'workspace');
+    const selectedDirectory = path.join(workspaceRoot, 'projects', 'nested');
+    const privateDataRoot = path.join(workspaceRoot, '.data', 'achilles-cli');
+    fs.mkdirSync(selectedDirectory, { recursive: true });
+    fs.mkdirSync(privateDataRoot, { recursive: true });
+    try {
+        const resolvedPrivateRoot = fs.realpathSync(privateDataRoot);
+        const args = buildSandboxArgs({
+            workspace: selectedDirectory,
+            command: '/usr/bin/true',
+            extraWritablePaths: [privateDataRoot],
+            privateProc: false,
+        });
+        assert.notEqual(args.findIndex((entry, index) => (
+            entry === '--bind'
+            && args[index + 1] === resolvedPrivateRoot
+            && args[index + 2] === resolvedPrivateRoot
+        )), -1);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('nested Ploinky sandbox can write the validated outer private root', {
+    skip: !sandboxAvailable,
+}, async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-nested-private-launch-'));
+    const workspaceRoot = path.join(root, 'workspace');
+    const selectedDirectory = path.join(workspaceRoot, 'projects', 'nested');
+    const probePath = path.join(selectedDirectory, 'write-private-root.mjs');
+    const outputPath = path.join(workspaceRoot, '.data', 'achilles-cli', 'launch-proof.txt');
+    fs.mkdirSync(selectedDirectory, { recursive: true });
+    fs.writeFileSync(probePath, [
+        "import fs from 'node:fs';",
+        `fs.writeFileSync(${JSON.stringify(outputPath)}, 'writable');`,
+    ].join('\n'));
+    const previousWorkspaceRoot = process.env.PLOINKY_WORKSPACE_ROOT;
+    process.env.PLOINKY_WORKSPACE_ROOT = workspaceRoot;
+    try {
+        const exitCode = await runBrokeredMainAgent({
+            workspace: selectedDirectory,
+            argv: [],
+            entryPath: probePath,
+        });
+        assert.equal(exitCode, 0);
+        assert.equal(fs.readFileSync(outputPath, 'utf8'), 'writable');
+    } finally {
+        if (previousWorkspaceRoot === undefined) delete process.env.PLOINKY_WORKSPACE_ROOT;
+        else process.env.PLOINKY_WORKSPACE_ROOT = previousWorkspaceRoot;
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
 test('private proc capability probe returns a boolean', () => {
     assert.equal(typeof canMountPrivateProc(bwrap), 'boolean');
 });

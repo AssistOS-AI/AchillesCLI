@@ -4,7 +4,7 @@
 Perform deterministic Agentic Knowledge Unit memory actions through the AchillesCLI AKU adapter.
 
 ## Description
-Use this only for durable local memory operations that the user explicitly requested or that are clearly implied by a durable work task. It wraps public AgenticKnowledgeUnits APIs and does not read or write `.aku` internals directly.
+Use this only for durable local memory operations that the user explicitly requested or that are clearly implied by a durable work task. It wraps public AgenticKnowledgeUnits APIs and does not read or write persistence internals directly.
 
 ## Input Format
 JSON object with an `operation` field.

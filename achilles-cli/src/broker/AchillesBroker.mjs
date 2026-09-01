@@ -21,6 +21,7 @@ import {
     findBubblewrap,
     resolveGeneratedRouterDescriptorMount,
 } from './sandbox.mjs';
+import { ensureAchillesPrivateDataRoot } from '../lib/privateDataRoot.mjs';
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -263,6 +264,7 @@ export async function runBrokeredMainAgent({
     }
     assertCurrentProcfs();
     const generatedRouterDescriptor = resolveGeneratedRouterDescriptorMount();
+    const privateDataRoot = ensureAchillesPrivateDataRoot(workspace);
     const broker = new AchillesBroker({
         workspace,
         webchat,
@@ -289,6 +291,7 @@ export async function runBrokeredMainAgent({
         command: process.execPath,
         args: [entryPath, ...argv],
         extraReadOnlyPaths: runtimeMounts,
+        extraWritablePaths: [privateDataRoot],
     });
 
     const exitCode = await new Promise((resolve, reject) => {

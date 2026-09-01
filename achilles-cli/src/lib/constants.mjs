@@ -75,7 +75,7 @@ export const DOC_SCAFFOLD_TYPES = [
  * Well-known file names used across the codebase
  */
 export const FILE_NAMES = {
-  HISTORY: '.achilles-cli-history',
+  HISTORY: '.data/achilles-cli/history',
   TSKILL_GENERATED: 'tskill.generated.mjs',
 };
 

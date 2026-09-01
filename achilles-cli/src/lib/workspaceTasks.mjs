@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+    ensureAchillesPrivateDataRoot,
+    resolveAchillesPrivateDataRoot,
+} from './privateDataRoot.mjs';
 
 const TASK_ID_RE = /^task_[0-9a-f]{24}$/;
 const TERMINAL_STATUSES = new Set(['finished', 'stopped', 'error']);
@@ -57,7 +61,8 @@ function assertSafeFile(candidate, root) {
 
 function resolveTaskStorage(workingDir, { includeLogs = false } = {}) {
     const workspace = fs.realpathSync(workingDir);
-    const achillesDirectory = assertSafeDirectory(path.join(workspace, '.achilles-cli'), workspace);
+    const privateDataRoot = resolveAchillesPrivateDataRoot(workspace);
+    const achillesDirectory = assertSafeDirectory(privateDataRoot, path.dirname(privateDataRoot));
     if (!achillesDirectory) return null;
     const history = assertSafeDirectory(path.join(achillesDirectory, 'tasks'), achillesDirectory);
     if (!history) return null;
@@ -74,10 +79,10 @@ function resolveTaskStorage(workingDir, { includeLogs = false } = {}) {
 
 function ensureTaskStorage(workingDir) {
     const workspace = fs.realpathSync(workingDir);
-    const achillesDirectory = path.join(workspace, '.achilles-cli');
+    const achillesDirectory = ensureAchillesPrivateDataRoot(workspace);
     const history = path.join(achillesDirectory, 'tasks');
     const logDirectory = path.join(history, LOG_DIRECTORY_NAME);
-    for (const directory of [achillesDirectory, history, logDirectory]) {
+    for (const directory of [history, logDirectory]) {
         let stat = lstatOptional(directory);
         if (!stat) {
             try { fs.mkdirSync(directory, { mode: 0o700 }); }
@@ -87,7 +92,7 @@ function ensureTaskStorage(workingDir) {
         if (!stat?.isDirectory() || stat.isSymbolicLink()) {
             throw new Error('Task history storage is unsafe.');
         }
-        if (!isInside(workspace, fs.realpathSync(directory))) {
+        if (!isInside(achillesDirectory, fs.realpathSync(directory))) {
             throw new Error('Task history storage is unsafe.');
         }
     }
@@ -274,6 +279,7 @@ function atomicWriteJson(filePath, value) {
     const temporaryPath = `${filePath}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
     try {
         fs.writeFileSync(temporaryPath, `${JSON.stringify(value)}\n`, { mode: 0o600, flag: 'wx' });
+        assertSafeFile(filePath, path.dirname(filePath));
         fs.renameSync(temporaryPath, filePath);
     } finally {
         try { fs.unlinkSync(temporaryPath); } catch (_) { }
