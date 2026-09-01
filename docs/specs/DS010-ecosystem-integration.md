@@ -133,6 +133,9 @@ Ploinky integration boundary:
     `/base-agent-additional-server/soul-gateway/7000/v1/models` route and the
     existing generated Ploinky agent credential; it does not add a public HTTP
     service, delegation, or MCP execution tool.
+    The same manifest enables the exact `roboTeamAgent no-wait` dependency so
+    its authenticated profile dashboard starts asynchronously without delaying
+    AchillesCLI's own activation.
 19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
     Optional activation is additive: the candidate must be admitted and become
     ready before routing selection changes, and a failed candidate must leave
