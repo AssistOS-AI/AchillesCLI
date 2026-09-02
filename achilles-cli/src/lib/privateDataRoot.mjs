@@ -19,7 +19,9 @@ function realDirectory(directory, label) {
         throw error;
     }
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
-        throw new Error(`${label} must be a real directory.`);
+        const error = new Error(`${label} must be a real directory.`);
+        error.code = 'ACHILLES_PRIVATE_PATH_UNSAFE';
+        throw error;
     }
     return fs.realpathSync(resolved);
 }

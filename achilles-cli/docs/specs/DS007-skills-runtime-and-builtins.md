@@ -11,6 +11,8 @@ This DS owns the runtime lifecycle of skills. Skill-document syntax belongs to D
 
 AchillesAgentLib `MainAgent` must discover and execute skills. AchillesCLI supplies its built-in root, optional CLI roots, supported `node_modules` roots, and Ploinky repository roots under `.ploinky/repos/<repo>/achilles-skills`. Root order must be deterministic, and later external definitions may replace a built-in fallback with the same canonical name.
 
+Repositories added through `/add repo` belong to `<workspace>/.data/achilles-cli/repos/`. That owned root must be validated and registered as an additional workspace skill root at startup and each explicit catalog reload, including when `--dir` selects a nested project. Reload must add new managed skills, remove deleted skills and aliases, and preserve disabled canonical names. Discovery must not scan other agents' private state or AKU storage. Registering this root must not change the selected project directory or widen the project sandbox boundary.
+
 | Skill area | Contract |
 | --- | --- |
 | Inspection | List and read skills or their sidecar specifications without mutating them. |

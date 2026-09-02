@@ -21,7 +21,7 @@ import { UIContext } from './ui/UIContext.mjs';
 import { createProvider, getProviderNames } from './ui/providers/index.mjs';
 import { BUILT_IN_SKILLS, TIERS } from './lib/constants.mjs';
 import { buildOrchestratorSystemPrompt } from './prompts/orchestrator-prompt.mjs';
-import { ensureAgentLibLinksForRepos } from './lib/repoManager.mjs';
+import { ensureAgentLibLinksForRepos, getManagedRepoSkillRoot } from './lib/repoManager.mjs';
 import { isWebchatEscapeControlChunk, handleWebchatControlChunk } from './lib/webchatControl.mjs';
 import {
     isWebchatMessageEnvelope,
@@ -299,6 +299,7 @@ async function main() {
     const createConfiguredAgent = () => {
         const configuredAgent = new MainAgent({
             startDir: workingDir,
+            additionalWorkspaceRoots: () => [getManagedRepoSkillRoot(workingDir)],
             supervisor,
             llmAgentOptions: {
                 name: 'achilles-cli-agent',

@@ -17,6 +17,7 @@
 
     <h2>Skill artifacts and discovery</h2>
     <p>Each built-in directory contains a descriptor such as <code>cskill.md</code> or <code>oskill.md</code> and, when execution is required, a local <code>src/index.mjs</code> or orchestrator module. Launcher skills may also carry a <code>specs/</code> contract. AchillesCLI combines this built-in root with registered workspace roots and repeatable <code>--skill-root</code> values, then applies persisted workspace enablement before execution.</p>
+    <p>Repositories added with <code>/add repo</code> live under <code>&lt;workspace&gt;/.data/achilles-cli/repos/</code>. AchillesCLI validates and registers this managed root at startup and on explicit catalog reload, so its skills remain discoverable when <code>--dir</code> selects a nested project. Reload adds new skills, removes deleted skills and aliases, and preserves disabled canonical names. It does not scan other agents' private state or AKU storage, and it does not change the selected project or its sandbox boundary.</p>
 
     <h2>Catalog groups</h2>
     <table>

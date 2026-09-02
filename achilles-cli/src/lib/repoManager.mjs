@@ -45,6 +45,13 @@ export function getReposDir(baseDir = process.cwd()) {
     return reposDir;
 }
 
+export function getManagedRepoSkillRoot(baseDir = process.cwd()) {
+    return assertSafeAchillesPrivatePath(baseDir, REPOS_SUBDIR, {
+        label: 'AchillesCLI repositories directory',
+        type: 'directory',
+    });
+}
+
 /**
  * Resolve the achillesAgentLib package directory visible to this AchillesCLI runtime.
  *
@@ -71,19 +78,40 @@ function readLinkTarget(linkPath) {
  * @returns {{ status: string, path: string, target: string }}
  */
 export function ensureAgentLibLinkForRepo(repoPath) {
-    if (!repoPath || !fs.existsSync(repoPath)) {
+    if (!repoPath) {
         throw new Error(`Repository path does not exist: ${repoPath}`);
     }
 
-    const resolvedRepoPath = path.resolve(repoPath);
+    const requestedRepoPath = path.resolve(repoPath);
+    const workspaceRoot = path.resolve(requestedRepoPath, '..', '..', '..', '..');
+    const repoName = path.basename(requestedRepoPath);
+    const repoChildPath = path.join(REPOS_SUBDIR, repoName);
+    if (requestedRepoPath !== path.join(workspaceRoot, '.data', 'achilles-cli', repoChildPath)) {
+        const error = new Error('Repository links must remain inside AchillesCLI managed repositories.');
+        error.code = 'ACHILLES_PRIVATE_PATH_UNSAFE';
+        throw error;
+    }
+    const resolvedRepoPath = assertSafeAchillesPrivatePath(workspaceRoot, repoChildPath, {
+        label: 'AchillesCLI repository',
+        type: 'directory',
+    });
+    if (!fs.existsSync(resolvedRepoPath)) {
+        throw new Error(`Repository path does not exist: ${repoPath}`);
+    }
     const agentLibDir = resolveAgentLibDir();
-    const nodeModulesDir = path.join(resolvedRepoPath, 'node_modules');
+    const nodeModulesChild = path.join(repoChildPath, 'node_modules');
+    const nodeModulesDir = ensureSafeAchillesPrivateDirectory(workspaceRoot, nodeModulesChild, {
+        label: 'AchillesCLI repository dependency directory',
+    });
     const linkPath = path.join(nodeModulesDir, 'achillesAgentLib');
-
-    fs.mkdirSync(nodeModulesDir, { recursive: true });
+    const assertLinkParent = () => assertSafeAchillesPrivatePath(workspaceRoot, nodeModulesChild, {
+        label: 'AchillesCLI repository dependency directory',
+        type: 'directory',
+    });
 
     let existing = null;
     try {
+        assertLinkParent();
         existing = fs.lstatSync(linkPath);
     } catch (error) {
         if (error?.code !== 'ENOENT') {
@@ -96,14 +124,17 @@ export function ensureAgentLibLinkForRepo(repoPath) {
             return { status: 'preserved', path: linkPath, target: agentLibDir };
         }
 
+        assertLinkParent();
         const currentTarget = readLinkTarget(linkPath);
         if (currentTarget === agentLibDir) {
             return { status: 'exists', path: linkPath, target: agentLibDir };
         }
 
+        assertLinkParent();
         fs.unlinkSync(linkPath);
     }
 
+    assertLinkParent();
     fs.symlinkSync(agentLibDir, linkPath, 'dir');
     return { status: 'linked', path: linkPath, target: agentLibDir };
 }
@@ -115,10 +146,7 @@ export function ensureAgentLibLinkForRepo(repoPath) {
  * @returns {Array<{ repo: string, status: string, path: string, target: string }>}
  */
 export function ensureAgentLibLinksForRepos(baseDir = process.cwd()) {
-    const reposDir = assertSafeAchillesPrivatePath(baseDir, REPOS_SUBDIR, {
-        label: 'AchillesCLI repositories directory',
-        type: 'directory',
-    });
+    const reposDir = getManagedRepoSkillRoot(baseDir);
     if (!fs.existsSync(reposDir)) return [];
     const entries = fs.readdirSync(reposDir, { withFileTypes: true });
     const results = [];
@@ -338,6 +366,7 @@ export function updateRepos(baseDir = process.cwd()) {
 export default {
     ensureAchillesCliDir,
     getReposDir,
+    getManagedRepoSkillRoot,
     resolveAgentLibDir,
     ensureAgentLibLinkForRepo,
     ensureAgentLibLinksForRepos,
