@@ -24,6 +24,8 @@ Aplicatia oficiala GPT Researcher este instalata in:
 $HOME/gpt-researcher/app
 ```
 
+The Python package is installed from this same upstream default-branch checkout after its requirements. The UI and MCP adapter therefore share one source revision; installation replaces a stale PyPI package without patching its files or downgrading to a selected release. Native import and provider checks retain the checkout and installed-package provenance.
+
 La start, `/code/scripts/start-gpt-researcher.sh` porneste aplicatia oficiala si apoi Ploinky AgentServer. AgentServer citeste `mcp-config.json` si expune tool-urile MCP.
 
 `PYTHONPATH` include `/code/scripts`, deci Python incarca `sitecustomize.py`. Acest hook aplica patch-urile locale pentru Soul Gateway si SearchAgent si seteaza aceleasi modele pe care le foloseste si tool-ul `start_research`.

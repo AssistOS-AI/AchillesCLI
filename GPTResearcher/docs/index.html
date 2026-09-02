@@ -55,6 +55,7 @@
 
     <h2>Settings and persistence</h2>
     <p>The nonzero container user installs its Python environment and upstream application below <code>$HOME/gpt-researcher</code>. Installation, UI startup, and the MCP launcher use the same agent-owned paths; the shared runner code in <code>/opt</code> stays read-only.</p>
+    <p>The UI and MCP research tool use the same upstream checkout. Installation builds the Python package from that checkout after installing its requirements, replacing any separately installed PyPI copy. Native gates verify the real import and record the selected source revision.</p>
     <p>The agent persists non-secret choices for its fast, smart, and strategic language models, embedding model, and SearchAgent provider in its Ploinky home. The GPTResearcher settings panel reads model choices from Soul Gateway and lets the user update these values. Provider keys remain owned by SearchAgent or the configured model provider and are not written into the GPTResearcher settings file.</p>
 
     <h2>Boundaries</h2>

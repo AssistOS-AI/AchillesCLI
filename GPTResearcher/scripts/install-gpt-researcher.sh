@@ -8,7 +8,6 @@ mkdir -p "$RUNTIME_DIR"
 
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
-"$VENV_DIR/bin/python" -m pip install --no-cache-dir gpt-researcher langchain-mcp-adapters ddgs
 
 if [ ! -d "$APP_DIR/.git" ]; then
     rm -rf "$APP_DIR"
@@ -16,6 +15,7 @@ if [ ! -d "$APP_DIR/.git" ]; then
 fi
 
 "$VENV_DIR/bin/python" -m pip install --no-cache-dir -r "$APP_DIR/requirements.txt"
+"$VENV_DIR/bin/python" -m pip install --no-cache-dir "$APP_DIR" langchain-mcp-adapters ddgs
 
 mkdir -p "$WORKSPACE_PATH"
 mkdir -p "$HOME"
