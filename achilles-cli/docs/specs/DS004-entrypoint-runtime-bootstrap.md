@@ -9,6 +9,8 @@ This DS owns the path from the `achilles-cli` executable to a ready sandboxed ag
 
 ## Core Content
 
+The managed agent manifest must pin the shared Ploinky Node image by digest. That image provides Node 24 on Debian Trixie with a maintained Git/libcurl stack and verified native amd64 and arm64 Git/npm transport. Git retains its default HTTP negotiation.
+
 The package must support Node.js 20 or newer, expose `bin/achilles-cli`, and provide `npm start` as the repository entry path. It must not declare, install, or clone AchillesAgentLib. Ploinky must expose its one workspace-selected AgentLib source through the standard package link. A standalone development checkout must use an explicit link to its selected AgentLib checkout after `npm install` and the prerequisite script.
 
 `src/cli.mjs` must resolve the selected workspace and supported CLI options before starting the trusted broker. `--dir` selects the workspace, `--skill-root` adds read-only skill roots, and `--permissions` accepts only `ask-for-approval` or `full-access`. An explicit permission option applies to that process; otherwise startup restores the workspace value and falls back safely when it is absent or invalid.

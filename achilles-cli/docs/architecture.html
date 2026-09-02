@@ -40,6 +40,7 @@
   <main class="page"><article class="page__panel">
     <p class="breadcrumbs"><a href="index.html">Home</a> / Architecture</p>
     <h1>AchillesCLI Architecture</h1>
+    <p>The managed agent uses the immutable Ploinky Node image selected by <code>manifest.json</code>, providing Node 24 on Debian Trixie and a maintained Git/libcurl stack. The image is verified on native amd64 and arm64 before adoption; standalone installation continues to support Node 20 or newer.</p>
     <p class="lead"><a href="wiki.html#definition-achilles-cli">AchillesCLI</a> is a local agent runtime built around one fixed workspace, a trusted authorization boundary, and a sandboxed execution environment. Its architecture stays fundamentally the same whether the user starts it directly or reaches it through Ploinky; Ploinky adds lifecycle management, authenticated routing, WebChat transport, and access to other agents around the same core runtime.</p>
 
     <h2>System at a glance</h2>

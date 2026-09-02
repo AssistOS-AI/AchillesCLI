@@ -7,7 +7,7 @@ Ploinky-agent layer for AchillesCLI under AssistOSExplorer. The outer `../CLAUDE
 - `src/cli.mjs` - trusted outer entry point that creates the Broker and bubblewrap sandbox.
 - `src/index.mjs` - sandboxed MainAgent entry point, single-shot vs REPL mode detection, logger config.
 - `bin/achilles-cli` - binary wrapper.
-- `manifest.json` - Ploinky agent declaration using the shared `docker.io/assistos/ploinky-node:24-bookworm-tools` runtime image.
+- `manifest.json` - Ploinky agent declaration using the shared `docker.io/assistos/ploinky-node@sha256:accd925fcbf460c1f4c7a5cd9e2d46539c615bbfad2e896cabb7556d8050a669` runtime image.
 
 ## Module layout
 
