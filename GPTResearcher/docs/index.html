@@ -60,6 +60,7 @@
 
     <h2>Boundaries</h2>
     <p>The manifest pins the Bubblewrap runner image by digest. It provides Node 24 and Python 3.12 on Debian Trixie, with native amd64 and arm64 checks for Git transport, sandbox confinement, and a cold GPTResearcher installation.</p>
+    <p>The selected index <code>sha256:9b6c08cf78fd0a29acfbe2e45ea2ee26efe6fde49c7f3db8b3aadfa30f2d53f8</code> passed both architecture gates in <a href="https://github.com/AssistOS-AI/container-image-builds/actions/runs/33662621018">native build 33662621018</a>, including package/source consistency and UI readiness with networking disabled.</p>
     <p>The research working directory must remain inside <code>WORKSPACE_PATH</code>. GPTResearcher does not call external search providers directly; every web query goes through SearchAgent. Local filenames are not concatenated into the web query, and local documents are exposed only when hybrid research is active. The worker is optional and starts only for a research request.</p>
     <p>The agent contracts are indexed in the <a href="specsLoader.html?spec=matrix.md">GPTResearcher specification matrix</a>. The MCP and settings behavior is defined in <a href="specsLoader.html?spec=DS004-mcp-settings-and-operations.md">DS004</a>.</p>
   </article></main>

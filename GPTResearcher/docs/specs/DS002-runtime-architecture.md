@@ -11,6 +11,8 @@ GPTResearcher runs the upstream GPT Researcher application behind a Ploinky Agen
 
 The manifest must pin the Bubblewrap runner image by digest. The selected image provides Node 24 and Python 3.12 on Debian Trixie, with a maintained Git/libcurl stack for the upstream application checkout. Native amd64 and arm64 publication gates must prove Git transport, sandbox confinement, and a real GPTResearcher cold installation before adoption.
 
+The adopted index is `sha256:9b6c08cf78fd0a29acfbe2e45ea2ee26efe6fde49c7f3db8b3aadfa30f2d53f8`, published by [native build 33662621018](https://github.com/AssistOS-AI/container-image-builds/actions/runs/33662621018). Both architectures passed all 14 Git/npm transport operations, sandbox confinement, and GPTResearcher's cold installation, source-provenance, networkless UI/readiness, and input-path checks.
+
 | Component | Responsibility |
 | --- | --- |
 | Ploinky AgentServer | Exposes the asynchronous research tool and synchronous settings tools, retains task logs, and applies router authorization. |
