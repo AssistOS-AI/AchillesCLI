@@ -15,13 +15,13 @@ Agentul poate fi folosit prin UI-ul oficial GPT Researcher sau prin tool-uri MCP
 La instalare, agentul creeaza un virtual environment Python in:
 
 ```text
-/opt/gpt-researcher-venv
+$HOME/gpt-researcher/venv
 ```
 
 Aplicatia oficiala GPT Researcher este instalata in:
 
 ```text
-/opt/gpt-researcher-app
+$HOME/gpt-researcher/app
 ```
 
 La start, `/code/scripts/start-gpt-researcher.sh` porneste aplicatia oficiala si apoi Ploinky AgentServer. AgentServer citeste `mcp-config.json` si expune tool-urile MCP.
@@ -36,7 +36,7 @@ Setarile agentului sunt salvate in:
 $HOME/gpt-researcher-settings.json
 ```
 
-In container, `$HOME` este root-ul persistent al agentului (`/root`). In Ploinky, acest root este mapat pe host in:
+Ploinky configures `$HOME` as the agent's persistent home and maps it on the host under:
 
 ```text
 .data/GPTResearcher
@@ -110,7 +110,7 @@ Query-ul trimis catre SearchAgent este query-ul generat de pipeline-ul GPT Resea
 Tool-ul MCP `start_research` ruleaza:
 
 ```text
-/opt/gpt-researcher-venv/bin/python /code/scripts/start-research.py
+/bin/sh /code/scripts/run-research.sh
 ```
 
 Input-ul important este:

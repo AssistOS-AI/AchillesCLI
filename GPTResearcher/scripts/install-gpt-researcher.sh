@@ -1,8 +1,10 @@
 #!/bin/sh
 set -eu
 
-VENV_DIR=/opt/gpt-researcher-venv
-APP_DIR=/opt/gpt-researcher-app
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/runtime-paths.sh"
+: "${WORKSPACE_PATH:?WORKSPACE_PATH is required}"
+mkdir -p "$RUNTIME_DIR"
 
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
@@ -14,9 +16,6 @@ if [ ! -d "$APP_DIR/.git" ]; then
 fi
 
 "$VENV_DIR/bin/python" -m pip install --no-cache-dir -r "$APP_DIR/requirements.txt"
-
-: "${WORKSPACE_PATH:?WORKSPACE_PATH is required}"
-: "${HOME:?HOME is required}"
 
 mkdir -p "$WORKSPACE_PATH"
 mkdir -p "$HOME"

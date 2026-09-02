@@ -16,7 +16,7 @@ GPTResearcher exposes one asynchronous research operation and three settings ope
 | `gpt_researcher_update_settings` | Updates supported model, embedding, and search-provider fields while preserving valid omitted values. |
 | `gpt_researcher_list_models` | Returns Soul Gateway model metadata and derives SearchAgent provider choices only from authorized catalog information. |
 
-`start_research` must remain tagged as an internal agent-to-agent tool. AchillesCLI must start SearchAgent before GPTResearcher when necessary and submit the research through the router-mediated MCP path. The worker must remain `startup: manual` so unused research infrastructure does not join the normal startup graph.
+`start_research` must remain tagged as an internal agent-to-agent tool. Its shell launcher must execute the Python environment selected by the shared agent-home runtime-path helper, preserving standard input, arguments, and the Python exit status. AchillesCLI must start SearchAgent before GPTResearcher when necessary and submit the research through the router-mediated MCP path. The worker must remain `startup: manual` so unused research infrastructure does not join the normal startup graph.
 
 The settings plugin must call the MCP settings tools rather than writing the settings file directly. The model list must come from Soul Gateway, and the search-provider list must be derived without bypassing SearchAgent or exposing its keys. A generated-local identity that cannot be certified must fail closed before key access or provider discovery.
 

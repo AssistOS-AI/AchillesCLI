@@ -54,9 +54,11 @@
     </figure>
 
     <h2>Settings and persistence</h2>
+    <p>The nonzero container user installs its Python environment and upstream application below <code>$HOME/gpt-researcher</code>. Installation, UI startup, and the MCP launcher use the same agent-owned paths; the shared runner code in <code>/opt</code> stays read-only.</p>
     <p>The agent persists non-secret choices for its fast, smart, and strategic language models, embedding model, and SearchAgent provider in its Ploinky home. The GPTResearcher settings panel reads model choices from Soul Gateway and lets the user update these values. Provider keys remain owned by SearchAgent or the configured model provider and are not written into the GPTResearcher settings file.</p>
 
     <h2>Boundaries</h2>
+    <p>The manifest pins the Bubblewrap runner image by digest. It provides Node 24 and Python 3.12 on Debian Trixie, with native amd64 and arm64 checks for Git transport, sandbox confinement, and a cold GPTResearcher installation.</p>
     <p>The research working directory must remain inside <code>WORKSPACE_PATH</code>. GPTResearcher does not call external search providers directly; every web query goes through SearchAgent. Local filenames are not concatenated into the web query, and local documents are exposed only when hybrid research is active. The worker is optional and starts only for a research request.</p>
     <p>The agent contracts are indexed in the <a href="specsLoader.html?spec=matrix.md">GPTResearcher specification matrix</a>. The MCP and settings behavior is defined in <a href="specsLoader.html?spec=DS004-mcp-settings-and-operations.md">DS004</a>.</p>
   </article></main>

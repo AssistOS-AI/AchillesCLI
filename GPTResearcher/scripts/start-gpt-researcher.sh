@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-VENV_DIR=/opt/gpt-researcher-venv
-APP_DIR=/opt/gpt-researcher-app
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/runtime-paths.sh"
 UI_PORT=8000
 
 if [ ! -d "$APP_DIR" ]; then
