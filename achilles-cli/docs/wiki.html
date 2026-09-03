@@ -51,6 +51,9 @@
       <dt id="definition-background-task">Background task</dt>
       <dd>A background task is an asynchronous execution delegated through a launcher skill and AgentServer to another Ploinky agent. AchillesCLI assigns a stable local identifier, stores metadata in an append-only journal, stores output in task logs, polls the remote execution, and supports view, stop, and compatible continuation operations. A continuation may create a new remote task and opaque provider handle while retaining the local task identifier and ordered log.</dd>
 
+      <dt id="definition-visible-robot-task">Visible robot task</dt>
+      <dd>A visible robot task is Desktop or Browser work started through RoboTeam for a workspace robot. AchillesCLI supplies its selected workspace as the task cwd, calls RoboTeam through internal Ploinky MCP, follows the task until Selkies and the automation MCP bridge are ready, and returns the authenticated session link. RoboTeam recreates an idle same-mode container when its mounted cwd differs, and owns the task and graphical container state.</dd>
+
       <dt id="definition-agentic-knowledge-unit">Agentic Knowledge Unit</dt>
       <dd>An Agentic Knowledge Unit, abbreviated AKU, is a deterministic AchillesAgentLib memory record used by AchillesCLI's Copilot behavior. AchillesCLI interprets prompt intent, chooses relevant units, invokes the library API, and supplies compact context to the agent loop. AchillesAgentLib owns storage, search, locking, recovery, and the data model; AchillesCLI does not redefine those rules and must not treat provider-result similarity as sufficient authority to create durable memory.</dd>
 

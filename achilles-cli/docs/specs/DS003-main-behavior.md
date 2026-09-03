@@ -16,7 +16,7 @@ AchillesCLI lets a user complete project work from a local terminal or Ploinky W
 | Prompt execution across CLI surfaces | A user submits work in single-shot, REPL, or WebChat mode and receives a result from the same skill-aware runtime. |
 | Skill lifecycle and execution | A user discovers, manages, and executes reusable skills that turn requests into project operations. |
 | Workspace-confined Bash execution | Approved commands can change the selected workspace without gaining access to sibling projects or broader host files. |
-| Persistent delegated tasks | A user starts, inspects, stops, and continues asynchronous work while AchillesCLI preserves one local task identity. |
+| Persistent delegated tasks | A user starts asynchronous provider work with a persistent local task identity or starts visible RoboTeam work and receives its live authenticated session. |
 
 ### Prompt execution across CLI surfaces
 
@@ -32,4 +32,4 @@ The trusted broker authorizes Bash requests, while the approved process starts a
 
 ### Persistent delegated tasks
 
-A named launcher can activate a supported worker through Ploinky, submit work asynchronously, and return control to the conversation. AchillesCLI stores the generic task journal and logs under `.data/achilles-cli/tasks/`, exposes lifecycle actions through `/tasks` and `/task view|stop|continue`, and retains one local task identifier across continuation turns. The worker keeps provider-specific sessions and credentials private; [DS010](specsLoader.html?spec=DS010-ecosystem-integration.md) and [DS012](specsLoader.html?spec=DS012-launch-agent-skills.md) define the integration boundaries.
+A named launcher can activate a supported worker through Ploinky, submit work asynchronously, and return control to the conversation. Provider launchers store the generic task journal and logs under `.data/achilles-cli/tasks/`, expose lifecycle actions through `/tasks` and `/task view|stop|continue`, and retain one local task identifier across continuation turns. The visible RoboTeam launcher instead submits workspace-scoped Desktop or Browser work through internal MCP, follows RoboTeam's task id until its graphical runtime is ready, and returns the authenticated Selkies session link while RoboTeam retains task ownership. External agents keep their sessions and credentials private; [DS010](specsLoader.html?spec=DS010-ecosystem-integration.md) and [DS012](specsLoader.html?spec=DS012-launch-agent-skills.md) define the integration boundaries.

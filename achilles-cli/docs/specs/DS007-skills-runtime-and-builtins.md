@@ -19,10 +19,10 @@ Repositories added through `/add repo` belong to `<workspace>/.data/achilles-cli
 | Authoring | Create, update, delete, validate, preview, or scaffold skill artifacts through schema-aware operations. |
 | Generation and tests | Generate executable code or tests, run the applicable checks, and refine a skill from their results. |
 | Execution | Execute one named skill directly or let natural-language planning select applicable skills. |
-| Provider launchers | Submit work to a fixed external worker through the Ploinky-mediated integration contract. |
+| External agent integration | Submit work to a fixed provider worker or use the workspace-scoped RoboTeam robot catalog and visible task interface through the Ploinky-mediated internal integration contract. |
 
 Skill mutations must trigger an explicit catalog reload. Reloading must preserve deterministic aliases and surface actionable discovery errors. Startup discovers the available roots; later refreshes reload those roots without silently inventing new search locations.
 
 Workspace skills are enabled by default. AchillesCLI may persist only canonical disabled names in `.data/achilles-cli/settings.json`. Disabled skills must remain visible to inspection and enablement commands but must not execute, build, or enter MainAgent and orchestrator tool catalogs. Directory-wide enablement changes must remain confined to the active workspace and resolve to canonical skill names before they reach MainAgent.
 
-The built-in Bash skill must only parse the requested command and call the sandboxed local executor. It must not own approval prompts, reusable approvals, risk classification, or process confinement. Provider launcher skills must similarly own only their public input mapping, target activation, asynchronous submission, and safe result contract; provider-specific sessions and execution internals remain outside AchillesCLI.
+The built-in Bash skill must only parse the requested command and call the sandboxed local executor. It must not own approval prompts, reusable approvals, risk classification, or process confinement. Provider launcher skills must similarly own only their public input mapping, target activation, asynchronous submission, and safe result contract; provider-specific sessions and execution internals remain outside AchillesCLI. RoboTeam skills use internal workspace-agent tools, pass the active MainAgent workspace as task cwd, and leave robot, task, container, and session ownership with RoboTeam.

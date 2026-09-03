@@ -14,5 +14,5 @@
 | [DS009-testing-observability-and-ops](specsLoader.html?spec=DS009-testing-observability-and-ops.md) | Defines verification surfaces, operational diagnostics, error visibility, progress, and cancellation guarantees. |
 | [DS010-ecosystem-integration](specsLoader.html?spec=DS010-ecosystem-integration.md) | Defines AchillesCLI boundaries with AchillesAgentLib, Ploinky, WebChat, Soul Gateway, and optional worker agents. |
 | [DS011-aku-aware-copilot-memory](specsLoader.html?spec=DS011-aku-aware-copilot-memory.md) | Defines how AchillesCLI resolves, reads, updates, and supplies Agentic Knowledge Units during prompt execution. |
-| [DS012-launch-agent-skills](specsLoader.html?spec=DS012-launch-agent-skills.md) | Defines the shared launch, activation, task, and continuation contract for external agents. |
+| [DS012-launch-agent-skills](specsLoader.html?spec=DS012-launch-agent-skills.md) | Defines router-mediated provider launchers and visible RoboTeam task skills. |
 | [DS013-global-architecture](specsLoader.html?spec=DS013-global-architecture.md) | Defines AchillesCLI's top-level components, execution paths, state ownership, and security boundaries. |

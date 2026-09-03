@@ -15,7 +15,7 @@ The DS specifications are the source of truth for project requirements and bound
 
 # Current Skill Catalog
 
-AchillesCLI distributes built-in skill descriptors under `achilles-cli/src/skills/`. The catalog covers skill CRUD, schema validation, template retrieval, code generation, preview, execution, test generation and execution, iterative refinement, specification access, AKU memory support, Bash execution, orchestration, and launchers for Codex, OpenCode, PI, GPTResearcher, Open Interpreter, and web search.
+AchillesCLI distributes built-in skill descriptors under `achilles-cli/src/skills/`. The catalog covers skill CRUD, schema validation, template retrieval, code generation, preview, execution, test generation and execution, iterative refinement, specification access, AKU memory support, Bash execution, orchestration, launchers for Codex, OpenCode, PI, GPTResearcher, Open Interpreter, and web search, plus owner-scoped RoboTeam robot discovery and visible Desktop or Browser task launch.
 
 Update this section, `achilles-cli/docs/index.html`, `achilles-cli/docs/skills.html`, `achilles-cli/docs/wiki.html`, and the relevant specifications whenever the distributed product skill catalog changes. Internal documentation-authoring tools are not product skills and must not appear in persistent project documentation.
 
