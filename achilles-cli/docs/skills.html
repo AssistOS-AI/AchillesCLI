@@ -29,7 +29,7 @@
         <tr><td>Execution and orchestration</td><td><code>execute-skill</code>, <code>skills-orchestrator</code>, and <code>bash</code> run selected operations. Bash delegates authorization to the Broker and execution to the sandbox-local executor.</td></tr>
         <tr><td>Specifications and memory</td><td><code>read-specs</code>, <code>write-specs</code>, and <code>aku-memory</code> access skill-local contracts and deterministic Agentic Knowledge Unit storage.</td></tr>
         <tr><td>External launchers</td><td><code>launch-codex</code>, <code>launch-opencode</code>, <code>launch-pi</code>, <code>launch-gpt-researcher</code>, <code>launch-open-interpreter</code>, and <code>launch-web-search</code> delegate work to named Ploinky agents.</td></tr>
-        <tr><td>Visible robot work</td><td><code>list-robots</code> reads the workspace RoboTeam catalog through internal MCP. <code>launch-robot</code> starts a Desktop or Browser task in the active workspace, follows its task id until the GUI is ready, and returns the authenticated live Selkies link.</td></tr>
+        <tr><td>Visible robot work</td><td><code>list-robots</code> reads the workspace RoboTeam catalog through internal MCP. <code>launch-robot</code> submits a native asynchronous Desktop or Browser task in the active workspace, registers it with the background-task observer, waits for the GUI URL, and returns the authenticated live Selkies link while progress and completion observation continue.</td></tr>
         <tr><td>Session bootstrap</td><td><code>intro-skill</code> supplies the model-guided introduction used when a new session has no conversation history.</td></tr>
       </tbody>
     </table>

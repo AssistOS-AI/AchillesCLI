@@ -13,17 +13,15 @@ test('starts a desktop robot in the active workspace and returns its ready Selki
             callToolWithoutWait: async (toolName, input, options) => {
                 calls.push({ toolName, input, options });
                 if (toolName === 'startDesktopTaskForRobot') {
-                    return { ok: true, taskId: 'task-1', state: 'starting', sessionUrl: '/robo/live/' };
+                    return { metadata: { taskId: 'task-1', status: 'running', backgroundTask: { detached: true } } };
                 }
-                return {
-                    ok: true,
-                    task: { taskId: 'task-1', state: 'running', sessionUrl: '/robo/live/' },
-                };
+                return { ok: true, sessionUrl: '/robo/live/' };
             },
+            getTaskStatus: async () => ({ id: 'task-1', status: 'running' }),
         },
     });
 
-    assert.equal(result, 'Robot task task-1 is running. [Open live desktop](/robo/live/)');
+    assert.equal(result, 'Robot task task-1 started. [Open live desktop](/robo/live/)');
     assert.deepEqual(calls, [
         {
             toolName: 'startDesktopTaskForRobot',
@@ -36,8 +34,8 @@ test('starts a desktop robot in the active workspace and returns its ready Selki
             options: undefined,
         },
         {
-            toolName: 'getTaskStatusForRobot',
-            input: { robotName: 'Analyst', taskId: 'task-1' },
+            toolName: 'getSessionUrlForRobotDesktop',
+            input: { robotName: 'Analyst' },
             options: undefined,
         },
     ]);
@@ -56,10 +54,11 @@ test('starts a browser robot from JSON with optional execution hints', async () 
             callToolWithoutWait: async (toolName, input) => {
                 calls.push({ toolName, input });
                 if (toolName === 'startBrowserTaskForRobot') {
-                    return { ok: true, taskId: 'task-2', sessionUrl: '/browser/live/' };
+                    return { metadata: { taskId: 'task-2', status: 'running' } };
                 }
-                return { ok: true, task: { state: 'completed', sessionUrl: '/browser/live/' } };
+                return { ok: true, sessionUrl: '/browser/live/' };
             },
+            getTaskStatus: async () => ({ id: 'task-2', status: 'running' }),
         },
     });
 
@@ -90,4 +89,18 @@ test('normalizes the compact launch syntax deterministically', () => {
             mode: 'browser', robotName: 'Research Robot', task: 'compare the two pages', ca: 'codex',
         },
     );
+});
+
+test('reports an async RoboTeam failure while waiting for the live session', async () => {
+    const result = await action({
+        promptText: 'desktop Analyst: inspect the application',
+        mainAgent: { startDir: '/workspace/project' },
+        pollIntervalMs: 1,
+        agentClient: {
+            callToolWithoutWait: async () => ({ metadata: { taskId: 'task-failed', status: 'running' } }),
+            getTaskStatus: async () => ({ id: 'task-failed', status: 'failed', error: 'ALA login is required' }),
+        },
+    });
+
+    assert.equal(result, 'Could not start the RoboTeam task: ALA login is required');
 });

@@ -7,10 +7,10 @@ Start a visible RoboTeam Desktop or Browser task for one robot in the current Ac
 Use `desktop <robot name>: <task>` or `browser <robot name>: <task>`. A JSON object with `mode`, `robotName`, `task`, and optional `ca`, `model`, or `skillSets` is also accepted.
 
 ## Output Format
-Plain text containing the task id and a Markdown link to the live Selkies session after the GUI and its MCP bridge are ready.
+Plain text containing the native Ploinky task id and a Markdown link to the live Selkies session after the GUI and its MCP bridge are ready. AchillesCLI reports intermediate ALA messages and the terminal result through its background-task view.
 
 ## Constraints
-Only `desktop` and `browser` modes are accepted. The task always uses the active AchillesCLI workspace as `cwd`. Calls use RoboTeam's internal workspace-agent tools through the Ploinky Router.
+Only `desktop` and `browser` modes are accepted. The task always uses the active AchillesCLI workspace as `cwd`. Calls use RoboTeam's internal workspace-agent tools through the Ploinky Router. The start call is detached through the native asynchronous task contract; the launcher waits only for the matching session URL.
 
 ## Help
 Example: `desktop analyst: inspect the application and prepare a usability report`.

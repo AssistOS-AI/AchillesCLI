@@ -56,21 +56,33 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function remoteTaskId(started) {
+    return trim(started?.metadata?.taskId || started?.result?.metadata?.taskId || started?.taskId);
+}
+
 async function waitUntilVisible(client, request, started, invocation = {}) {
     const timeoutMs = Math.max(1000, Number(invocation.readyTimeoutMs) || READY_TIMEOUT_MS);
     const pollIntervalMs = Math.max(1, Number(invocation.pollIntervalMs) || POLL_INTERVAL_MS);
+    const taskId = remoteTaskId(started);
+    const urlTool = request.mode === 'desktop'
+        ? 'getSessionUrlForRobotDesktop'
+        : 'getSessionUrlForRobotBrowser';
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-        const statusResult = await client.call('getTaskStatusForRobot', {
-            robotName: request.robotName,
-            taskId: started.taskId,
-        });
-        const task = statusResult.task || {};
-        if (task.state === 'running' || task.state === 'completed') {
-            return { task, sessionUrl: trim(task.sessionUrl || started.sessionUrl) };
+        let task = null;
+        if (taskId && typeof client.getTaskStatus === 'function') {
+            task = await client.getTaskStatus(taskId);
+            const status = trim(task?.status).toLowerCase();
+            if (status === 'failed' || status === 'cancelled') {
+                throw new Error(trim(task?.error) || `robot task ${status}`);
+            }
         }
-        if (task.state === 'failed' || task.state === 'stopped') {
-            throw new Error(trim(task.error) || `robot task ${task.state}`);
+        try {
+            const urlResult = await client.call(urlTool, { robotName: request.robotName });
+            const sessionUrl = trim(urlResult.sessionUrl || started.sessionUrl);
+            if (sessionUrl) return { task, sessionUrl };
+        } catch (error) {
+            if (trim(task?.status).toLowerCase() === 'completed') throw error;
         }
         await sleep(pollIntervalMs);
     }
@@ -92,15 +104,16 @@ export async function action(invocation = {}) {
             ...(request.model ? { model: request.model } : {}),
             ...(request.skillSets ? { skillSets: request.skillSets } : {}),
         });
-        if (!trim(started.taskId)) throw new Error('RoboTeam did not return a task id');
+        const taskId = remoteTaskId(started);
+        if (!taskId) throw new Error('RoboTeam did not return a task id');
         const ready = await waitUntilVisible(client, request, started, invocation);
         if (!ready.sessionUrl) throw new Error('RoboTeam did not return a live session URL');
         const label = request.mode === 'desktop' ? 'desktop' : 'browser';
-        return `Robot task ${started.taskId} is running. [Open live ${label}](${ready.sessionUrl})`;
+        return `Robot task ${taskId} started. [Open live ${label}](${ready.sessionUrl})`;
     } catch (error) {
         return `Could not start the RoboTeam task: ${error?.message || 'request failed'}`;
     }
 }
 
-export const launchRobotInternals = { normalizeRequest, waitUntilVisible };
+export const launchRobotInternals = { normalizeRequest, remoteTaskId, waitUntilVisible };
 export default action;

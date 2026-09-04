@@ -427,6 +427,42 @@ test('/exec releases the command queue when its asynchronous task starts', async
     assert.equal(cancelCount, 1);
 });
 
+test('/exec appends a launcher result that arrives after task start', async () => {
+    let resolveTaskStart;
+    let resolveExecution;
+    const appended = [];
+    const taskManager = {
+        createTaskStartWaiter() {
+            return {
+                promise: new Promise((resolve) => { resolveTaskStart = resolve; }),
+                cancel() {},
+            };
+        },
+        appendTaskLog(...args) { appended.push(args); },
+    };
+    const handler = new SlashCommandHandler({
+        executeSkill: () => new Promise((resolve) => { resolveExecution = resolve; }),
+        getUserSkills: () => [],
+        getSkills: () => [],
+    });
+
+    const command = handler.executeSlashCommand('exec', 'launch-robot desktop Analyst: inspect', {
+        context: { backgroundTaskManager: taskManager },
+    });
+    await Promise.resolve();
+    resolveTaskStart({ id: 'task_1234567890abcdef12345678' });
+    assert.deepEqual(await command, { handled: true, result: 'Task started.' });
+    resolveExecution('Robot started. [Open live desktop](/robot/session/)');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.deepEqual(appended, [[
+        'task_1234567890abcdef12345678',
+        'Robot started. [Open live desktop](/robot/session/)',
+        'launcher',
+    ]]);
+});
+
 test('/exec still waits for ordinary synchronous skill results', async () => {
     let cancelCount = 0;
     const handler = new SlashCommandHandler({

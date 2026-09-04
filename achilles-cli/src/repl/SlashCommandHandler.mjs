@@ -827,7 +827,18 @@ export class SlashCommandHandler {
         if (outcome.type === 'task') {
             // The observer owns the remote task lifecycle from this point. Keep
             // the launcher promise observed, but do not serialize later input on it.
-            void execution.catch(() => {});
+            // A launcher may still resolve a useful live-session link after the
+            // remote task starts, so retain that result in the task log.
+            void execution.then((value) => {
+                const formatted = formatSlashResult(value);
+                const text = typeof formatted === 'string' ? formatted.trim() : '';
+                if (text && text !== 'Task started.') {
+                    taskManager.appendTaskLog?.(outcome.task.id, text, 'launcher');
+                }
+            }).catch((error) => {
+                const message = String(error?.message || error || '').trim();
+                if (message) taskManager.appendTaskLog?.(outcome.task.id, `Launcher error: ${message}`, 'launcher');
+            });
             return 'Task started.';
         }
         if (outcome.type === 'error') throw outcome.error;

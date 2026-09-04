@@ -75,7 +75,8 @@ Have PI investigate the failing integration test.</code></pre>
     <p>Only a task with a compatible stored continuation capability can be continued. If a provider or completed task does not expose that capability, AchillesCLI reports that boundary instead of inventing a new unrelated execution.</p>
 
     <h2>WebChat workflow</h2>
-    <p>Ploinky WebChat uses the same session and task contracts as the terminal CLI, but presents their structured state through interface controls. Session lists make it easier to create or select a conversation without typing its opaque identifier. Task entries expose current status, logs, and supported controls, so viewing, continuing, or stopping work is more convenient than entering each slash command manually.</p>
+    <p>Ploinky WebChat uses the same session and task contracts as the terminal CLI, but presents their structured state through interface controls. Each task appears in the conversation with its agent, description, status, elapsed time, and live log. The log box grows until it reaches its maximum height and then scrolls. New output stays visible while the user is at the bottom, but WebChat preserves the reading position after the user scrolls upward. The arrow in the header collapses the card to its metadata row and expands it again without discarding accumulated output.</p>
+    <p>A visible RoboTeam task also writes its Desktop or Browser link into the conversation. Selecting that link opens Selkies in WebChat's right panel, while the collapsible log card remains in the conversation. The task-controls link opens the detailed task view in the same panel for supported stop and continuation actions.</p>
     <p>Actions initiated by these controls still pass through AchillesCLI's session and task managers. Switching interfaces does not create a second source of truth: CLI and WebChat observe the same workspace-local records.</p>
 
     <h2>Standalone and Ploinky boundaries</h2>

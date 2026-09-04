@@ -39,6 +39,10 @@ export async function createRoboTeamClient(invocation = {}) {
             if (result?.ok === false) throw new Error(trim(result.error) || 'RoboTeam operation failed.');
             return result && typeof result === 'object' ? result : {};
         },
+        async getTaskStatus(taskId) {
+            if (typeof client.getTaskStatus !== 'function') throw new Error('RoboTeam task status is unavailable.');
+            return client.getTaskStatus(taskId);
+        },
     };
 }
 
