@@ -328,7 +328,7 @@ test('a completed continuation persists its terminal state on the current turn',
                             id: 'remote-turn-two',
                             status: 'completed',
                             updatedAt: completedAt,
-                            logTail: 'Done.',
+                            logTail: 'Working on the continuation.\n',
                             logSeq: 1,
                             result: { content: [{ type: 'text', text: 'Done.' }] },
                         }),
@@ -401,6 +401,7 @@ test('a completed continuation persists its terminal state on the current turn',
                 stored.finalOutputRanges.map(({ offset, length }) => storedLog.slice(offset, offset + length)).join('|'),
                 'First answer|Done.',
             );
+            assert.match(storedLog, /Working on the continuation\.\n\n\[task result\]\nDone\.\n$/u);
         } finally {
             manager.close();
         }

@@ -343,6 +343,45 @@ test('AchillesCLI persists task metadata and logs under .data/achilles-cli', () 
     }
 });
 
+test('terminal task output is appended once when the provider keeps it separate from live logs', () => {
+    const fixture = makeWorkspace('separate-final-output');
+    try {
+        const envelope = {
+            task: {
+                id: FINISHED_ID,
+                targetAgent: 'roboTeamAgent',
+                remoteTaskId: 'remote-completed',
+                toolName: 'startDesktopTaskForRobot',
+                description: 'Inspect the desktop',
+                status: 'finished',
+                remoteStatus: 'completed',
+                turn: 1,
+                logRetention: 'full',
+            },
+            log: { tail: 'Working through MCP.\n', seq: 2 },
+            finalOutput: 'The desktop task finished successfully.',
+        };
+
+        const first = ingestTaskEvent(fixture.workspace, envelope);
+        const firstLog = readTaskLog(fixture.workspace, FINISHED_ID).text;
+        assert.equal(
+            firstLog,
+            'Working through MCP.\n\n[task result]\nThe desktop task finished successfully.\n',
+        );
+        assert.match(first.logAppend, /\[task result\]\nThe desktop task finished successfully\./u);
+        assert.equal(
+            firstLog.slice(first.task.finalOutputOffset, first.task.finalOutputOffset + first.task.finalOutputLength),
+            'The desktop task finished successfully.',
+        );
+
+        const repeated = ingestTaskEvent(fixture.workspace, envelope);
+        assert.equal(repeated.logAppend, '');
+        assert.equal(readTaskLog(fixture.workspace, FINISHED_ID).text, firstLog);
+    } finally {
+        fs.rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+});
+
 test('continuation keeps the local id, advances the turn, and filters action completions', () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-continue-'));
     try {

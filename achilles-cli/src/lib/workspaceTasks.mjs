@@ -344,16 +344,43 @@ function ingestLog(logDirectory, task, rawLog = {}) {
     return { appended, nextOffset };
 }
 
-function locateFinalOutput(logDirectory, taskId, finalOutput) {
+function locateFinalOutput(logDirectory, taskId, finalOutput, minimumOffset = 0) {
     if (typeof finalOutput !== 'string' || !finalOutput) return { offset: null, length: 0 };
     const { logPath } = taskPaths(logDirectory, taskId);
     const file = assertSafeFile(logPath, logDirectory);
     const text = file ? fs.readFileSync(file.path, 'utf8') : '';
     for (const candidate of [finalOutput, finalOutput.trim()].filter(Boolean)) {
         const offset = text.lastIndexOf(candidate);
-        if (offset >= 0) return { offset, length: candidate.length };
+        if (offset >= minimumOffset) return { offset, length: candidate.length };
     }
     return { offset: null, length: 0 };
+}
+
+function persistFinalOutput(logDirectory, task, finalOutput) {
+    const text = typeof finalOutput === 'string' ? finalOutput.trim() : '';
+    if (!text) return { output: { offset: null, length: 0 }, appended: '', nextOffset: null };
+    const currentRange = task.finalOutputRanges?.find((range) => range.turn === task.turn);
+    if (currentRange) {
+        return { output: currentRange, appended: '', nextOffset: null };
+    }
+    const minimumOffset = (task.finalOutputRanges || [])
+        .filter((range) => range.turn < task.turn)
+        .reduce((maximum, range) => Math.max(maximum, range.offset + range.length), 0);
+    let output = locateFinalOutput(logDirectory, task.id, text, minimumOffset);
+    if (output.offset !== null) return { output, appended: '', nextOffset: null };
+
+    const { logPath } = taskPaths(logDirectory, task.id);
+    const file = assertSafeFile(logPath, logDirectory);
+    const existingLog = file ? fs.readFileSync(file.path, 'utf8') : '';
+    const separator = existingLog ? (existingLog.endsWith('\n') ? '\n' : '\n\n') : '';
+    const appended = `${separator}[task result]\n${text}\n`;
+    appendTaskLog(logPath, appended, { retainFull: task.logRetention === 'full' });
+    output = locateFinalOutput(logDirectory, task.id, text, minimumOffset);
+    return {
+        output,
+        appended,
+        nextOffset: fs.readFileSync(logPath, 'utf8').length,
+    };
 }
 
 export function ingestTaskEvent(workingDir, envelope) {
@@ -379,11 +406,18 @@ export function ingestTaskEvent(workingDir, envelope) {
             ? { continuation: existing.continuation }
             : {}),
     };
-    const logUpdate = envelope?.log
+    let logUpdate = envelope?.log
         ? ingestLog(logDirectory, task, { ...envelope.log, sourceId: task.remoteTaskId })
         : { appended: '', nextOffset: null };
     if (!staleTurn && !staleSource && !invalidRegression && TERMINAL_STATUSES.has(task.status)) {
-        const finalOutput = locateFinalOutput(logDirectory, task.id, envelope?.finalOutput);
+        const persistedFinal = persistFinalOutput(logDirectory, task, envelope?.finalOutput);
+        const finalOutput = persistedFinal.output;
+        if (persistedFinal.appended) {
+            logUpdate = {
+                appended: `${logUpdate.appended}${persistedFinal.appended}`,
+                nextOffset: persistedFinal.nextOffset,
+            };
+        }
         const nextRanges = mergeFinalOutputRanges(
             task.finalOutputRanges,
             finalOutput.offset === null ? [] : [{
