@@ -57,6 +57,7 @@ function normalizeContinuation(raw, targetAgent, fallbackTool = '') {
         version: 1,
         targetAgent,
         toolName,
+        ...(/^[A-Za-z0-9._-]{1,160}$/.test(raw.messageToolName || '') ? { messageToolName: raw.messageToolName } : {}),
         ...(handle ? { handle } : {}),
     };
 }
@@ -159,16 +160,19 @@ export async function createWebchatBackgroundTaskManager({
             const remoteStatus = trim(task?.status) || 'running';
             const status = normalizeStatus(remoteStatus);
             const logSeq = Number.isFinite(Number(task?.logSeq)) ? Number(task.logSeq) : null;
-            const changed = record.remoteStatus !== remoteStatus || record.logSeq !== logSeq;
+            let changed = record.remoteStatus !== remoteStatus || record.logSeq !== logSeq;
             record.remoteStatus = remoteStatus;
             record.logSeq = logSeq;
             record.status = status;
             const resultContinuation = normalizeContinuation(
-                task?.result?.metadata?.continuation,
+                task?.result?.metadata?.continuation || task?.liveContinuation,
                 record.targetAgent,
                 record.continuation?.toolName,
             );
-            if (resultContinuation?.handle) record.continuation = resultContinuation;
+            if (resultContinuation?.handle) {
+                changed ||= JSON.stringify(record.continuation) !== JSON.stringify(resultContinuation);
+                record.continuation = resultContinuation;
+            }
             if (changed) {
                 const finalOutput = status === 'ongoing' ? '' : taskResultText(task);
                 publish({
@@ -411,7 +415,24 @@ export async function createWebchatBackgroundTaskManager({
         async continueTask(taskId, message) {
             const task = getTask(workingDir, taskId);
             if (!task) throw new Error('task_not_found');
-            if (task.status === 'ongoing') throw new Error('task_not_terminal');
+            if (task.status === 'ongoing') {
+                if (!task.continuation?.handle || !task.continuation?.messageToolName) throw new Error('task_live_input_unavailable');
+                const prompt = trim(message);
+                if (!prompt || prompt.length > 32768) throw new Error('invalid_task_message');
+                const client = await agentClientModule.createAgentClient(task.continuation.targetAgent);
+                const response = await client.callTool(task.continuation.messageToolName, {
+                    handle: task.continuation.handle, prompt,
+                });
+                const text = response?.content?.filter((entry) => entry.type === 'text').map((entry) => entry.text).join('\n');
+                const receipt = text ? JSON.parse(text) : response;
+                if (response?.isError || !['delivered', 'queued'].includes(receipt?.delivery)) {
+                    throw new Error(receipt?.error || 'task_message_not_acknowledged');
+                }
+                const log = persistTaskLogEntry(workingDir, taskId, `User (${receipt.delivery}): ${prompt}`);
+                publish({ event: 'action', action: 'continue', ok: true, task: getTask(workingDir, taskId),
+                    delivery: receipt.delivery, logAppend: log.logAppend, logOffset: log.logOffset }, { persist: false });
+                return { ...task, delivery: receipt.delivery };
+            }
             if (!task.continuation?.handle) throw new Error('task_not_continuable');
             const prompt = trim(message);
             if (!prompt) throw new Error('continuation_message_required');

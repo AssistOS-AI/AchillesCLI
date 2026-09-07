@@ -328,7 +328,7 @@ achilles-cli --version</code></pre>
       <pre><code>/task view task-7</code></pre>
 
       <h3><code>/task continue</code></h3>
-      <p>Continues a compatible terminal task with a new prompt while retaining its local identifier.</p>
+      <p>Continues a compatible terminal task with a new prompt while retaining its local identifier. For an ongoing task that declares live input, sends the prompt through its message tool without starting another task. The receipt reports whether the agent accepted it live or queued it.</p>
       <p><strong>Usage:</strong> <code>/task continue &lt;task-id&gt; &lt;prompt&gt;</code></p>
       <p><strong>Example:</strong></p>
       <pre><code>/task continue task-7 add tests for the new parser</code></pre>

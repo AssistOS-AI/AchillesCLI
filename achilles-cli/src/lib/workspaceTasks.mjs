@@ -116,6 +116,7 @@ function normalizeContinuation(raw, fallbackTargetAgent = '') {
         version: 1,
         targetAgent,
         toolName,
+        ...(TOOL_NAME_RE.test(raw.messageToolName || '') ? { messageToolName: raw.messageToolName } : {}),
         ...(handle ? { handle } : {}),
     };
 }

@@ -229,6 +229,39 @@ test('AchillesCLI manager stops and continues tasks through agent commands', asy
     }
 });
 
+test('active task messages use the declared tool without creating another task', async (t) => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-live-input-'));
+    t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+    const taskId = 'task_aaaaaaaaaaaaaaaaaaaaaaaa';
+    const calls = [];
+    const events = [];
+    ingestTaskEvent(workspace, { task: {
+        id: taskId, targetAgent: 'worker', remoteTaskId: 'running-id', status: 'ongoing',
+        continuation: { version: 1, targetAgent: 'worker', toolName: 'resume-work',
+            messageToolName: 'message-work', handle: 'saved-session-handle' },
+    } });
+    const manager = await createWebchatBackgroundTaskManager({
+        workingDir: workspace, emitProtocol: false, onPublish: (event) => events.push(event),
+        agentClientModule: {
+            setAgentTaskObserver() { return () => {}; },
+            async createAgentClient(agent) {
+                assert.equal(agent, 'worker');
+                return { async callTool(name, args) {
+                    calls.push({ name, args });
+                    return { content: [{ type: 'text', text: JSON.stringify({ delivery: 'queued' }) }] };
+                } };
+            },
+        },
+    });
+    t.after(() => manager.close());
+    const sent = await manager.continueTask(taskId, 'check the current screen');
+    assert.equal(sent.delivery, 'queued');
+    assert.equal(getTask(workspace, taskId).remoteTaskId, 'running-id');
+    assert.deepEqual(calls, [{ name: 'message-work', args: { handle: 'saved-session-handle', prompt: 'check the current screen' } }]);
+    assert.match(readTaskLog(workspace, taskId).text, /User \(queued\): check the current screen/);
+    assert.ok(events.some((event) => event.action === 'continue' && event.ok && event.delivery === 'queued'));
+});
+
 test('AchillesCLI passes a persisted task model explicitly to continuation', async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'achilles-task-model-continuation-'));
     const taskId = 'task_aaaaaaaaaaaaaaaaaaaaaaaa';
