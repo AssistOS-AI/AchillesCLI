@@ -1,75 +1,39 @@
-# AchillesCLI
+# RoboTeam and coding workers
 
-AchillesCLI is primarily a local command-line agent for working with code and reusable Achilles skill definitions inside a selected project directory. It can also run as a Ploinky agent and provide the same skill-aware runtime through the dedicated Ploinky WebChat interface.
+RoboTeam provides persistent workspace robots for CLI conversations, delegated ALA tasks, and visible Desktop or Browser work. Explorer's **Open Copilot here** opens the ordinary robot named `default`. AchillesCLI is no longer a separate Ploinky agent.
 
-## Overview
+## Start and configure
 
-The trusted `achilles-cli/src/cli.mjs` entry point establishes the workspace boundary and starts `AchillesBroker`. The broker owns Bash approval state and launches the sandboxed `achilles-cli/src/index.mjs` process, where AchillesAgentLib provides `MainAgent`, `LLMAgent`, skill discovery, and skill execution. The runtime supports a one-prompt command, an interactive REPL, and Ploinky WebChat messages. It also persists conversation state and delegated background-task journals under the selected workspace.
+Enable `AchillesCLI/roboTeamAgent global no-wait` in Ploinky, or start Explorer, which declares that dependency. RoboTeam uses its existing nestedPodman runtime image. No separate copilot image is required.
 
-The repository includes the AchillesCLI agent, Ploinky manifests for the optional GPTResearcher, OpenCode, PI, and Codex workers used by launcher skills, and the independent RoboTeam persistent-robot and nested-container manager. AchillesCLI includes built-in skills that list workspace robots and launch visible Desktop or Browser tasks through RoboTeam, returning an authenticated Selkies link once the graphical session is ready. RoboTeam starts use Ploinky's native asynchronous task contract, so AchillesCLI's background-task journal also receives intermediate ALA messages and the terminal result. WebChat renders those logs inside a collapsible task card, opens the Selkies link in its right panel, and can stop or resume an interrupted graphical task through its native continuation handle. The [agent documentation hub](index.html) explains every agent and links to its dedicated documentation, including the [RoboTeam documentation](roboTeamAgent/docs/index.html). Detailed AchillesCLI runtime behavior is documented in [the technical documentation](achilles-cli/docs/index.html), canonical terms are defined in [the wiki](achilles-cli/docs/wiki.html), and requirements are indexed in [the specification matrix](achilles-cli/docs/specsLoader.html?spec=matrix.md).
-
-## Prerequisites
-
-- Node.js 20 or newer for the ES-module runtime and test suite.
-- Ploinky, which supplies the one workspace-selected `achillesAgentLib` source and the Soul Gateway proxy used by `achilles-cli/manifest.json`.
-- Bubblewrap on Linux. `achilles-cli/scripts/installPrerequisites.sh` installs it through the agent image's supported package manager when necessary.
-
-## Installation and startup
-
-Install or enable the repository as a Ploinky agent, then start an interactive session from the project directory that AchillesCLI may access:
+Open a robot's Desktop from the RoboTeam dashboard and authenticate Codex, OpenCode, or Pi there. The GUI home at `/config` is the same robot home later supplied to ALA. Coding-agent executables are installed on first use into the shared tool cache, not copied into every robot.
 
 ```bash
-ploinky cli achilles-cli
+ploinky cli roboTeamAgent --robot default --dir /workspace/project
 ```
 
-Pass a prompt after the agent name for one-shot execution:
+The chat URL is `/webchat?agent=roboTeamAgent&robot=default&workspace-dir=.&forward-envelope=1`. Every robot card also has **Open Chat**.
 
-```bash
-ploinky cli achilles-cli "list all skills"
-```
+## Conversations and tasks
 
-The manifest runs `node /code/src/cli.mjs`. AchillesCLI does not install or clone its own AchillesAgentLib copy. For standalone development without Ploinky, install package-local dependencies, expose the selected development checkout through the standard package link, and start the same runtime from the agent directory:
+A robot owns its home and account configuration. Each conversation owns its cwd, ALA/native session ID, transcript and selected skills. A turn is one execution in that conversation. Independent CLI conversations and Simple tasks may run concurrently on the same robot. One conversation permits one execution at a time.
 
-```bash
-cd achilles-cli
-npm install
-mkdir -p node_modules
-ln -s /absolute/path/to/achillesAgentLib node_modules/achillesAgentLib
-npm start -- --dir ./example-workspace
-```
+Desktop and Browser share one GUI container and one FIFO task queue per robot. A mode or cwd change replaces the idle container. Completing a task leaves the GUI available.
 
-## Configuration
+Use `/session`, `/session new`, `/session resume <id>`, `/tasks`, `/model`, and `/permissions`. Pi does not support `ask-for-approval` and rejects it. `full-access` still runs inside ALA's Bubblewrap boundary.
 
-`--dir <path>` selects the sandboxed working directory, and repeatable `--skill-root <path>` options add session-only skill roots. `--permissions ask-for-approval` requires a decision for each new Bash call; `--permissions full-access` starts Bash calls without prompting but does not widen the workspace sandbox. `/permissions` persists the selected mode in `<workspace>/.data/achilles-cli/settings.json`, while an explicit startup option overrides the saved value only for that process. When Ploinky supplies `PLOINKY_WORKSPACE_ROOT`, all AchillesCLI-owned state is anchored to that workspace root even if `--dir` selects a nested directory.
+The five bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset is available to every robot, selected automatically only for `default`. Use `/skills` to list allowed sets and skill descriptions, or `/skills use copilot,documents/read-pdf` to select a set and an individual skill. A saved conversation retains its copied catalog on continuation. `/skills use none` clears the selection.
 
-`/model <model-name>` stores an explicit Soul Gateway model selection in the same settings file. `/tier` removes that explicit selection and returns routing to the configured tier strategy. All model calls go through AchillesAgentLib `LLMAgent`; repository code does not call a model provider directly.
+`/exec launch-robot cli analyst: review this project` starts an independent delegated conversation. Desktop and browser variants also return a live Selkies link. Skill scripts use the Ploinky MCP client through the Router. The wrapper observes native task events and keeps logs, final results and continuation controls in WebChat.
 
-The Ploinky manifest accepts `WORKSPACE_PATH`, `ACHILLES_MODEL_PLAN`, `ACHILLES_MODEL_CODE`, and `ACHILLES_DEBUG` from its runtime environment. Runtime configuration may supply manual overrides in code when a host integration needs values that differ from environment defaults.
+Robot histories, logins and settings remain unchanged. The active contracts are in [RoboTeam documentation](roboTeamAgent/docs/index.html).
 
-## Basic usage
-
-Common interactive commands include:
-
-```text
-/list skills
-/read <skill-name>
-/write <skill-name> [type]
-/validate <skill-name>
-/generate <skill-name>
-/test [skill-name]
-/run-tests [skill-name|all]
-/refine <skill-name>
-/exec <skill-name> [input]
-/skills
-/permissions
-/model
-/tasks
-```
-
-Run the repository integration suite with:
+## Verification
 
 ```bash
 node tests/run-all.mjs
+cd roboTeamAgent
+npm test
 ```
 
-Package-local behavior is also covered by the tests under `achilles-cli/tests/`.
+GPTResearcher remains an optional Ploinky worker. Codex, OpenCode and Pi run through ALA inside RoboTeam, not through separate Ploinky agents.
