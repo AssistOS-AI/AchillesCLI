@@ -22,7 +22,7 @@ Desktop and Browser share one GUI container and one FIFO task queue per robot. A
 
 Use `/session`, `/session new`, `/session resume <id>`, `/tasks`, `/model`, and `/permissions`. Pi does not support `ask-for-approval` and rejects it. `full-access` still runs inside ALA's Bubblewrap boundary.
 
-The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset is available to every robot, selected automatically only for `default`. Use `/skills` to list allowed sets and skill descriptions, or `/skills use copilot,documents/read-pdf` to select a discovered skillset and an individual skill. A saved conversation reuses its path manifest and removes unavailable skills before continuation. `/skills use none` clears optional skills; direct default chats retain copilot.
+The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset is available to every robot, selected automatically only for `default`. Use `/skills` to list allowed sets and skill descriptions, or `/skills use copilot,documents/read-pdf` to select a discovered skillset and an individual skill. A saved conversation captures current selected files before each execution. `/skills use none` clears the selection, including copilot; `/skills pin` keeps the last executed catalog.
 
 `/exec launch-robot cli analyst: review this project` starts an independent delegated conversation. Desktop and browser variants also return a live Selkies link. Skill scripts use the Ploinky MCP client through the Router. The wrapper observes native task events and keeps logs, final results and continuation controls in WebChat.
 
@@ -40,4 +40,6 @@ GPTResearcher remains an optional Ploinky worker. Codex, OpenCode and Pi run thr
 
 Skill repositories are managed from each robot’s **Manage skills** dialog. Their optional `skillsets.md` defines named combinations with Description and Skills sections. The default copilot receives each robot’s available combinations and delegates using their generated IDs.
 
-See [Skills & Skillsets](roboTeamAgent/docs/skills.html) for repository management, Markdown definitions and the task manifest flow.
+See [Skills & Skillsets](roboTeamAgent/docs/skills.html) for repository management, Markdown definitions and the execution catalog flow.
+
+Local instruction skills use live conversation policies and capture current files at execution start. See [local skill discovery](roboTeamAgent/docs/local-skills.html).
