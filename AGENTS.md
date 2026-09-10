@@ -8,7 +8,7 @@ Read `README.md`, `roboTeamAgent/docs/index.html`, `roboTeamAgent/docs/wiki.html
 
 # Current Skill Catalog
 
-The bundled `copilot` skillset contains five self-contained Anthropic skills under `roboTeamAgent/copilot/src/skills/`: bash, launch-gpt-researcher, launch-open-interpreter, launch-web-search, and launch-robot. Robot discovery is a launch-robot script, not a sixth skill. Keep this catalog and RoboTeam documentation synchronized.
+The bundled `copilot` skillset contains three self-contained Anthropic skills under `roboTeamAgent/copilot/src/skills/`: bash, launch-gpt-researcher, and launch-robot. Robot discovery is a launch-robot script, not a fourth skill. Keep this catalog and RoboTeam documentation synchronized.
 
 # Repository Rules
 

@@ -19,30 +19,29 @@ Integration scope:
 4. AchillesIDE provides a related multi-agent workspace/IDE surface whose contracts shape interoperability expectations.
 
 Portable integration references (any environment):
-1. Ploinky repository: `<workspace-root>/ploinky`
-2. AchillesAgentLib installation path: `<ploinky-root>/node_modules/achillesAgentLib` (or equivalent dependency root resolved by runtime config)
-3. AchillesIDE repository: `<workspace-root>/.ploinky/repos/AchillesIDE`
+5. Ploinky repository: `<workspace-root>/ploinky`
+6. AchillesAgentLib installation path: `<ploinky-root>/node_modules/achillesAgentLib` (or equivalent dependency root resolved by runtime config)
+7. AchillesIDE repository: `<workspace-root>/.ploinky/repos/AchillesIDE`
 
 AchillesAgentLib contract:
-1. AchillesCLI imports and uses `MainAgent`, `LLMAgent`, and related runtime helpers.
-2. AchillesCLI delegates skill discovery/orchestration semantics to AchillesAgentLib.
-3. AchillesCLI must preserve compatibility with AchillesAgentLib skill subsystem expectations.
-4. When AchillesCLI uses Agentic Knowledge Units, AchillesAgentLib DS008 remains the AKU library authority. AchillesCLI-specific Copilot memory behavior is governed by DS011 and must not be pushed into the AKU library contract.
-5. AchillesCLI supplies a decorated `invokerStrategy` through `MainAgent.llmAgentOptions`. The decorator must force the `soul_gateway` provider key, preserve opaque model identifiers, delegate the standard invoker implementation, and retain its auxiliary introspection methods. AchillesAgentLib remains responsible for provider-adapter execution, while Soul Gateway remains responsible for model validation and routing.
+8. AchillesCLI imports and uses `MainAgent`, `LLMAgent`, and related runtime helpers.
+9. AchillesCLI delegates skill discovery/orchestration semantics to AchillesAgentLib.
+10. AchillesCLI must preserve compatibility with AchillesAgentLib skill subsystem expectations.
+11. AchillesCLI supplies a decorated `invokerStrategy` through `MainAgent.llmAgentOptions`. The decorator must force the `soul_gateway` provider key, preserve opaque model identifiers, delegate the standard invoker implementation, and retain its auxiliary introspection methods. AchillesAgentLib remains responsible for provider-adapter execution, while Soul Gateway remains responsible for model validation and routing.
 
 Ploinky integration boundary:
-1. AchillesCLI should remain compatible with workspace-managed runtime contexts.
-2. Startup assumptions must avoid hardcoded machine-specific paths in core runtime logic.
-3. Session/webchat runtime paths should keep durable-state assumptions aligned with orchestrated process lifecycles.
-4. The Ploinky agent manifest should use the shared `docker.io/assistos/ploinky-node@sha256:accd925fcbf460c1f4c7a5cd9e2d46539c615bbfad2e896cabb7556d8050a669` image so Explorer cold starts reuse the same Node 24 glibc runtime and preinstalled dependency-cache tools as the rest of the default agent graph.
-5. The Ploinky agent manifest temporarily declares `SOUL_GATEWAY_API_KEY` as a `sharedGeneratedSecret` with `explicitOverride: true` so Explorer-launched AchillesCLI can honor a hosted Soul Gateway key from parent `.env` files. This is not canonical AchillesCLI integration behavior and must be removed when the local deployed Soul Gateway is the only supported provider path.
-6. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI also owns the public `list_achilles_skills` catalog tool used by Explorer settings; the tool defaults discovery to the runtime `WORKSPACE_PATH`, and Explorer must not import AchillesAgentLib discovery code or know AchillesCLI's dependency layout. AchillesCLI slash commands are provided through the separate `list_achilles_cli_commands` MCP catalog tool, which returns a structured command/sub-command payload and does not execute chat prompts. That command tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill. The catalog must also publish `ask-for-approval` and `full-access` as the supported `/permissions` argument completions. The same server-side command-catalog call queries the local Soul Gateway with the generated agent identity and publishes minimal model completions for `/model`; credentials and raw provider configuration never enter the browser payload. The command declares generic fragment matching and leaves the full filtered result set available to Ploinky's progressively rendered menu, so Ploinky does not hardcode AchillesCLI command names.
-7. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
-8. The webchat interactive mode must treat `@open-interpreter` and other
+12. AchillesCLI should remain compatible with workspace-managed runtime contexts.
+13. Startup assumptions must avoid hardcoded machine-specific paths in core runtime logic.
+14. Session/webchat runtime paths should keep durable-state assumptions aligned with orchestrated process lifecycles.
+15. The Ploinky agent manifest should use the shared `docker.io/assistos/ploinky-node@sha256:accd925fcbf460c1f4c7a5cd9e2d46539c615bbfad2e896cabb7556d8050a669` image so Explorer cold starts reuse the same Node 24 glibc runtime and preinstalled dependency-cache tools as the rest of the default agent graph.
+16. The Ploinky agent manifest temporarily declares `SOUL_GATEWAY_API_KEY` as a `sharedGeneratedSecret` with `explicitOverride: true` so Explorer-launched AchillesCLI can honor a hosted Soul Gateway key from parent `.env` files. This is not canonical AchillesCLI integration behavior and must be removed when the local deployed Soul Gateway is the only supported provider path.
+17. AchillesCLI exposes its skill catalog as MCP tools via the AgentServer mechanism. Each user skill is exposed as `execute_<sanitised_skill_name>` with an input schema derived from the skill's argument expectations. WebChat clients query this catalog at session start to populate slash-command autocomplete menus. AchillesCLI also owns the public `list_achilles_skills` catalog tool used by Explorer settings; the tool defaults discovery to the runtime `WORKSPACE_PATH`, and Explorer must not import AchillesAgentLib discovery code or know AchillesCLI's dependency layout. AchillesCLI slash commands are provided through the separate `list_achilles_cli_commands` MCP catalog tool, which returns a structured command/sub-command payload and does not execute chat prompts. That command tool accepts an optional `dir` argument and uses `achillesAgentLib` skill discovery from that directory to publish argument completions for slash commands that operate on skills. When a discovered skill descriptor contains `## Help`, the catalog publishes that text as the argument completion description for the skill. The catalog must also publish `ask-for-approval` and `full-access` as the supported `/permissions` argument completions. The same server-side command-catalog call queries the local Soul Gateway with the generated agent identity and publishes minimal model completions for `/model`; credentials and raw provider configuration never enter the browser payload. The command declares generic fragment matching and leaves the full filtered result set available to Ploinky's progressively rendered menu, so Ploinky does not hardcode AchillesCLI command names.
+18. The webchat interactive mode (`runWebchatInteractive`) accepts ESC (`\x1b`) as a standalone input line to cancel the current prompt execution. This enables remote cancel from browser-based WebChat sessions.
+19. The webchat interactive mode must treat `@worker` and other
    `@agent`-shaped tokens as ordinary chat text. Provider dispatch is semantic
    and launcher-driven; Ploinky WebChat remains only the envelope and
    invocation-token transport.
-9. Generic WebChat envelope and resource helpers live in AchillesCLI. These
+20. Generic WebChat envelope and resource helpers live in AchillesCLI. These
    helpers normalize envelope text, extract the
    invocation token, and materialize browser attachments or workspace
    references from legacy shared blob ids under the configured shared root or
@@ -53,7 +52,7 @@ Ploinky integration boundary:
    forwarded resources. Files above the inline byte limit must remain available
    to launcher integrations through their validated path rather than being
    discarded.
-10. Non-slash WebChat turns normally use AchillesCLI's general skill-aware
+21. Non-slash WebChat turns normally use AchillesCLI's general skill-aware
    reasoning loop. Before that loop, a deterministic named-coding-agent
    selector handles explicit task requests for `opencode`/`opencodeAgent`,
    `codex`/`codexAgent`, and `piAgent`. It must select `launch-opencode`,
@@ -70,20 +69,20 @@ Ploinky integration boundary:
    message instead of a later relay submission error. Directory and other
    non-file workspace references may be represented in Copilot prompt context,
    but launchers must forward only file path strings in relay `paths` payloads.
-11. The Explorer Copilot launcher may consume runtime plugin metadata from
+22. The Explorer Copilot launcher may consume runtime plugin metadata from
    `file-exp:copilot-launch-extension` to add generic WebChat launch query
    parameters such as `forward-envelope=1` and `workspace-dir`. It must not add
    provider backend ids, provider agent ids, or provider MCP tool names to the
    WebChat URL; the visible Explorer action remains the
    normal `Open Copilot here` action.
-12. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.data/achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
-13. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
-14. In webchat runtime mode, AchillesCLI preserves the sanitized
+23. Repository maintenance through `/update repos` runs inside the active AchillesCLI runtime context and updates repositories already cloned under `.data/achilles-cli/repos/`; hosts must surface aggregated per-repository git pull failures unchanged.
+24. In webchat runtime mode, AchillesCLI installs a supervisor that auto-approves loop-session tool calls and emits structured progress lines on stdout. Progress lines use `{"__webchatProgress":1,"type":"tool_reason","tool":"...","reason":"..."}` and must be treated as UI progress metadata, not as assistant answer text.
+25. In webchat runtime mode, AchillesCLI preserves the sanitized
     `origin.publicBaseUrl` field from forwarded WebChat envelopes in launcher
     context. Launcher skills may use this same-origin router base for
     user-facing browser links, while ignoring malformed or non-HTTP origin
     hints.
-15. AchillesCLI owns conversation sessions for both terminal and WebChat launches.
+26. AchillesCLI owns conversation sessions for both terminal and WebChat launches.
     It stores them under `<workspace>/.data/achilles-cli/sessions/`, stores the selected
     `currentSessionId` beside model and permissions in `.data/achilles-cli/settings.json`,
     and supplies prior natural-language turns once as `initialHistory` on the
@@ -100,7 +99,7 @@ Ploinky integration boundary:
     through `/session`, `/session new`, and `/session resume <session-id>`.
     `__webchatRuntimeState` continues to publish model state but carries no
     process-instance identifier.
-16. In single-shot, terminal REPL, and WebChat runtime modes, AchillesCLI
+27. In single-shot, terminal REPL, and WebChat runtime modes, AchillesCLI
     registers a generic asynchronous-task observer with Ploinky
     `AgentMcpClient.mjs`. Launcher skills that delegate
     long-running work use `callToolWithoutWait`, so an AgentServer response
@@ -113,7 +112,7 @@ Ploinky integration boundary:
     `__webchatTask` list, view, lifecycle, log, and action envelopes for the
     generic browser interface. The observer must not persist agent credentials,
     invocation grants, or raw tool arguments.
-17. AchillesCLI exposes `/tasks [count|all]` through its shared slash-command
+28. AchillesCLI exposes `/tasks [count|all]` through its shared slash-command
     catalog and handler, plus `/task view <task-id>`, `/task stop <task-id>`,
     and `/task continue <task-id> <prompt>`. Both WebChat and terminal REPL
     modes use the same AchillesCLI-owned manager and journal. The command
@@ -123,7 +122,7 @@ Ploinky integration boundary:
     routes. Those button-originated commands are invisible control traffic, so
     AchillesCLI must emit their structured task envelopes but suppress their
     textual acknowledgements and errors from the main WebChat transcript.
-18. The AchillesCLI manifest enables `proxies/soul-gateway` as a no-wait
+29. The AchillesCLI manifest enables `proxies/soul-gateway` as a no-wait
     dependency. Soul Gateway owns a custom port-7000 HTTP process, so the
     confined-relay runtime does not synthesize an AgentServer primary
     readiness target for it. Model discovery must treat a still-starting
@@ -136,15 +135,15 @@ Ploinky integration boundary:
     The same manifest enables the exact `roboTeamAgent no-wait` dependency so
     its authenticated profile dashboard starts asynchronously without delaying
     AchillesCLI's own activation.
-19. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
+30. Optional coding and research workers are intentionally absent from the AchillesCLI manifest `enable` list and declare `startup: manual`. `opencodeAgent`, `piAgent`, `codexAgent`, `GPTResearcher`, and `proxies/searchAgent` therefore do not join the recursive Explorer startup graph merely because AchillesCLI is active or because they remain enabled from an earlier session. Provider launchers that invoke an MCP worker must query Marketplace runtime state through `AgentMcpClient`, submit the existing `enable_agent` action in explicit `global` mode only when the worker is not running, wait for readiness, and then make the router-mediated MCP call. `launch-gpt-researcher` starts `proxies/searchAgent` before `AchillesCLI/GPTResearcher`. Direct operator invocation through `ploinky cli codexAgent` remains available alongside the `launch-codex` MCP delegation path.
     Optional activation is additive: the candidate must be admitted and become
     ready before routing selection changes, and a failed candidate must leave
     the active generation plus unrelated Router and Soul Gateway routes
     continuously available. A launcher surfaces the allowlisted safe lifecycle
     code returned by that transaction without exposing its command line,
     environment, credentials, or hidden routing state.
-20. The AchillesCLI background-task observer must persist and forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also use the textual MCP result as separate presentation metadata, never as appended log content. AchillesCLI uses that text only to locate the already emitted final-answer range in its persisted raw log and stores a bounded ordered `finalOutputRanges` entry for each retained completed turn instead of duplicating the text. Continuation preserves all earlier retained entries. Materialization must reconstruct the range list from legacy append-only journal records that contain only `finalOutputOffset` and `finalOutputLength`, so existing task logs require no rewrite. WebChat can then render intermediate output and every retained final answer distinctly.
-21. Async `opencodeAgent`, `piAgent`, and `codexAgent` executions must publish a generic
+31. The AchillesCLI background-task observer must persist and forward the target task's live log snapshot and lifecycle metadata. On a terminal event it may also use the textual MCP result as separate presentation metadata, never as appended log content. AchillesCLI uses that text only to locate the already emitted final-answer range in its persisted raw log and stores a bounded ordered `finalOutputRanges` entry for each retained completed turn instead of duplicating the text. Continuation preserves all earlier retained entries. Materialization must reconstruct the range list from legacy append-only journal records that contain only `finalOutputOffset` and `finalOutputLength`, so existing task logs require no rewrite. WebChat can then render intermediate output and every retained final answer distinctly.
+32. Async `opencodeAgent`, `piAgent`, and `codexAgent` executions must publish a generic
     continuation capability and an opaque versioned handle once their provider
     session exists, including when a later provider error makes the task fail.
     AchillesCLI forwards this capability and handle in its generic task
@@ -167,7 +166,7 @@ Ploinky integration boundary:
     `continue-task` MCP definitions and provider runners must not impose an
     elapsed-time limit: coding work remains active until the provider exits,
     the user cancels it, execution fails, or the runtime is interrupted.
-22. Async `opencodeAgent`, `piAgent`, and `codexAgent` wrappers must treat
+33. Async `opencodeAgent`, `piAgent`, and `codexAgent` wrappers must treat
     `SIGTERM` as a controlled cancellation request. Each wrapper aborts its
     provider subprocess, waits for the runner to resolve the provider session
     or thread when one already exists, persists the opaque continuation record,
@@ -177,13 +176,13 @@ Ploinky integration boundary:
     cleanup grace period. Cancellation before provider execution creates no
     handle; cancellation after session creation remains continuable through the
     normal stable-local-task-id flow.
-23. `/task stop` must call the stored target through
+34. `/task stop` must call the stored target through
     `AgentMcpClient.cancelTask()` using an Agent Assertion bound to
     `POST /task/cancel`, pseudo-tool `__task_cancel__`, and the exact stored
     remote task id. The router verifies that assertion and replaces it with a
     target-scoped Router Request. AchillesCLI must not receive or forward a
     browser session token for this action.
-24. In WebChat mode, AchillesCLI owns the recursive index of regular files in
+35. In WebChat mode, AchillesCLI owns the recursive index of regular files in
     its active working directory. It must publish a bounded version-1
     `__webchatWorkspaceFiles` reset snapshot at startup, rescan every five
     seconds, and rescan immediately before emitting assistant or command output.
@@ -195,38 +194,38 @@ Ploinky integration boundary:
     validation.
 
 AchillesIDE interoperability boundary:
-1. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
-2. AchillesCLI documentation must remain explicit about what is native to CLI vs what belongs to IDE/router hosts.
-3. Shared conventions (safe user output, debug gating, deterministic command behavior) must remain compatible across ecosystem tools.
-4. AchillesCLI may ship IDE menu plugins through `achilles-cli/IDE-plugins/` for workspace skill-management affordances. The `edit-skills-manifest` plugin contributes only to Explorer folder context menus, uses Explorer's existing file read/write tools, and persists `ploinky-skills-manifest.json` as a JSON array of skill repository URLs in the selected folder. It must not add new router routes, MCP tools, or privileged policy surfaces.
-5. The AchillesCLI Copilot IDE integration must expose one logical application plugin through two contributions with the shared id `achilles-cli-copilot`. The mount contribution appears in `file-exp:toolbar-plugins-dropdown` as `Open Copilot here` and launches against the displayed directory using Explorer's `currentFsPath` and `workspaceFsRoot` context. The menu contribution preserves the same action for selected directory rows under `file-exp:context-menu:directory`. Explorer `/` maps to the workspace root; neither contribution may navigate above that boundary or require a synthetic parent entry.
+36. AchillesIDE documents a broader agent ecosystem with MCP and workspace routing expectations.
+37. AchillesCLI documentation must remain explicit about what is native to CLI vs what belongs to IDE/router hosts.
+38. Shared conventions (safe user output, debug gating, deterministic command behavior) must remain compatible across ecosystem tools.
+39. AchillesCLI may ship IDE menu plugins through `achilles-cli/IDE-plugins/` for workspace skill-management affordances. The `edit-skills-manifest` plugin contributes only to Explorer folder context menus, uses Explorer's existing file read/write tools, and persists `ploinky-skills-manifest.json` as a JSON array of skill repository URLs in the selected folder. It must not add new router routes, MCP tools, or privileged policy surfaces.
+40. The AchillesCLI Copilot IDE integration must expose one logical application plugin through two contributions with the shared id `achilles-cli-copilot`. The mount contribution appears in `file-exp:toolbar-plugins-dropdown` as `Open Copilot here` and launches against the displayed directory using Explorer's `currentFsPath` and `workspaceFsRoot` context. The menu contribution preserves the same action for selected directory rows under `file-exp:context-menu:directory`. Explorer `/` maps to the workspace root; neither contribution may navigate above that boundary or require a synthetic parent entry.
 
 Cross-repository invariants:
-1. No repository should assume hidden runtime side effects from another without documented contracts.
-2. Integration docs must describe boundaries and responsibilities, not duplicate entire external specs.
-3. When AchillesAgentLib or host-runtime integration points change, AchillesCLI DS files must be updated in the same change set.
+41. No repository should assume hidden runtime side effects from another without documented contracts.
+42. Integration docs must describe boundaries and responsibilities, not duplicate entire external specs.
+43. When AchillesAgentLib or host-runtime integration points change, AchillesCLI DS files must be updated in the same change set.
 
 Provider launcher discovery:
-1. Built-in provider launcher skills under `achilles-cli/src/skills/` may
+44. Built-in provider launcher skills under `achilles-cli/src/skills/` may
    provide fallback behavior, but they do not define provider availability.
-2. In Ploinky workspaces, AchillesCLI discovers provider launcher skills
+45. In Ploinky workspaces, AchillesCLI discovers provider launcher skills
    generically from workspace-managed repository clones under
    `.ploinky/repos/<repo>/achilles-skills`. Discovery must not hardcode
    `copilot-agents`, backend names, provider agent ids, or provider MCP tool
    names.
-3. A deployed repo launcher with the same normalized skill name may replace a
+46. A deployed repo launcher with the same normalized skill name may replace a
    built-in fallback during startup registration. This makes the invariant
    explicit: an external provider becomes selectable by exposing a launcher
    skill, not by a Ploinky enable-research command or WebChat tag toggle.
-4. A launcher that requires delegated MCP must declare that requirement in its
+47. A launcher that requires delegated MCP must declare that requirement in its
    descriptor and return a clear user-facing unavailable message when the
    invocation token or relay route is absent.
-5. Provider availability for Copilot routing is determined by discovered
+48. Provider availability for Copilot routing is determined by discovered
    launcher skills, not by a Ploinky research enable command, bundle command, or
    WebChat toggle. A launcher may report that its relay backend or provider
    route is unavailable, but it must not tell the user to run an enable-research
    command to make the provider selectable.
-6. `launch-opencode`, `launch-pi`, and `launch-codex` are bounded exceptions
+49. `launch-opencode`, `launch-pi`, and `launch-codex` are bounded exceptions
    for direct named-agent delegation. Each starts its fixed installed target through the
    existing Marketplace enable path in explicit `global` mode only when
    runtime status is not already running, then calls that agent's allowlisted
@@ -234,13 +233,13 @@ Provider launcher discovery:
    task text, pass that text unchanged as `prompt`, and never inherit or forward
    the AchillesCLI session model. They return plain text and must not accept
    arbitrary target agent names or bypass Ploinky MCP authorization.
-7. The AchillesCLI Ploinky manifest must not enable `opencodeAgent`, `piAgent`,
+50. The AchillesCLI Ploinky manifest must not enable `opencodeAgent`, `piAgent`,
    `codexAgent`, `GPTResearcher`, or `proxies/searchAgent`. These optional
    workers are activation-time dependencies of their launcher or direct CLI
    invocation, not startup-time dependencies of AchillesCLI. Their own
    manifests must declare `startup: manual` so a later general workspace boot
    does not revive a dormant worker merely because it remains registered.
-8. `piAgent` must run PI in JSON event-stream mode with an explicit persisted
+51. `piAgent` must run PI in JSON event-stream mode with an explicit persisted
    session id and session directory. The wrapper must parse PI's JSONL stdout
    incrementally and immediately forward assistant text deltas and textual tool
    output to the AgentServer live-log channel. Cumulative tool updates and their
@@ -361,7 +360,7 @@ Provider launcher discovery:
    ids, session directories, project paths,
    and internal lookup titles must remain behind UUID continuation handles
    stored in agent-private files with restrictive permissions.
-9. `codexAgent` must run initial work through `codex exec --json` without
+52. `codexAgent` must run initial work through `codex exec --json` without
    ephemeral mode and must use the reported Codex thread id for continuation.
    It forwards provider stderr byte-for-byte and extracts agent-message and
    completed command-output text from JSONL events into the live log as those
@@ -395,7 +394,7 @@ Provider launcher discovery:
    `NPM_CLI` override for deterministic tests or operator control. Codex MCP
    task commands must invoke `node` through `PATH` rather than assuming a
    container-only `/usr/local/bin/node` path.
-10. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
+53. `launch-gpt-researcher` must ensure `proxies/searchAgent` is running before
    it ensures `AchillesCLI/GPTResearcher` is running. Each check must avoid a
    duplicate `enable_agent` request when Marketplace already reports the agent
    as running. When activation is required, both requests use explicit
