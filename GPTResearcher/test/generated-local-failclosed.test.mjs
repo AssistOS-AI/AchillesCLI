@@ -72,7 +72,7 @@ except RuntimeError as error:
 else:
     raise AssertionError("generated-local key accessor was not rejected")
 `;
-    const result = spawnSync('python3', ['-c', script], {
+    const result = spawnSync('python3', ['-B', '-c', script], {
         cwd: scriptsDirectory,
         env: {
             ...process.env,
@@ -107,7 +107,7 @@ env = {
 }
 soul_gateway.assert_generated_local_consumer_certified(env)
 `;
-    const result = spawnSync('python3', ['-c', script], {
+    const result = spawnSync('python3', ['-B', '-c', script], {
         cwd: scriptsDirectory,
         env: {
             ...process.env,

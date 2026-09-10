@@ -1,6 +1,6 @@
 #!/bin/sh
 
-python3 - <<'PY'
+python3 -B - <<'PY'
 import json
 import sys
 import urllib.error
