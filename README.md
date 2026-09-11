@@ -22,7 +22,7 @@ Desktop and Browser share one GUI container and one FIFO task queue per robot. A
 
 Use `/session`, `/session new`, `/session resume <id>`, `/tasks`, `/model`, and `/permissions`. Pi does not support `ask-for-approval` and rejects it. `full-access` still runs inside ALA's Bubblewrap boundary.
 
-The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset is available to every robot, selected automatically only for `default`. Use `/skills` to list allowed sets and skill descriptions, or `/skills use copilot,documents/read-pdf` to select a discovered skillset and an individual skill. A saved conversation captures current selected files before each execution. `/skills use none` clears the selection, including copilot; `/skills pin` keeps the last executed catalog.
+The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset is available only to `default`, where it is selected automatically. Use `/skills` to list allowed sets and skill descriptions, or `/skills use copilot,documents/read-pdf` to select a discovered skillset and an individual skill. A saved conversation captures current selected files before each execution. `/skills use none` clears the selection, including copilot; `/skills pin` keeps the last executed catalog.
 
 `/exec launch-robot cli analyst: review this project` starts an independent delegated conversation. Desktop and browser variants also return a live Selkies link. Skill scripts use the Ploinky MCP client through the Router. The wrapper observes native task events and keeps logs, final results and continuation controls in WebChat.
 
