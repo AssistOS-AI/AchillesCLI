@@ -6,13 +6,15 @@ RoboTeam provides persistent workspace robots for CLI conversations, delegated A
 
 Enable `AchillesCLI/roboTeamAgent global no-wait` in Ploinky, or start Explorer, which declares that dependency. RoboTeam uses its existing nestedPodman runtime image. No separate copilot image is required.
 
+New robots enable only Codex. Administrators open Coding agent on an existing robot card to choose Codex, OpenCode or Pi in a dialog. The card displays the enabled agent. The creation form uses Codex automatically. Stop the workstation and tasks before changing it, and open a new chat or terminal afterward. The dashboard selects one agent; the server accepts a `codingAgents` array with any nonempty combination of the three. Existing robots without this setting retain all three until configured. The setting controls managed executables in WebChat, delegated tasks, Desktop, Browser and Open → Terminal; it does not erase account data or restrict user-installed programs.
+
 Open a robot's Desktop from the RoboTeam dashboard and authenticate Codex, OpenCode, or Pi there. The GUI home at `/config` is the same robot home later supplied to ALA. At startup, RoboTeam prepares Codex, OpenCode, Pi, Playwright MCP, computer-use-linux and Supergateway in the shared tool cache in the background. Robot starts reuse these tools. An immediate request may wait for preparation; failures are logged and retried on demand.
 
 ```bash
 ploinky cli roboTeamAgent --robot default --dir /workspace/project
 ```
 
-The chat URL is `/webchat?agent=roboTeamAgent&robot=default&workspace-dir=.&forward-envelope=1`. Every robot card also has **Open Chat**.
+The chat URL is `/webchat?agent=roboTeamAgent&robot=default&workspace-dir=.&forward-envelope=1`. Every robot card also has **Open → Chat**.
 
 RoboTeam installs a shared Soul Gateway plugin in every robot's global OpenCode plugins directory. At native OpenCode initialization, the plugin discovers the local gateway's models and adds them to the in-memory provider configuration. Manual terminal launches, WebChat's model selector and ALA execution use the same plugin. No generated `opencode.json`, model list or periodic polling is required. Manage upstream accounts once in Soul Gateway. Selecting the robot's coding backend remains a separate setting. See [Soul Gateway models](roboTeamAgent/docs/operations.html#soul-gateway-models).
 
