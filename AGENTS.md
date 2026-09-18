@@ -15,7 +15,7 @@ The bundled `copilot` skillset contains three self-contained Anthropic skills un
 - Use English for source comments and documentation, ES modules and four-space JavaScript indentation.
 - ALA owns coding-agent selection, native sessions and Bubblewrap execution. Do not restore MainAgent or the retired Bash broker as the conversational engine.
 - Skills call the real Ploinky MCP client through the Router. Never introduce a parallel MCP bridge or forward master/user-session credentials.
-- Robot homes and copilot state are robot-scoped. Do not migrate or delete old AchillesCLI data.
+- Robot homes and native accounts are robot-scoped. Copilot conversations, task history and execution records belong to the opened folder under `.achilles-cli/` and are never read from robot-scoped or workspace-wide locations.
 - Independent CLI conversations run concurrently. Desktop and Browser share exactly one GUI container and queue per robot. A conversation has one execution at a time.
 - The current RoboTeam DS specifications are authoritative. Keep numbering contiguous and update HTML and relevant DS files with behavior changes. Re-evaluate main behaviors before updating DS003.
 - Imported authoring skills stay documented in their own folders, not as product features.

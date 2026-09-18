@@ -22,7 +22,7 @@ ALA is provided through `link-install`: Ploinky clones `https://github.com/Assis
 
 ## Conversations and tasks
 
-A robot owns its home and account configuration. Each conversation owns its cwd, ALA/native session ID, transcript and selected skills. A turn is one execution in that conversation. Independent CLI conversations and Simple tasks may run concurrently on the same robot. One conversation permits one execution at a time.
+Opening Copilot creates `.achilles-cli/` in the selected folder. That folder owns its conversations, task definitions, logs and execution records; `/session` and `/tasks` operate on that folder only. A robot owns its home and native account configuration. Each conversation owns its cwd, ALA/native session ID, transcript and selected skills. A turn is one execution in that conversation. Independent CLI conversations and Simple tasks may run concurrently on the same robot. One conversation permits one execution at a time.
 
 Desktop and Browser share one GUI container and one FIFO task queue per robot. A mode or cwd change replaces the idle container. Completing a task leaves the GUI available.
 
@@ -32,7 +32,7 @@ The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copi
 
 `/exec launch-robot cli analyst: review this project` starts an independent delegated conversation. Desktop and browser variants also return a live Selkies link. Skill scripts use the Ploinky MCP client through the Router. The wrapper observes native task events and keeps logs, final results and continuation controls in WebChat.
 
-Robot histories, logins and settings remain unchanged. The active contracts are in [RoboTeam documentation](roboTeamAgent/docs/index.html).
+Deleting a robot leaves project history intact. A saved native conversation remains bound to its original robot and can fail to resume if that robot or its native state is gone. Conversations and task records live in the opened folder under `.achilles-cli/`; they are not read from robot-scoped or workspace-wide locations. The active contracts are in [RoboTeam documentation](roboTeamAgent/docs/index.html).
 
 ## Verification
 
