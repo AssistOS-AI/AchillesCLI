@@ -32,7 +32,7 @@ The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copi
 
 ## Workflow graphs
 
-Use the dashboard's Workflow types panel to describe and generate a graph, refine task nodes and connections, then Save. Each task declares a name, description, skillsets and terminal, desktop or browser execution. Nodes have an explicit entry and directed outgoing edges. RoboFlow selects an available robot covering all required skillsets; a yellow warning identifies uncovered workflows without blocking Save or Start.
+Use the dashboard's Workflow types panel to describe and generate a graph. In the editor, Flow settings, Generate and Graph open separate right-side pages beside the task list. Select a task to edit it, or use + to add a task with its execution type and skillsets. Drag either centered side port to a port on another node to create a directed edge; dropping elsewhere cancels it. Double-click a node to set the highlighted entry point. Select an edge on Graph and press Delete or Backspace to remove it. RoboFlow selects an available robot covering all required skillsets; a yellow warning identifies uncovered workflows without blocking Save or Start.
 
 The front copilot selects saved workflows through launch-workflow. The protected default workflow contains one node using the default robot and requires a mode:
 
