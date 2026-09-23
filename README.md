@@ -30,7 +30,21 @@ Use `/session`, `/session new`, `/session resume <id>`, `/tasks`, `/model`, and 
 
 The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset is available only to `default`, where it is selected automatically. Manage repositories in RoboTeam and conversation skill selection in Explorer. A saved conversation captures current configured files before each execution. The CLI uses those skills but does not list, add, remove, reload or change them. Use `/list robots` to discover workspace robots.
 
-`/exec launch-robot cli analyst: review this project` starts an independent delegated conversation. Desktop and browser variants also return a live Selkies link. Skill scripts use the Ploinky MCP client through the Router. The wrapper observes native task events and keeps logs, final results and continuation controls in WebChat.
+## Workflow graphs
+
+Use the dashboard's Workflow types panel to describe and generate a graph, refine task nodes and connections, then Save. Each task declares a name, description, skillsets and terminal, desktop or browser execution. Nodes have an explicit entry and directed outgoing edges. RoboFlow selects an available robot covering all required skillsets; a yellow warning identifies uncovered workflows without blocking Save or Start.
+
+The front copilot selects saved workflows through launch-workflow. The protected default workflow contains one node using the default robot and requires a mode:
+
+```text
+/exec launch-workflow {"action":"start","workflowTypeId":"default","executionType":"terminal","objective":"Review this project"}
+```
+
+Other workflows determine execution mode per task. Branching tasks return an outgoing edge; single-edge and terminal nodes need only a final response. Repeated visits create distinct task instances. Desktop and browser share the selected robot's GUI queue.
+
+RoboFlow embeds SQLite at `/data/roboflow/roboflow.sqlite`; no database server is required. The existing runtime image supports node:sqlite and installation checks it. Exactly three application tables store current workflow types, run snapshots and task instances. Legacy workflow JSON definitions are deleted at startup without migration. Definitions and execution metadata are global; logs and final responses remain under `.achilles-cli/roboflow/` in the execution folder. The monitoring page shows graph state and every visit. See [the graph contract](roboTeamAgent/docs/specs/DS007-roboflow-team-workflow.md).
+
+ALA must include the caller `--systemPromptFile` option. Ploinky's link-install uses the workspace checkout; update that checkout together with RoboTeam.
 
 Deleting a robot leaves project history intact. A saved native conversation remains bound to its original robot and can fail to resume if that robot or its native state is gone. Conversations and task records live in the opened folder under `.achilles-cli/`; they are not read from robot-scoped or workspace-wide locations. The active contracts are in [RoboTeam documentation](roboTeamAgent/docs/index.html).
 
@@ -44,7 +58,7 @@ node --test tests/*.test.mjs
 
 GPTResearcher remains an optional Ploinky worker. Codex, OpenCode and Pi run through ALA inside RoboTeam, not through separate Ploinky agents.
 
-Skill repositories are managed from each robot’s **Manage skills** dialog. Their optional `skillsets.md` defines named combinations with Description and Skills sections. The default copilot receives each robot’s available combinations and delegates using their generated IDs.
+Skill repositories are managed from each robot’s **Manage skills** dialog. Their optional `skillsets.md` defines named combinations with Description and Skills sections. The graph editor discovers named skillsets through Ploinky. RoboFlow matches their canonical repository-source identities against each robot catalog.
 
 See [Skills & Skillsets](roboTeamAgent/docs/skills.html) for repository management, Markdown definitions and the execution catalog flow.
 
