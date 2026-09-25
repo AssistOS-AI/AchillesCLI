@@ -8,7 +8,7 @@ Read `README.md`, `roboTeamAgent/docs/index.html`, `roboTeamAgent/docs/wiki.html
 
 # Current Skill Catalog
 
-The bundled `copilot` skillset contains three self-contained Anthropic skills under `roboTeamAgent/copilot/src/skills/`: bash, launch-gpt-researcher, and launch-workflow. The front copilot mounts `launch-workflow`; workflow tasks mount only their selected skillsets. RoboFlow owns directed graph execution and chooses robots by matching enabled skillsets. The caller supplies system instructions for conversations, generation and branching tasks. Keep this catalog and RoboTeam documentation synchronized.
+The bundled `copilot` repository contains three self-contained Anthropic skills under `roboTeamAgent/copilot/src/skills/`: bash, launch-gpt-researcher, and launch-workflow. Its only skillset is `copilot` (bash and launch-gpt-researcher); `launch-workflow` is an individual skill. The default robot automatically mounts all three, and the front copilot uses `launch-workflow`. The builtin copilot repository is available only to the default robot. Workflow tasks mount their selected skillsets or, for repositories without declared skillsets, individual skills. RoboFlow owns directed graph execution and chooses robots by matching those selections. The caller supplies system instructions for conversations, generation and branching tasks. Keep this catalog and RoboTeam documentation synchronized.
 
 # Repository Rules
 
