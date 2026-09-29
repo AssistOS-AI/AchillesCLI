@@ -14,7 +14,7 @@ Open a robot's Desktop from the RoboTeam dashboard and authenticate Codex, OpenC
 ploinky cli roboTeamAgent --robot default --dir /workspace/project
 ```
 
-The chat URL is `/webchat?agent=roboTeamAgent&robot=default&workspace-dir=achilles-cli&forward-envelope=1`. Every robot card also has **Open → Chat**, which uses `achilles-cli/` below the Ploinky workspace. The copilot creates that folder if missing and reuses it otherwise.
+The chat URL is `/webchat?agent=roboTeamAgent&robot=default&workspace-dir=achilles-cli&forward-envelope=1`. Every robot card also has **Open → Copilot**, which uses `achilles-cli/` below the Ploinky workspace. The copilot creates that folder if missing and reuses it otherwise.
 
 RoboTeam installs a shared Soul Gateway plugin in every robot's global OpenCode plugins directory. At native OpenCode initialization, the plugin discovers the local gateway's models and adds them to the in-memory provider configuration. Manual terminal launches, WebChat's model selector and ALA execution use the same plugin. No generated `opencode.json`, model list or periodic polling is required. Manage upstream accounts once in Soul Gateway. Selecting the robot's coding backend remains a separate setting. See [Soul Gateway models](roboTeamAgent/docs/operations.html#soul-gateway-models).
 
