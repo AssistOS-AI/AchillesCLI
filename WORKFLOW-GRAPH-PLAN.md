@@ -12,7 +12,7 @@ The requested behavior takes precedence over the existing workflow design in AGE
 - `public/app.js` contains the member editor and limits skillset choices to the selected robot. `public/roboflow.js` renders decision steps and member runs.
 - `server/runtime-manager.mjs` already allows concurrent terminal tasks and serializes Desktop and Browser through one GUI queue per robot. Reuse this behavior.
 - `server/repository-client.mjs` loads Ploinky's repository client. Discovery must use this active connection, not a hardcoded repository list.
-- `copilot/src/lib/robotSkillCatalog.mjs` reads the workflow registry directly. `copilot/src/lib/alaEngine.mjs` adds the default robot's instruction to only choose and start workflows. Both paths need adaptation, including caller-supplied system prompts for normal invocation, graph generation and workflow task execution. The robot itself must not choose a hardcoded system prompt based on its name.
+- `copilot/src/lib/skills/robotSkillCatalog.mjs` reads the workflow registry directly. `copilot/src/lib/execution/alaEngine.mjs` adds the default robot's instruction to only choose and start workflows. Both paths need adaptation, including caller-supplied system prompts for normal invocation, graph generation and workflow task execution. The robot itself must not choose a hardcoded system prompt based on its name.
 - The current RoboFlow decision prompt is passed as task text. The requested system instructions need an explicit path through RuntimeManager, the task wrapper and the ALA adapter.
 
 ## Target contract
