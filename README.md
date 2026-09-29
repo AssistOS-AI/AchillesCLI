@@ -63,3 +63,9 @@ Skill repositories are managed from each robot’s **Manage skills** dialog. The
 See [Skills & Skillsets](roboTeamAgent/docs/skills.html) for repository management, Markdown definitions and the execution catalog flow.
 
 Local instruction skills use live conversation policies and capture current files at execution start. See [local skill discovery](roboTeamAgent/docs/local-skills.html).
+
+## Execution summaries
+
+Every robot, including default and existing robots, always receives the required summarize-agent-impact skill from DocumentationSkills. Ploinky resolves the workspace checkout or prepares its internal repository copy. The required skill is shown as view-only in Manage skills and cannot be disabled through the skill selection API. An unavailable required source prevents execution.
+
+View Summary opens the shared RoboTeam summary page in the WebChat side panel or in the selected workflow phase tab. The page lists complete assistant summary blocks as bullets without their markers and refreshes during execution. Conversation records store message IDs and character ranges; existing turn logs and workflow output use byte ranges. No separate summary text file is written. The endpoint reads indexed ranges instead of searching all output. Historical assistant replies and workflow results are indexed lazily; historical raw logs without output provenance are excluded. Continuing a workflow phase appends to its existing result file and retains references to earlier results, while normal result reads return the latest response.
