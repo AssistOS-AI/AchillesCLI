@@ -79,3 +79,5 @@ The bundled **Code Development** preset follows Planning → Execution → Run w
 ALA output in View thinking, workflow phase and generation logs, WebChat task logs, and human reports uses the same Markdown renderer as final WebChat messages. Consecutive output lines render as complete blocks so headings, lists, tables and fenced code survive live updates. Raw HTML is escaped and links allow only HTTP(S). File paths and words receive no custom token highlighting. Stored logs and report offsets remain unchanged.
 
 Final responses remain Markdown and use heavier text with a subtle bordered background, without extra labels. View thinking also includes the completed response when it was not recorded in the log.
+
+Enable **Allows human input** in a workflow task to let its robot pause for a business decision missing from the prompt and context. In Explorer, open **Observability → Requires human input**, select the stopped workflow, choose one of three suggestions or write a custom answer, then select **Send answer**. RoboFlow continues the same robot session and follows the graph after that task finishes. This tab also lists other stopped and failed workflows.
