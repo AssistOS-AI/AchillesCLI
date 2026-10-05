@@ -6,9 +6,9 @@ RoboTeam provides persistent workspace robots for CLI conversations, delegated A
 
 Enable `AchillesCLI/roboTeamAgent global no-wait` in Ploinky, or start Explorer, which declares that dependency. RoboTeam uses its existing nestedPodman runtime image. No separate copilot image is required.
 
-New robots enable only OpenCode. Administrators open Coding agent on an existing robot card to choose Codex, OpenCode or Pi in a dialog. The card displays the enabled agent. The creation form uses OpenCode automatically. Stop the workstation and tasks before changing it, and open a new chat or terminal afterward. The dashboard selects one agent; the server accepts a `codingAgents` array with any nonempty combination of the three. Existing robots without this setting retain all three until configured. The setting controls managed executables in WebChat, delegated tasks, Desktop, Browser and Open → Terminal; it does not erase account data or restrict user-installed programs. The robot home's `.ala/config.json` records the selected agent as `codingAgent` and holds one model and effort per agent; changing the agent keeps the models chosen for the others, and `/model` writes there.
+New robots enable only OpenCode. Administrators open Coding agent on an existing robot card to choose Codex, OpenCode, Pi or Claude Code in a dialog. The card displays the enabled agent. The creation form uses OpenCode automatically. Stop the workstation and tasks before changing it, and open a new chat or terminal afterward. The dashboard selects one agent; the server accepts a `codingAgents` array with any nonempty combination of the four. Existing robots without this setting retain all four until configured. The setting controls managed executables in WebChat, delegated tasks, Desktop, Browser and Open → Terminal; it does not erase account data or restrict user-installed programs. The robot home's `.ala/config.json` records the selected agent as `codingAgent` and holds one model and effort per agent; changing the agent keeps the models chosen for the others, and `/model` writes there.
 
-Open a robot's Desktop from the RoboTeam dashboard and authenticate Codex, OpenCode, or Pi there. The GUI home at `/config` is the same robot home later supplied to ALA. At startup, RoboTeam prepares Codex, OpenCode, Pi, Playwright MCP, computer-use-linux and Supergateway in the shared tool cache in the background. Robot starts reuse these tools. An immediate request may wait for preparation; failures are logged and retried on demand.
+Open a robot's Desktop from the RoboTeam dashboard and authenticate Codex, OpenCode, or Pi there. Log Claude Code in from the robot's Terminal by running `claude`; its login stays in the robot home's `.claude` directory, and RoboTeam never handles those credentials. The GUI home at `/config` is the same robot home later supplied to ALA. At startup, RoboTeam prepares Codex, OpenCode, Pi, Claude Code, Playwright MCP, computer-use-linux and Supergateway in the shared tool cache in the background. Robot starts reuse these tools. An immediate request may wait for preparation; failures are logged and retried on demand.
 
 ```bash
 ploinky cli roboTeamAgent --robot default --dir /workspace/project
@@ -16,7 +16,7 @@ ploinky cli roboTeamAgent --robot default --dir /workspace/project
 
 The chat URL is `/webchat?agent=roboTeamAgent&robot=default&workspace-dir=achilles-cli&forward-envelope=1`. Every robot card also has **Open → Copilot**, which uses `achilles-cli/` below the Ploinky workspace. The copilot creates that folder if missing and reuses it otherwise.
 
-RoboTeam installs a shared Soul Gateway plugin in every robot's global OpenCode plugins directory. At native OpenCode initialization, the plugin discovers the local gateway's models and adds them to the in-memory provider configuration. Manual terminal launches, WebChat's model selector and ALA execution use the same plugin. No generated `opencode.json`, model list or periodic polling is required. Manage upstream accounts once in Soul Gateway. Selecting the robot's coding backend remains a separate setting. See [Soul Gateway models](roboTeamAgent/docs/operations.html#soul-gateway-models).
+RoboTeam installs a shared Soul Gateway plugin in every robot's global OpenCode plugins directory. At native OpenCode initialization, the plugin discovers the local gateway's models and adds them to the in-memory provider configuration. Manual terminal launches, WebChat's model selector and ALA execution use the same plugin. No generated `opencode.json`, model list or periodic polling is required. Manage upstream accounts once in Soul Gateway. Selecting the robot's coding backend remains a separate setting. Claude Code does not use Soul Gateway; it runs only Claude's own models. See [Soul Gateway models](roboTeamAgent/docs/operations.html#soul-gateway-models).
 
 ALA is provided through `link-install`: Ploinky clones `https://github.com/AssistOS-AI/AdvancedLanguageAgent.git` into the workspace only when no matching checkout exists. `/Agent/linked/AdvancedLanguageAgent` links to that editable checkout. Existing clones and local edits are preserved; there is no automatic pull. RoboTeam no longer installs ALA through npm.
 
@@ -56,7 +56,7 @@ cd roboTeamAgent
 node --test tests/*.test.mjs
 ```
 
-GPTResearcher remains an optional Ploinky worker. Codex, OpenCode and Pi run through ALA inside RoboTeam, not through separate Ploinky agents.
+GPTResearcher remains an optional Ploinky worker. Codex, OpenCode, Pi and Claude Code run through ALA inside RoboTeam, not through separate Ploinky agents.
 
 Skill repositories are managed from each robot’s **Manage skills** dialog. Their optional `skillsets.md` defines named combinations with Description and Skills sections. The graph editor discovers named skillsets through Ploinky. RoboFlow matches their canonical repository-source identities against each robot catalog.
 
