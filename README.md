@@ -28,13 +28,13 @@ Desktop and Browser share one GUI container and one FIFO task queue per robot. A
 
 Use `/session`, `/session new`, `/session resume <id>`, `/tasks`, `/model`, and `/permissions`. Pi does not support `ask-for-approval` and rejects it. `full-access` still runs inside ALA's Bubblewrap boundary.
 
-The three bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset is available only to `default`, where it is selected automatically. Manage repositories in RoboTeam and conversation skill selection on RoboTeam's Conversation skills page (WebChat menu). A saved conversation captures current configured files before each execution. The CLI uses those skills but does not list, add, remove, reload or change them. Use `/list robots` to discover workspace robots.
+The bundled skills live in `roboTeamAgent/copilot/src/skills`. Their `copilot` skillset (bash and launch-gpt-researcher) is available only to `default`, where it is selected automatically. Every robot opened in WebChat also receives `list-workflows` and `launch-workflow` as required, read-only skills; robot tasks and workflow phases do not. Manage repositories in RoboTeam and conversation skill selection on RoboTeam's Conversation skills page (WebChat menu). A saved conversation captures current configured files before each execution. The CLI uses those skills but does not list, add, remove, reload or change them. Use `/list robots` to discover workspace robots.
 
 ## Workflow graphs
 
 Use the dashboard's Workflow types panel to describe and generate a graph. In the editor, Flow settings, Generate and Graph open separate right-side pages beside the task list. Select a task to edit it, or use + to add a task with its execution type and skillsets. Drag either centered side port to a port on another node to create a directed edge; dropping elsewhere cancels it. Double-click a node to set the highlighted entry point. Select an edge on Graph and press Delete or Backspace to remove it. RoboFlow selects an available robot covering all required skillsets; a yellow warning identifies uncovered workflows without blocking Save or Start.
 
-The front copilot selects saved workflows through launch-workflow. The protected default workflow contains one node using the default robot and requires a mode:
+The front copilot calls list-workflows to get the current workflow ids, then starts one through launch-workflow. The protected default workflow contains one node using the default robot and requires a mode:
 
 ```text
 /exec launch-workflow {"action":"start","workflowTypeId":"default","executionType":"terminal","objective":"Review this project"}
