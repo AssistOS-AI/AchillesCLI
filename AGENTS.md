@@ -24,7 +24,13 @@ The bundled `copilot` repository contains seven self-contained Anthropic skills 
 
 # Runtime Defaults
 
+Workflow definitions expose `defaultObjective`. Generation captures the original request; manual and legacy definitions derive it from their description or ordinary task prompts without modifying old records on read. Generic default and code-development require explicit run objectives. Resolve an omitted objective from the same saved graph transaction that creates its run snapshot. Empty Cron job objectives inherit the latest workflow default; existing nonempty overrides stay explicit. DS007 owns objective precedence and authoring updates.
+
 Ploinky starts RoboTeam globally with nestedPodman. `server/robot-cli.mjs --robot default` selects the copilot robot. Native accounts come from that robot's home. `/permissions` supports native approval or full access within ALA's sandbox; Pi rejects approval mode. A saved ALA session pins its backend and cwd.
+
+Cron jobs are global SQLite records owned by the RoboTeam service, not host cron entries. Start the scheduler only after runtime observation is attached. Administrator writes use optimistic revisions; scheduled launches use the ordinary RoboFlow path, skip missed occurrences after restart, and never overlap the same job's running or paused execution. Preserve atomic occurrence claims and run linkage. Results default to workspace `cron-jobs-results`, created on save, not on GET. Folder browsing and explicit creation are administrator-only, use relative navigation keys, exclude hidden folders and symlinks, and cannot leave the workspace. Existing explicit working folders retain the ordinary runtime resolver. DS007 owns scheduling details.
+
+Manual Run now shares scheduled execution claims and run linkage, requires an administrator and the current job revision, and never overlaps pending, running or paused work for the same job. It resets enabled intervals from the attempt time; daily jobs keep their configured hours. Disabled jobs remain disabled and have no next occurrence. Track manual launches during scheduler shutdown. DS007 owns the run-now API and failure contract.
 
 # Key Paths
 
