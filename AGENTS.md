@@ -4,7 +4,7 @@ RoboTeam is the workspace robot and copilot agent. The conversational runtime li
 
 # Mandatory Reading Order
 
-Read `README.md`, `roboTeamAgent/docs/index.html`, `roboTeamAgent/docs/wiki.html`, the specification matrix and relevant DS files before changing behavior. `roboTeamAgent/docs/specs/DS001-coding-style.md` owns coding style. For conversational internals, inspect `roboTeamAgent/copilot/src/index.mjs`, `server/robot-cli.mjs`, and their tests.
+Read `README.md`, `roboTeamAgent/docs/index.html`, `roboTeamAgent/docs/wiki.html`, `roboTeamAgent/docs/operations.html#robot-commands`, the specification matrix and relevant DS files before changing behavior. `roboTeamAgent/docs/specs/DS001-coding-style.md` owns coding style. For conversational internals, inspect `roboTeamAgent/copilot/src/index.mjs`, `server/robot-cli.mjs`, and their tests.
 
 # Current Skill Catalog
 
@@ -19,7 +19,7 @@ The bundled `copilot` repository contains seven self-contained Anthropic skills 
 - Session model and effort overrides are passed to ALA through `--model` and `--effort`; `--effort default` clears inherited effort. Executions without overrides read the robot home configuration directly. Never generate an intermediate ALA config file.
 - Session skill links live in `.roboteam/sessions/<sessionId>/skills`, alongside `config.json`. Mount them read-only at cwd `.agents/skills` through ALA’s explicit `at` and `expose` folder options; never install robot links into the shared project skill directory. Existing project skills remain available, with robot selections taking precedence only inside their own session.
 - Independent CLI conversations run concurrently. Desktop and Browser share exactly one GUI container and queue per robot. A conversation has one execution at a time.
-- The current RoboTeam DS specifications are authoritative. Keep numbering contiguous and update HTML and relevant DS files with behavior changes. Re-evaluate main behaviors before updating DS003.
+- The current RoboTeam DS specifications are authoritative. Keep numbering contiguous and update HTML and relevant DS files with behavior changes. Re-evaluate main behaviors before updating DS003. Ordinary DS files require exactly `title` and `summary` frontmatter, with the filename stem as title, and only `Introduction` and `Core Content` as top-level content sections. Keep rationale and limitations in Core Content and omit Conclusion. Preserve the documentation map, shared header and canonical wiki links together.
 - Imported authoring skills stay documented in their own folders, not as product features.
 
 # Runtime Defaults
@@ -38,4 +38,5 @@ Manual Run now shares scheduled execution claims and run linkage, requires an ad
 - `roboTeamAgent/copilot/src/`: conversational wrapper, commands, sessions and task observation.
 - `roboTeamAgent/IDE-plugins/`: Explorer copilot and RoboTeam actions.
 - `roboTeamAgent/docs/`: current documentation and specifications.
+- `GPTResearcher/docs/`: separate research-worker documentation, local canonical wiki and specification set. Its generated-local model adapter must retain the `PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED` refusal before routing credential access until authority-transport certification exists.
 - `tests/`, `roboTeamAgent/tests/`, `roboTeamAgent/copilot/tests/`: integration and module tests.

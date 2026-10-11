@@ -5,7 +5,7 @@ summary: Defines source layout, coding conventions, security rules, and test org
 
 ## Introduction
 
-GPTResearcher combines Python research adapters, Node.js settings tools, shell lifecycle scripts, and an IDE settings plugin. Changes must preserve clear ownership between these runtimes and keep configuration behavior testable without starting external providers.
+[GPTResearcher](wiki.html#definition-gpt-researcher) combines Python research adapters, Node.js settings tools, shell lifecycle scripts, and an IDE settings plugin. Changes must preserve clear ownership between these runtimes and keep configuration behavior testable without starting external providers.
 
 ## Core Content
 
@@ -21,4 +21,4 @@ Node.js files must use ES modules and four-space indentation. Settings commands 
 | Output | Tool output must remain machine-readable JSON and diagnostics must remain bounded. |
 | Tests | Node behavior belongs under `test/*.test.mjs`; Python adapters should expose deterministic functions that tests can invoke without real providers. |
 
-The repository-level `fileSizesCheck.sh` must include `GPTResearcher/docs` when documentation size and line-flow checks run. Documentation and specification prose must remain unwrapped in source. Tests must cover generated-local fail-closed behavior, settings persistence, SearchAgent provider forwarding, and model-listing boundaries whenever those contracts change.
+The repository-level `fileSizesCheck.sh` must include [`GPTResearcher/docs`](wiki.html#definition-gpt-researcher) when documentation size and line-flow checks run. Documentation and specification prose must remain unwrapped in source. Tests must cover generated-local fail-closed behavior, settings persistence, [SearchAgent](wiki.html#definition-search-agent) provider forwarding, and model-listing boundaries whenever those contracts change.

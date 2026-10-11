@@ -60,3 +60,9 @@ dd { margin: 0.4rem 0 0; line-height: 1.65; }
 .error-panel { border: 1px solid #f2b8b5; background: #fff5f5; padding: 1rem; border-radius: 8px; }
 @media (max-width: 900px) { .command-layout { grid-template-columns: 1fr; } .command-sidebar { position: static; max-height: none; } .command-sidebar ul { display: flex; flex-wrap: wrap; gap: 0.35rem; } .command-sidebar li { margin: 0; } }
 @media (max-width: 680px) { .page, main { padding: 0.5rem; } .page__panel { padding: 0.75rem; } .site-header { align-items: flex-start; flex-direction: column; } .nav-panel { left: 0; right: auto; } .command-sidebar ul { display: block; } }
+
+.documentation-map { overflow-x: auto; }
+.documentation-map table { border-collapse: separate; border-spacing: 0.6rem; }
+.documentation-map th, .documentation-map td { border: 0; background: transparent; vertical-align: top; }
+.documentation-map td span { display: block; margin-top: 0.4rem; }
+.documentation-map a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }

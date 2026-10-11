@@ -5,20 +5,20 @@ summary: Defines GPTResearcher's process structure, provider routing, settings o
 
 ## Introduction
 
-GPTResearcher runs the upstream GPT Researcher application behind a Ploinky AgentServer. The architecture must connect that application to local routing services without giving the browser, report, or research query direct access to provider credentials.
+[GPTResearcher](wiki.html#definition-gpt-researcher) runs the upstream GPT Researcher application behind a Ploinky AgentServer. The architecture must connect that application to local routing services without giving the browser, report, or research query direct access to provider credentials.
 
 ## Core Content
 
-The manifest must pin the Bubblewrap runner image by digest. The selected image provides Node 24 and Python 3.12 on Debian Trixie, with a maintained Git/libcurl stack for the upstream application checkout. Native amd64 and arm64 publication gates must prove Git transport, sandbox confinement, and a real GPTResearcher cold installation before adoption.
+The manifest must pin the Bubblewrap runner image by digest. The selected image provides Node 24 and Python 3.12 on Debian Trixie, with a maintained Git/libcurl stack for the upstream application checkout. Native amd64 and arm64 publication gates must prove Git transport, sandbox confinement, and a real [GPTResearcher](wiki.html#definition-gpt-researcher) cold installation before adoption.
 
-The adopted index is `sha256:9b6c08cf78fd0a29acfbe2e45ea2ee26efe6fde49c7f3db8b3aadfa30f2d53f8`, published by [native build 33662621018](https://github.com/AssistOS-AI/container-image-builds/actions/runs/33662621018). Both architectures passed all 14 Git/npm transport operations, sandbox confinement, and GPTResearcher's cold installation, source-provenance, networkless UI/readiness, and input-path checks.
+The adopted index is `sha256:9b6c08cf78fd0a29acfbe2e45ea2ee26efe6fde49c7f3db8b3aadfa30f2d53f8`, published by [native build 33662621018](https://github.com/AssistOS-AI/container-image-builds/actions/runs/33662621018). Both architectures passed all 14 Git/npm transport operations, sandbox confinement, and [GPTResearcher](wiki.html#definition-gpt-researcher)'s cold installation, source-provenance, networkless UI/readiness, and input-path checks.
 
 | Component | Responsibility |
 | --- | --- |
 | Ploinky AgentServer | Exposes the asynchronous research tool and synchronous settings tools, retains task logs, and applies router authorization. |
 | Research entry point | Validates input, resolves the working directory, applies settings, selects the source mode, and invokes the Python research pipeline. |
-| Soul Gateway adapter | Sends language and embedding requests through the authenticated Ploinky route. |
-| SearchAgent adapter | Sends generated web queries and the selected provider name to SearchAgent and normalizes returned results. |
+| [Soul Gateway](wiki.html#definition-soul-gateway) adapter | Sends language and embedding requests through the authenticated Ploinky route. |
+| [SearchAgent](wiki.html#definition-search-agent) adapter | Sends generated web queries and the selected provider name to [SearchAgent](wiki.html#definition-search-agent) and normalizes returned results. |
 | Settings store | Persists non-secret model aliases, embedding selection, and search-provider choice in the agent home. |
 | Workspace writer | Creates the authorized working directory when allowed and writes a timestamped Markdown report without escaping `WORKSPACE_PATH`. |
 
@@ -32,7 +32,7 @@ The research entry point must apply persisted settings before constructing the G
 
 The agent home and the workspace have separate ownership. The agent home stores configuration that should survive worker recreation. The workspace stores user documents and generated reports. Neither area may be treated as authority for the other.
 
-## Decisions
+### Rationale and transport boundaries
 
 ### Decision #1: Keep UI and MCP code on the same upstream revision
 
