@@ -1,0 +1,24 @@
+{
+  "container": "docker.io/assistos/ploinky-node@sha256:accd925fcbf460c1f4c7a5cd9e2d46539c615bbfad2e896cabb7556d8050a669",
+  "about": "Promotion Scout: monitors RSS/Atom feeds for operator topics, ranks entries with a local embedding model and scores the discussions behind them against subtopics.",
+  "agent": "sh /code/scripts/startAgent.sh",
+  "readiness": {
+    "protocol": "mcp"
+  },
+  "health": {
+    "readiness": {
+      "interval": 2,
+      "timeout": 2,
+      "failureThreshold": 900,
+      "successThreshold": 1
+    }
+  },
+  "volumes": {
+    ".data/promotionScout": "/data"
+  },
+  "profiles": {
+    "default": {
+      "install": "sh /code/scripts/install.sh"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "defaultModel": "embeddinggemma-300m",
+  "models": {
+    "embeddinggemma-300m": {
+      "provider": "transformers",
+      "model": "onnx-community/embeddinggemma-300m-ONNX",
+      "revision": "5090578d9565bb06545b4552f76e6bc2c93e4a66",
+      "dtype": "q8",
+      "dimensions": 768,
+      "pooling": "sentence",
+      "maxTokens": 2048,
+      "queryPrefix": "task: search result | query: ",
+      "documentPrefix": "title: none | text: ",
+      "threshold": 0.25,
+      "subtopicThreshold": 0.35
+    },
+    "multilingual-e5-small": {
+      "provider": "transformers",
+      "model": "Xenova/multilingual-e5-small",
+      "revision": "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
+      "dtype": "q8",
+      "dimensions": 384,
+      "pooling": "mean",
+      "maxTokens": 512,
+      "queryPrefix": "query: ",
+      "documentPrefix": "passage: ",
+      "threshold": 0.8
+    },
+    "minilm-en": {
+      "provider": "transformers",
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "revision": "751bff37182d3f1213fa05d7196b954e230abad9",
+      "dtype": "q8",
+      "dimensions": 384,
+      "pooling": "mean",
+      "maxTokens": 256,
+      "queryPrefix": "",
+      "documentPrefix": "",
+      "threshold": 0.75
+    }
+  }
+}

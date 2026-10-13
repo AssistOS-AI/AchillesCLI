@@ -1,6 +1,6 @@
 # Scope
 
-RoboTeam is the workspace robot and copilot agent. The conversational runtime lives in `roboTeamAgent/copilot/`; GPTResearcher remains a separate optional research worker.
+RoboTeam is the workspace robot and copilot agent. The conversational runtime lives in `roboTeamAgent/copilot/`; GPTResearcher remains a separate optional research worker. Promotion Scout (`promotionScout/`) is an independent Ploinky agent for topic-based RSS/Atom monitoring with its own `AGENTS.md`, which governs changes under that folder.
 
 # Mandatory Reading Order
 
@@ -39,4 +39,5 @@ Manual Run now shares scheduled execution claims and run linkage, requires an ad
 - `roboTeamAgent/IDE-plugins/`: Explorer copilot and RoboTeam actions.
 - `roboTeamAgent/docs/`: current documentation and specifications.
 - `GPTResearcher/docs/`: separate research-worker documentation, local canonical wiki and specification set. Its generated-local model adapter must retain the `PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED` refusal before routing credential access until authority-transport certification exists.
+- `promotionScout/`: the Promotion Scout agent (manifest, MCP tools, daemon, static web interface), its documentation and specifications under `promotionScout/docs/`, and its tests under `promotionScout/test/`.
 - `tests/`, `roboTeamAgent/tests/`, `roboTeamAgent/copilot/tests/`: integration and module tests.

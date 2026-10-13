@@ -1,0 +1,7 @@
+{
+  "rsshub": {
+    "repository": "https://github.com/DIYgod/RSSHub.git",
+    "revision": "a56c7321107d62a59753c28b2e5f9d27266bcba8",
+    "pnpm": "10.34.6"
+  }
+}

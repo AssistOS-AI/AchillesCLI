@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Promotion Scout Documentation</title><link rel="stylesheet" href="styles.css"><script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,theme:'neutral'});</script></head><body>
+<div data-include="partials/header.html"></div><main><p class="breadcrumb"><a href="index.html">Overview</a> / Sites and feeds</p><article><h1>Sites and feeds</h1>
+<p>Scout watches a catalog of <a href="wiki.html#definition-site">sites</a> and reads their RSS/Atom feeds. Each site turns a topic's <a href="wiki.html#definition-search-terms">search terms</a> or <a href="wiki.html#definition-tags">tags</a> into feed addresses, or offers one feed for every topic. No API keys are needed. The Sites tab of the web interface lists the catalog, and the Feeds tab (step 1) lists every concrete feed with its outcome.</p>
+<h2>Three kinds of sites</h2>
+<table><thead><tr><th>Kind</th><th>What Scout sends</th><th>Example address</th></tr></thead><tbody>
+<tr><td>Search</td><td>Each search term of a topic, typed or derived from the topic.</td><td><code>https://hnrss.org/newest?q={query}</code></td></tr>
+<tr><td>Tag</td><td>Each tag of a topic, written the way the site expects: joined (<code>balconygarden</code>), hyphenated (<code>balcony-garden</code>) or letters and digits only.</td><td><code>https://dev.to/feed/tag/{tag}</code></td></tr>
+<tr><td>Feed</td><td>Nothing; one feed is read for all topics and the model decides what is relevant.</td><td><code>https://www.producthunt.com/feed</code></td></tr>
+</tbody></table>
+<p>For a topic with search terms <code>balcony garden</code> and <code>container tomatoes</code>, Hacker News receives two feeds, one per term. Reddit receives one feed with <code>(balcony garden) OR (container tomatoes)</code>, which keeps requests to Reddit low. When you leave search terms or tags empty, Scout derives them from the topic: <code>AI gaming news</code> searches for <code>ai gaming</code> and uses the tags <code>ai gaming</code>, <code>ai</code> and <code>gaming</code>. When two topics produce the same address, Scout reads it once.</p>
+<h2>Built-in catalog</h2>
+<table><thead><tr><th>Site</th><th>Kind</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Reddit</td><td>Search</td><td>Posts only, newest first, one combined query per topic, 10 seconds between requests. Anonymous access is often refused (403 or 429); Scout then pauses Reddit for six hours.</td></tr>
+<tr><td>Hacker News</td><td>Search</td><td>Through hnrss.org. Entries carry little text besides the title.</td></tr>
+<tr><td>Bluesky</td><td>Search</td><td>Through the RSSHub route <code>/bsky/keyword/{query}</code>; posts are complete but short.</td></tr>
+<tr><td>Mastodon</td><td>Tag</td><td>Public hashtag timeline of mastodon.social, which includes federated posts.</td></tr>
+<tr><td>DEV Community</td><td>Tag</td><td>Full article text.</td></tr>
+<tr><td>Medium</td><td>Tag</td><td>Subtitle-length text.</td></tr>
+<tr><td>Lobsters</td><td>Tag</td><td>Accepts only its own fixed tag list; entries are titles.</td></tr>
+<tr><td>Stack Overflow</td><td>Tag</td><td>Accepts only existing tags; questions include their body.</td></tr>
+<tr><td>Lemmy communities</td><td>Tag</td><td>Community feeds on lemmy.world, the largest federated Reddit-style site; tags are written as community names with underscores (<code>linux_gaming</code>). An unknown community is skipped.</td></tr>
+<tr><td>Product Hunt</td><td>Feed</td><td>New products with a one-line tagline.</td></tr>
+<tr><td>Slashdot</td><td>Feed</td><td>Front-page stories (RSS 1.0).</td></tr>
+<tr><td>Hugging Face daily papers</td><td>Feed</td><td>Through RSSHub; paper abstracts.</td></tr>
+<tr><td>Lemmy</td><td>Feed</td><td>Newest posts from all communities on lemmy.world; link posts are titles.</td></tr>
+<tr><td>Ask HN</td><td>Feed</td><td>Question and discussion threads from Hacker News, with their full text.</td></tr>
+<tr><td>MetaFilter</td><td>Feed</td><td>Front-page posts of a long-running, moderated community; low volume.</td></tr>
+<tr><td>Ask MetaFilter</td><td>Feed</td><td>Questions with detailed text that members answer in comments; low volume.</td></tr>
+<tr><td>Tildes</td><td>Feed</td><td>New topics from all groups of a text-focused discussion site.</td></tr>
+</tbody></table>
+<p>The catalog lives in <code>config/sites.json</code> and is synchronized every time the agent starts. Disabling a built-in site is kept across restarts; built-in sites cannot be deleted. A tag a site does not know shows as skipped, not as an error.</p>
+<h2>Adding a site</h2><p>In the Sites tab enter a name, choose the kind and give the address. A feed address can be the feed itself or a web page that advertises one; Scout fetches it once and keeps the feed URL. A page without a same-origin feed link is refused, and an address that redirects is refused with the target to use instead. Search and tag addresses contain <code>{query}</code> or <code>{tag}</code>. An address beginning with <code>/</code> is an RSSHub route, for example <code>/telegram/channel/name</code> or <code>/threads/name</code>; the RSSHub documentation lists the available routes. Feeds that follow one account, such as a YouTube channel (<code>https://www.youtube.com/feeds/videos.xml?channel_id=…</code>), a Substack publication or a GitHub repository's discussions, belong here as feed sites. Deleting a site you added keeps the entries it already collected.</p>
+<h2>What Scout reads</h2><p>Scout reads RSS 2.0, RSS 1.0 and Atom. It stores each entry's title, link, author, date and the text the feed carries, after removing known boilerplate such as Hacker News point counts. Entries with neither title nor text, such as image-only posts, are skipped. Scout does not open linked articles or comments, render pages, log in or read private content. How much text an entry has depends on the site, and the model can compare only what the feed provides.</p>
+<h2>Request limits</h2><p>Each feed is read at most once per hour, including after errors, and validators avoid downloading unchanged feeds. Requests to the same host are at least one second apart, or ten seconds for Reddit. A 429 is never retried. A 403 or 429 pauses the whole host for six hours; its feeds keep their turn and are read after the pause. Server errors are retried up to three times. Requests time out after 20 seconds and responses are limited to 5 MiB. Stop cancels the request in progress.</p>
+<h2>RSSHub</h2><p>RSSHub is a separate native service, built by the agent's <a href="wiki.html#definition-install-step">install step</a>, that turns website routes into feeds. The <a href="wiki.html#definition-agent-daemon">agent daemon</a> starts it when the agent starts, at <code>http://127.0.0.1:1200</code> inside the container by default, starts it again if it stops and stops it when the agent stops. If it cannot start, only RSSHub feeds fail. RSSHub uses memory caching, so SQLite remains the only database. Some routes require credentials or a browser, which are not installed. The <a href="specsLoader.html?spec=DS005-providers.md">site and feed contract</a> defines these rules.</p>
+<p>A route is a small program written for one site: it calls the site's public API or reads its pages and returns the result as RSS. RSSHub can therefore produce feeds only for sites that have a route in the pinned version; it cannot guess how to read an unknown site. Built-in sites use it for Bluesky search and Hugging Face daily papers; every other built-in site has its own feed and is read directly. Because RSSHub does this work, Scout itself parses only RSS and Atom, but behind a route RSSHub may call APIs or scrape pages.</p>
+<p>For a site without a route, first add its page: many sites advertise a feed (WordPress, Discourse, XenForo, Lemmy, Mastodon, Stack Exchange, YouTube, Substack). A newer RSSHub version may also add a route; the pinned version is set in <code>config/services/install.json</code> and installed again by the install step at the next agent start. RSSHub's generic transform route, which turns any HTML or JSON page into a feed through CSS selectors, stays disabled: it needs <code>ALLOW_USER_SUPPLY_UNSAFE_DOMAIN</code>, would let any process in the agent container make RSSHub fetch any address, breaks at every redesign and would turn page HTML into feeds that the site never offered.</p>
+<h2>Sites that were tested and left out</h2><p>These candidates were tested live with one request each and are not in the catalog:</p>
+<table><thead><tr><th>Site</th><th>Reason</th></tr></thead><tbody>
+<tr><td>Quora, Unity Discussions, ResetEra, Linus Tech Tips forum</td><td>Answer automated requests with 403. Scout does not pretend to be a browser.</td></tr>
+<tr><td>Tumblr, X/Twitter</td><td>Their RSSHub routes need API keys or a login.</td></tr>
+<tr><td>Indie Hackers</td><td>No official feed or API; the community aggregator answered 500 to every request.</td></tr>
+<tr><td>Discuit</td><td>Its feed address returns an HTML page, not a feed.</td></tr>
+<tr><td>Mbin (fedia.io, kbin.earth), Hubski</td><td>No working feed at the documented addresses (404 or 403).</td></tr>
+<tr><td>Digg</td><td>No longer a community site; it now aggregates tech news automatically.</td></tr>
+<tr><td>Fark, Stacker News</td><td>Feeds carry only titles of 10 to 20 characters, too little for the model to compare.</td></tr>
+<tr><td>Discord, Facebook Groups</td><td>No public content; private groups are outside the product.</td></tr>
+</tbody></table>
+<p>Topic-specific forums with working feeds, such as Tom's Hardware, Level1Techs or the Godot forum, were left out of the general catalog on purpose; add them as feed sites when your topics need them.</p>
+</article></main><div data-include="partials/footer.html"></div><script src="partials-loader.js"></script></body></html>
