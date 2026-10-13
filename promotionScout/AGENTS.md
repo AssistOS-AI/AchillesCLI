@@ -10,7 +10,7 @@ Read `README.md`, `docs/index.html`, `docs/wiki.html`, `docs/specs/DS001-coding-
 
 ## Current Skill Catalog
 
-The product implements and distributes no runtime skills. Apply relevant local instructions under the repository's `.agents/skills`; their own documentation stays within their folders. Update this catalog if the product starts distributing skills. Consumer projects must not place imported-skill specifications or pages in the host `docs/` tree.
+The agent distributes three runtime skills in `skills/` for RoboTeam robots and other agents: `list-topics` (active topics with search terms, tags and subtopics), `add-topic` (a topic with optional subtopics, or new subtopics for an existing topic) and `delete-topic` (a whole topic, or selected subtopics). [DS009](docs/specs/DS009-agent-runtime.md) defines them. Apply relevant local instructions under the repository's `.agents/skills`; their own documentation stays within their folders. Update this catalog when a skill is added or removed. Consumer projects must not place imported-skill specifications or pages in the host `docs/` tree.
 
 ## Repository Rules
 
@@ -22,7 +22,7 @@ Documentation introduces the operator's outcome before implementation, uses conc
 
 Write Node.js ECMAScript modules in `.mjs` files (browser modules in `web/` use `.js`). Prefer built-ins and `node --test`; record justified external dependencies in `dependencies.md`. `docs/specs/DS001-coding-style.md` defines module structure, test organization and size checks. Keep model artifacts, credentials, data directories and `node_modules` out of git.
 
-Use the bundled Ploinky AgentServer; do not add an HTTP server, an extra agent port or Server-Sent Events. The router authenticates every request. User tools in `mcp-config.json` carry no tags (authenticated), run as `node tools/scout.mjs <operation>` with `cwd` `/code`, map one-to-one to `src/agent/operations.mjs`, read their input from the AgentServer stdin payload and print one JSON value; expected failures are returned as `{error: {code, message}}`. Keep input schemas narrow with `additionalProperties: false`. `scout_run_cycle` is the only `internal` tool: an asynchronous task started only by the daemon.
+Use the bundled Ploinky AgentServer; do not add an HTTP server, an extra agent port or Server-Sent Events. The router authenticates every request. User tools in `mcp-config.json` carry no tags (authenticated), run as `node tools/scout.mjs <operation>` with `cwd` `/code`, map one-to-one to `src/agent/operations.mjs`, read their input from the AgentServer stdin payload and print one JSON value; expected failures are returned as `{error: {code, message}}`. Keep input schemas narrow with `additionalProperties: false`. `scout_run_cycle` is an `internal` asynchronous task started only by the daemon. The `scout_agent_*` tools are `internal` copies of five topic tools for other agents (RoboTeam robots); keep their command and input schema identical to the user tool's. The self-contained skills in `skills/` (`list-topics`, `add-topic`, `delete-topic`) call only those tools; each keeps an identical copy of `scripts/scoutMcpClient.mjs` and imports nothing outside its folder.
 
 `/code` is read-only inside the container. Everything the agent writes lives in `SCOUT_DATA_DIR` (`/data`, the volume `.data/promotionScout`), resolved by `src/app/paths.mjs`. The install step (`scripts/install.sh`, `src/app/bootstrap.mjs`) runs before every agent start and is the only place that downloads the model or installs RSSHub; Ploinky installs the npm dependencies from `package.json`, and the install step fails with `SETUP_REQUIRED` when one is missing. Completed install steps must stay quick no-ops.
 
@@ -41,6 +41,7 @@ Collection must ingest only RSS/Atom entries (RSS 2.0, RSS 1.0, Atom), read dire
 - `manifest.json`, `mcp-config.json`: Ploinky runtime contract and MCP tools.
 - `scripts/install.sh`, `scripts/install.mjs`: the install step; `scripts/startAgent.sh`: AgentServer plus daemon supervision.
 - `src/agent/`: daemon (`main.mjs`, `daemon.mjs`), cycle task (`cycle.mjs`), tool operations (`operations.mjs`) and the shared context.
+- `skills/`: self-contained Anthropic skills for RoboTeam robots, calling the `scout_agent_*` tools.
 - `tools/`: MCP tool entries (`scout.mjs` for user tools, `run-cycle.mjs` for the cycle task).
 - `src/app/`: topics, subtopics, site catalog and feed selection, discussion reading and scoring, SQLite storage, monitoring control, the cycle, read-only views, install and RSSHub process management.
 - `config/sites.json`: built-in site catalog; `config/embedding-models.json`: model catalog; `config/services/`: RSSHub install manifest.

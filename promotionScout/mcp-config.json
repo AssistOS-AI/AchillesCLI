@@ -644,6 +644,156 @@
       }
     },
     {
+      "name": "scout_agent_topics_list",
+      "title": "List topics (agents)",
+      "description": "Pages the active topics with their search terms, tags and subtopics. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "topics-list"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_topic_create",
+      "title": "Add topic (agents)",
+      "description": "Adds a topic, or restores a removed one, with optional search terms and tags. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "topic-create"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "searchTerms": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 50
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_topic_delete",
+      "title": "Remove topic (agents)",
+      "description": "Deactivates a topic; its history stays stored and adding it again restores it. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "topic-delete"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_subtopic_add",
+      "title": "Add subtopic (agents)",
+      "description": "Adds a subtopic to a topic. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "subtopic-add"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_subtopic_remove",
+      "title": "Remove subtopic (agents)",
+      "description": "Removes a subtopic and its scores. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "subtopic-remove"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "scout_run_cycle",
       "title": "Run one monitoring cycle",
       "description": "Runs one collection, ranking and discussion cycle as an asynchronous task. Started only by the agent daemon; progress is the task log.",

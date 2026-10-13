@@ -38,9 +38,19 @@ Each feed is read at most once per hour, which is why the shortest interval is o
 
 Non-English posts are detected locally and set aside; short titles are always kept. Most remaining mistakes match only part of a topic (an AI post for "AI in gaming"), so write descriptions that state the combination. Unknown tags are reported as skips. Network errors and malformed feeds make a cycle partial while keeping its other results. A model failure fails the cycle; Scout never substitutes keyword scores.
 
+## Skills for robots
+
+The `skills/` folder holds three self-contained skills that RoboTeam robots (or any Ploinky agent) use to manage Scout's topics: `list-topics`, `add-topic` and `delete-topic`. Each has a `SKILL.md` and runs as `node scripts/run.mjs --input '<topic or JSON>'`, for example:
+
+```sh
+node skills/add-topic/scripts/run.mjs --input '{"topic":"AI gaming news","subtopics":["AI NPC dialogue"]}'
+```
+
+The skills call the `scout_agent_*` tools through the Ploinky router with the caller's identity, using the Ploinky client that RoboTeam mounts in each robot session (or `/Agent/client` inside an agent container). After adding tools to `mcp-config.json`, run `ploinky start` so the router records their access.
+
 ## How the agent works
 
-- **AgentServer** (Ploinky's bundled runtime) serves the static web interface and the MCP tools in `mcp-config.json`. Every operation of the page is a tool such as `scout_topics_list` or `scout_monitor_start`, run as `node tools/scout.mjs <operation>` against SQLite. These tools carry no tags, so any authenticated user may call them.
+- **AgentServer** (Ploinky's bundled runtime) serves the static web interface and the MCP tools in `mcp-config.json`. Every operation of the page is a tool such as `scout_topics_list` or `scout_monitor_start`, run as `node tools/scout.mjs <operation>` against SQLite. These tools carry no tags, so any authenticated user may call them. Five `internal` copies of the topic tools (`scout_agent_*`) let other agents manage topics.
 - **The daemon** (`src/agent/main.mjs`), started beside AgentServer by `scripts/startAgent.sh`, keeps RSSHub running and starts each due cycle by calling the agent's own internal tool `scout_run_cycle` through the router.
 - **A cycle** is one asynchronous Ploinky task. It loads the embedding model only for its own duration, writes its progress to the task log that the page displays and records its run in SQLite.
 
