@@ -74,7 +74,9 @@ GPTResearcher remains an optional Ploinky worker. Codex, OpenCode, Pi and Claude
 
 ## Promotion Scout
 
-`promotionScout/` is a separate Ploinky agent that monitors RSS/Atom feeds for saved topics and ranks the entries with a local embedding model. Enable `AchillesCLI/promotionScout`, then open `/promotionScout/` on the router. Its data lives in `.data/promotionScout/`. See the [Promotion Scout documentation](promotionScout/docs/index.html). Verify it with:
+`promotionScout/` is a separate Ploinky agent that monitors RSS/Atom feeds for saved topics and ranks the entries with a local embedding model. Enable `AchillesCLI/promotionScout`, then open `/promotionScout/` on the router. Its data lives in `.data/promotionScout/`. See the [Promotion Scout documentation](promotionScout/docs/index.html).
+
+The root `skills/` folder holds Promotion Scout's self-contained skills for RoboTeam robots: `list-topics`, `add-topic`, `delete-topic`, `list-discussions` and `add-comments`. Because of it, Ploinky classifies AchillesCLI as a mixed repository (agents plus skills), and RoboTeam's workflow editor and Manage skills dialog read only that folder from it. Verify the agent and its skills with:
 
 ```bash
 cd promotionScout

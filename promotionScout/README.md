@@ -40,13 +40,13 @@ Non-English posts are detected locally and set aside; short titles are always ke
 
 ## Skills for robots
 
-The `skills/` folder holds five self-contained skills that RoboTeam robots (or any Ploinky agent) use: `list-topics`, `add-topic` and `delete-topic` manage topics and subtopics; `list-discussions` returns the Subtopic matches discussions with their posts and comments so a robot can write comments, and `add-comments` stores those comments so they appear in the tab. Each has a `SKILL.md` and runs as `node scripts/run.mjs --input '<topic or JSON>'`, for example:
+The AchillesCLI repository's root `skills/` folder holds five self-contained Scout skills that RoboTeam robots (or any Ploinky agent) use: `list-topics`, `add-topic` and `delete-topic` manage topics and subtopics; `list-discussions` returns the Subtopic matches discussions with their posts and comments so a robot can write comments, and `add-comments` stores those comments so they appear in the tab. Each has a `SKILL.md` and runs as `node scripts/run.mjs --input '<topic or JSON>'`, for example:
 
 ```sh
-node skills/add-topic/scripts/run.mjs --input '{"topic":"AI gaming news","subtopics":["AI NPC dialogue"]}'
+node ../skills/add-topic/scripts/run.mjs --input '{"topic":"AI gaming news","subtopics":["AI NPC dialogue"]}'
 ```
 
-The skills call the `scout_agent_*` tools through the Ploinky router with the caller's identity, using the Ploinky client that RoboTeam mounts in each robot session (or `/Agent/client` inside an agent container). After adding tools to `mcp-config.json`, run `ploinky start` so the router records their access.
+The skills call the `scout_agent_*` tools through the Ploinky router with the caller's identity, using the Ploinky client that RoboTeam mounts in each robot session (or `/Agent/client` inside an agent container). Because that folder makes AchillesCLI a mixed repository (agents plus skills), Ploinky lists it among the skill repositories, so RoboTeam's workflow editor and each robot's Manage skills dialog offer these skills. After adding tools to `mcp-config.json`, run `ploinky start` so the router records their access.
 
 ## How the agent works
 

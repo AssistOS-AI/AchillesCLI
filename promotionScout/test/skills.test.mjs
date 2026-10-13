@@ -7,12 +7,12 @@ import { spawnSync } from 'node:child_process';
 import { initialize } from '../src/app/config.mjs';
 import { openStore } from '../src/app/store.mjs';
 import { runOperation } from '../tools/scout.mjs';
-import { action as listTopics } from '../skills/list-topics/scripts/action.mjs';
-import { action as addTopic } from '../skills/add-topic/scripts/action.mjs';
-import { action as deleteTopic } from '../skills/delete-topic/scripts/action.mjs';
-import { toolValue, createScoutClient } from '../skills/list-topics/scripts/scoutMcpClient.mjs';
+import { action as listTopics } from '../../skills/list-topics/scripts/action.mjs';
+import { action as addTopic } from '../../skills/add-topic/scripts/action.mjs';
+import { action as deleteTopic } from '../../skills/delete-topic/scripts/action.mjs';
+import { toolValue, createScoutClient } from '../../skills/list-topics/scripts/scoutMcpClient.mjs';
 
-const skillsDir = new URL('../skills/', import.meta.url);
+const skillsDir = new URL('../../skills/', import.meta.url);
 const skills = ['list-topics', 'add-topic', 'delete-topic', 'list-discussions', 'add-comments'];
 const profile = { provider: 'fake', model: 'test/model', revision: 'a'.repeat(40), dtype: 'q8', dimensions: 2,
   pooling: 'mean', maxTokens: 32, queryPrefix: '', documentPrefix: '' };
@@ -36,7 +36,9 @@ async function scoutClient(t) {
 }
 
 test('each skill is self-contained: SKILL.md frontmatter, its scripts and an identical MCP client', async () => {
-  assert.deepEqual((await readdir(skillsDir)).sort(), [...skills].sort());
+  // The repository's skills/ folder may hold other skills too; these are Scout's.
+  const present = await readdir(skillsDir);
+  for (const skill of skills) assert.ok(present.includes(skill), skill);
   const client = await readFile(new URL('list-topics/scripts/scoutMcpClient.mjs', skillsDir), 'utf8');
   for (const skill of skills) {
     const doc = await readFile(new URL(`${skill}/SKILL.md`, skillsDir), 'utf8');
