@@ -125,8 +125,9 @@ test('manifest declares the required report repository alongside ALA', async () 
 test('manifest selects runtime-only GUI images and the persistent tool cache', async () => {
     const manifest = JSON.parse(await readFile(join(AGENT_ROOT, 'manifest.json'), 'utf8'));
     const constants = await import('../server/constants.mjs');
-    // The only environment the manifest declares is the optional exact coding-agent version pins.
+    // Runtime options are limited to version pins and the explicit diagnostic opt-in.
     assert.deepEqual(manifest.profiles.default.env, [
+        'ROBOTEAM_LIVE_SESSIONS_SPIKE',
         'ROBOTEAM_CODEX_VERSION', 'ROBOTEAM_OPENCODE_VERSION', 'ROBOTEAM_PI_VERSION', 'ROBOTEAM_CLAUDE_VERSION',
     ]);
 
