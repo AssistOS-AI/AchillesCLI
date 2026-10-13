@@ -45,6 +45,7 @@ Collection must ingest only RSS/Atom entries (RSS 2.0, RSS 1.0, Atom), read dire
 - `src/app/`: topics, subtopics, site catalog and feed selection, discussion reading and scoring, SQLite storage, monitoring control, the cycle, read-only views, install and RSSHub process management.
 - `config/sites.json`: built-in site catalog; `config/embedding-models.json`: model catalog; `config/services/`: RSSHub install manifest.
 - `web/` and `index.html`: static browser interface (MCP client in `agent.js`) and the redirect to it.
+- `IDE-plugins/scout-tool-button/`: Explorer toolbar button that opens `/promotionScout/web/` in Explorer's expanded modal.
 - `src/providers/`: HTTP client, RSS/Atom parsing, feed resolution and discussion readers (`threads.mjs`).
 - `src/embeddings/`: model profiles, runtime adapter and vector cache.
 - `test/` and `scripts/`: automated behavior checks and the real-model smoke check.

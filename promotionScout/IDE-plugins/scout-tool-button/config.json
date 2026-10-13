@@ -1,0 +1,20 @@
+{
+    "pluginCategory": "application",
+    "id": "promotion-scout",
+    "component": "scout-tool-button",
+    "location": ["file-exp:toolbar"],
+    "locationOrder": 360,
+    "label": "Scout",
+    "tooltip": "Open Promotion Scout",
+    "icon": "./icon.svg",
+    "presenter": "ScoutToolButton",
+    "type": "embedded",
+    "autoPin": false,
+    "toolbarModal": {
+        "mode": "iframe",
+        "url": "/promotionScout/web/",
+        "agentRef": "AchillesCLI/promotionScout",
+        "fullscreen": true
+    },
+    "dependencies": []
+}

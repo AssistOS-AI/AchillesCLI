@@ -3,7 +3,14 @@
 // argv[2] names the operation; the result is printed as JSON. Expected failures are returned as {error}, not thrown.
 import { operations } from '../src/agent/operations.mjs';
 import { openContext } from '../src/agent/context.mjs';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
+// Compares real paths: /code is a tree of symlinks, and whether import.meta.url keeps the /code path depends on Node's
+// symlink options.
+const isEntry = () => {
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+};
 const readStdin = async () => { let raw = ''; for await (const chunk of process.stdin) raw += chunk; return raw; };
 
 export async function runOperation(name, input = {}, options = {}) {
@@ -20,7 +27,7 @@ export async function runOperation(name, input = {}, options = {}) {
   } finally { context.close(); }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isEntry()) {
   try {
     const raw = await readStdin();
     const payload = raw.trim() ? JSON.parse(raw) : {};

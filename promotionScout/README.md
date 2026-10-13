@@ -13,9 +13,9 @@ ploinky enable agent AchillesCLI/promotionScout
 ploinky start
 ```
 
-Before every start, the agent's install step (`scripts/install.sh`) prepares the data directory: configuration, SQLite, the default embedding model and a pinned native RSSHub. Ploinky installs the npm dependencies from `package.json`. The first start downloads about 309 MB of model files and builds RSSHub, which can take several minutes; later starts reuse every completed step. A failed step stops the start with an explicit error and keeps the completed ones.
+Before every start, the agent's install step (`scripts/install.sh`) prepares the data directory: configuration, SQLite, the default embedding model and a pinned native RSSHub. Ploinky installs the npm dependencies from `package.json`. The first start downloads about 309 MB of model files and builds RSSHub, which can take several minutes; later starts reuse every completed step. A failed step stops the start with an explicit error and keeps the completed ones. The install step's output and exit status are also kept in `.data/promotionScout/runtime/install.log`, because Ploinky removes a failed container with its log.
 
-Then open `/promotionScout/` on the Ploinky router (for example `http://127.0.0.1:8080/promotionScout/`) and sign in. The page redirects to `/promotionScout/web/`. The router authenticates every request; the agent opens no port of its own.
+Then open `/promotionScout/` on the Ploinky router (for example `http://127.0.0.1:8080/promotionScout/`) and sign in. The page redirects to `/promotionScout/web/`. In Explorer, the **Scout** button in the file explorer toolbar opens the same page in a full-screen panel, waiting for the agent to start if needed. The router authenticates every request; the agent opens no port of its own.
 
 ## Using the web interface
 

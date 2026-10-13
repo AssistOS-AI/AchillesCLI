@@ -19,8 +19,9 @@ cleanup() {
     wait "$DAEMON_PID" 2>/dev/null || true
     wait "$MCP_PID" 2>/dev/null || true
 }
-trap 'exit 130' INT
-trap 'exit 143' TERM
+# Ploinky's targeted restart accepts only exit status 0 as the acknowledgement that the drain completed: the EXIT
+# trap stops the daemon (which stops RSSHub and closes SQLite) and AgentServer before the script exits.
+trap 'exit 0' INT TERM
 trap cleanup EXIT
 
 child_exit_status() {
