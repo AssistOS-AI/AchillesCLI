@@ -13,14 +13,14 @@
     <nav class="site-nav" aria-label="Primary navigation">
       <div class="nav-menu">
         <button class="nav-trigger" type="button" aria-expanded="false" aria-haspopup="true"><span>Agents</span><span class="submenu-indicator" aria-hidden="true">▾</span></button>
-        <div class="nav-panel"><a href="GPTResearcher/docs/index.html">GPTResearcher</a><a href="roboTeamAgent/docs/index.html">RoboTeam Agent</a></div>
+        <div class="nav-panel"><a href="GPTResearcher/docs/index.html">GPTResearcher</a><a href="roboTeamAgent/docs/index.html">RoboTeam Agent</a><a href="promotionScout/docs/index.html">Promotion Scout</a></div>
       </div>
     </nav>
   </header>
   <main class="page"><article class="page__panel">
     <p class="breadcrumbs">Agent repository</p>
     <h1>AchillesCLI Agent Suite</h1>
-    <p class="lead">RoboTeam owns the default workspace copilot and every robot conversation. GPTResearcher remains an optional Ploinky worker. Codex, Pi and OpenCode are coding backends executed by ALA. AchillesCLI is no longer a standalone agent.</p>
+    <p class="lead">RoboTeam owns the default workspace copilot and every robot conversation. GPTResearcher remains an optional Ploinky worker. Promotion Scout monitors RSS/Atom feeds for saved topics. Codex, Pi and OpenCode are coding backends executed by ALA. AchillesCLI is no longer a standalone agent.</p>
 
     <h2>Agents in this repository</h2>
     <table>
@@ -29,6 +29,7 @@
 
         <tr><td>GPTResearcher</td><td>Combines web search and optional local documents into a Markdown research report saved in the selected workspace.</td><td><a href="GPTResearcher/docs/index.html">Open GPTResearcher docs</a></td></tr>
         <tr><td>RoboTeam Agent</td><td>Manages persistent robots, private workspaces, browser state, and authenticated interactive Linux desktops.</td><td><a href="roboTeamAgent/docs/index.html">Open RoboTeam Agent docs</a></td></tr>
+        <tr><td>Promotion Scout</td><td>Monitors RSS/Atom feeds of a site catalog for saved topics, ranks entries with a local embedding model and scores the discussions behind them against subtopics, in its own web page.</td><td><a href="promotionScout/docs/index.html">Open Promotion Scout docs</a></td></tr>
       </tbody>
     </table>
 
@@ -36,10 +37,10 @@
     <p>RoboTeam handles each robot conversation and its delegated task records. Skills submit optional worker or robot tasks through the Ploinky Router and observe logs and completion without replacing the parent conversation.</p>
 
     <h2>Choose an agent</h2>
-    <p>Open the default robot for interactive project work. Other robots expose the same conversational commands with their own accounts and selected skills. GPTResearcher retains its research task contract.</p>
+    <p>Open the default robot for interactive project work. Other robots expose the same conversational commands with their own accounts and selected skills. GPTResearcher retains its research task contract. Open <code>/promotionScout/</code> on the router to manage Promotion Scout topics, sites and monitoring.</p>
 
     <h2>Shared operational boundary</h2>
-    <p>Explorer enables RoboTeam globally. Optional workers start only when requested. Ploinky owns routing and authorization, RoboTeam owns robot sessions and GUI lifecycle, and ALA runs the selected native coding agent inside Bubblewrap.</p>
+    <p>Explorer enables RoboTeam globally. Optional workers start only when requested. Promotion Scout runs independently of RoboTeam: its web page calls its MCP tools through the router, and its daemon starts each monitoring cycle as an asynchronous task. Ploinky owns routing and authorization, RoboTeam owns robot sessions and GUI lifecycle, and ALA runs the selected native coding agent inside Bubblewrap.</p>
   </article></main>
   <footer class="site-footer">Select an agent above to open its dedicated documentation.</footer>
   <script>

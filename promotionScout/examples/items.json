@@ -1,0 +1,20 @@
+[
+  {
+    "platform": "manual",
+    "external_id": "balcony-question-1",
+    "title": "Growing tomatoes on a balcony",
+    "text": "Which beginner book explains growing vegetables in containers?",
+    "url": "https://example.org/discussions/balcony-question-1",
+    "author": "example-reader",
+    "thread_id": "balcony-question-1",
+    "parent_id": null
+  },
+  {
+    "platform": "manual",
+    "external_id": "sports-question-1",
+    "title": "Football match results",
+    "text": "The club won the final with two goals.",
+    "url": "https://example.org/discussions/sports-question-1",
+    "thread_id": "sports-question-1"
+  }
+]

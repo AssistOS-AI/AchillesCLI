@@ -72,6 +72,15 @@ node --test tests/*.test.mjs
 
 GPTResearcher remains an optional Ploinky worker. Codex, OpenCode, Pi and Claude Code run through ALA inside RoboTeam, not through separate Ploinky agents.
 
+## Promotion Scout
+
+`promotionScout/` is a separate Ploinky agent that monitors RSS/Atom feeds for saved topics and ranks the entries with a local embedding model. Enable `AchillesCLI/promotionScout`, then open `/promotionScout/` on the router. Its data lives in `.data/promotionScout/`. See the [Promotion Scout documentation](promotionScout/docs/index.html). Verify it with:
+
+```bash
+cd promotionScout
+npm test
+```
+
 Skill repositories are managed from each robot’s **Manage skills** dialog. Their optional `skillsets.md` defines named combinations with Description and Skills sections. The graph editor discovers named skillsets through Ploinky. RoboFlow matches their canonical repository-source identities against each robot catalog.
 
 See [Skills & Skillsets](roboTeamAgent/docs/skills.html) for repository management, Markdown definitions and the execution catalog flow.
