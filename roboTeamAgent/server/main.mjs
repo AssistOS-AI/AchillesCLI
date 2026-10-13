@@ -53,6 +53,12 @@ const server = createRoboTeamServer({
     routeKey: process.env.ROBOTEAM_ROUTE_KEY || 'roboTeamAgent',
 });
 
+let liveSessionsSpike;
+if (process.env.ROBOTEAM_LIVE_SESSIONS_SPIKE === '1') {
+    const { startServiceProbe } = await import('../tests/spikes/live-sessions-process-probe.mjs');
+    liveSessionsSpike = await startServiceProbe();
+}
+
 server.listen(port, host, () => {
     console.log(`RoboTeamAgent listening on ${host}:${port}`);
     roboflow.scheduler.start();
@@ -71,6 +77,7 @@ async function shutdown() {
     server.close();
     await roboflow.close();
     await runtimeManager.stopAll();
+    await liveSessionsSpike?.close();
     process.exit(0);
 }
 
