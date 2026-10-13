@@ -13,7 +13,7 @@ import { action as deleteTopic } from '../skills/delete-topic/scripts/action.mjs
 import { toolValue, createScoutClient } from '../skills/list-topics/scripts/scoutMcpClient.mjs';
 
 const skillsDir = new URL('../skills/', import.meta.url);
-const skills = ['list-topics', 'add-topic', 'delete-topic'];
+const skills = ['list-topics', 'add-topic', 'delete-topic', 'list-discussions', 'add-comments'];
 const profile = { provider: 'fake', model: 'test/model', revision: 'a'.repeat(40), dtype: 'q8', dimensions: 2,
   pooling: 'mean', maxTokens: 32, queryPrefix: '', documentPrefix: '' };
 const registry = { fake: { version: 'fake-v1', create: async () => ({ embed: async texts => texts.map(() => [1, 0]),

@@ -274,14 +274,15 @@ test('every declared tool has an operation, and the web interface calls only dec
     if (tool.name.startsWith('scout_agent_')) assert.deepEqual(tool.tags, ['internal'], tool.name);
     else assert.equal(tool.tags, undefined, `${tool.name} must stay callable by authenticated users`);
   }
-  // Each agent tool mirrors a user tool: the same operation and input schema.
-  for (const tool of config.tools.filter(tool => tool.name.startsWith('scout_agent_'))) {
+  // An agent tool with a user counterpart mirrors it: the same operation and input schema.
+  for (const tool of config.tools.filter(tool => tool.name.startsWith('scout_agent_') && tool.name !== 'scout_agent_comments_add')) {
     const user = declared.get(tool.name.replace('scout_agent_', 'scout_'));
     assert.deepEqual([tool.args, tool.inputSchema], [user.args, user.inputSchema], tool.name);
   }
   assert.deepEqual(config.tools.filter(tool => tool.name.startsWith('scout_agent_')).map(tool => tool.name).sort(),
-    ['scout_agent_subtopic_add', 'scout_agent_subtopic_remove', 'scout_agent_topic_create', 'scout_agent_topic_delete',
-      'scout_agent_topics_list']);
+    ['scout_agent_comments_add', 'scout_agent_discussions_list', 'scout_agent_subtopic_add', 'scout_agent_subtopic_remove',
+      'scout_agent_topic_create', 'scout_agent_topic_delete', 'scout_agent_topics_list']);
+  assert.ok(!config.tools.some(tool => tool.args[1] === 'comments-add' && !tool.tags), 'only agents store comments');
   assert.deepEqual(declared.get('scout_run_cycle').tags, ['internal']);
   assert.equal(declared.get('scout_run_cycle').async, true);
   const page = await readFile(new URL('../web/app.js', import.meta.url), 'utf8');

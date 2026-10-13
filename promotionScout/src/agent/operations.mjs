@@ -3,6 +3,7 @@ import { saveTopic, updateTopic, renameTopic, topicLimits, topicIdentity } from 
 import { addSite, setSiteEnabled, deleteSite, tagStyles } from '../app/sites.mjs';
 import { deriveFields } from '../app/derive.mjs';
 import { addSubtopic, removeSubtopic, replaceSubtopics } from '../app/subtopics.mjs';
+import { addComments } from '../app/comments.mjs';
 import { createHttp } from '../providers/http.mjs';
 import { healthy, serviceNames } from '../app/services.mjs';
 import { intervalChoices } from '../app/monitor.mjs';
@@ -59,6 +60,8 @@ export const operations = {
   'discussions-list': ({ store, space, threshold, subtopicThreshold }, input) => discussionsView(store, space,
     { project: topic(input), threshold, subtopicThreshold, ...page(input),
       show: ['all', 'new'].includes(input.show) ? input.show : 'matched' }),
+  // Stores comments another agent wrote for discussions, as one batch; the Subtopic matches tab shows them.
+  'comments-add': ({ store }, input) => addComments(store, input),
   'results-mark-seen': ({ store }, input) => {
     if (input.urls !== undefined && (!Array.isArray(input.urls) || input.urls.some(url => typeof url !== 'string'))) {
       throw fail('INPUT_INVALID', 'urls must be an array of strings; omit it to mark every result seen');
