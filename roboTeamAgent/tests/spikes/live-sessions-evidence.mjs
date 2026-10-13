@@ -6,6 +6,12 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { SOCKET_PATHS } from './live-sessions-process-probe.mjs';
 
+function requireSocketSet(records, label) {
+    assert.ok(Array.isArray(records), `${label} records are required`);
+    assert.deepEqual(records.map(entry => entry?.socketPath).sort(), [...SOCKET_PATHS].sort(),
+        `${label} must contain exactly the selected socket set`);
+}
+
 // Inputs are redacted JSON records only, never container logs, environment
 // dumps, envelopes or credentials. Coordinator supplies checked identities.
 export async function assembleEvidence(directory) {
@@ -30,6 +36,20 @@ export async function assembleEvidence(directory) {
     const owner = await read('owner-result.json');
     assert.equal(sandbox.status, 'passed');
     assert.equal(owner.status, 'passed');
+    requireSocketSet(service, 'Service');
+    requireSocketSet(before, 'CLI before');
+    requireSocketSet(after, 'CLI after');
+    requireSocketSet(sandbox.before, 'Sandbox trusted before');
+    requireSocketSet(sandbox.after, 'Sandbox trusted after');
+    requireSocketSet(sandbox.plan?.sockets, 'Sandbox plan');
+    for (const socket of sandbox.plan.sockets) {
+        assert.ok(typeof socket.realpath === 'string' && path.posix.isAbsolute(socket.realpath), 'Socket realpath is required');
+        assert.ok(Array.isArray(socket.aliases), 'Socket aliases are required');
+        assert.equal(new Set(socket.aliases).size, socket.aliases.length, 'Socket aliases must be unique');
+        assert.ok(socket.aliases.every(alias => typeof alias === 'string' && path.posix.isAbsolute(alias)), 'Socket aliases must be absolute paths');
+        assert.ok(socket.aliases.includes(socket.socketPath), 'Socket aliases must include the direct path');
+        assert.ok(socket.aliases.includes(socket.realpath), 'Socket aliases must include its realpath');
+    }
     for (const socketPath of SOCKET_PATHS) {
         const main = service.find(entry => entry.kind === 'service-ready' && entry.socketPath === socketPath);
         assert.ok(main);
@@ -65,6 +85,7 @@ export async function assembleEvidence(directory) {
     assert.ok(commands.every(entry => typeof entry.command === 'string' && entry.exitCode === 0));
     // Project only known metadata; unknown input keys never enter artifacts.
     const manifest = { version: 1, diagnosticOnly: true, createdAt: new Date().toISOString(),
+        selectedSocketPath: SOCKET_PATHS[0],
         workspace: pins.workspace, branch: pins.branch,
         revisions: Object.fromEntries(['ploinky', 'AssistOSExplorer', 'AchillesCLI', 'AdvancedLanguageAgent'].map(name => [name, pins.revisions[name]])),
         images: Object.fromEntries(['box', 'roboTeam'].map(name => [name, { digest: pins.images[name].digest, id: pins.images[name].id }])),
@@ -82,6 +103,7 @@ export async function assembleEvidence(directory) {
     await fs.writeFile(path.join(directory, 'p3-spike.txt'),
         'P3.0 diagnostic checks passed. Production publishing and release gates remain pending.\n'
         + `Candidate manifest SHA256: ${manifest.candidateManifestSha256}\n`
+        + `Selected socket: ${manifest.selectedSocketPath}\n`
         + `Socket alias probes: ${expected.length}; every result ENOENT.\n`
         + 'Real service and CLI identity controls agree before and after the sandbox run.\n'
         + 'Real Router minting, expiry, replay, tampering and receive/preparation delay checks passed.\n', { flag: 'wx', mode: 0o600 });

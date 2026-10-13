@@ -5,7 +5,6 @@ import { randomBytes, createHash } from 'node:crypto';
 
 export const SOCKET_PATHS = Object.freeze([
     '/dev/shm/roboteam-live/registry.sock',
-    '/run/roboteam-live/registry.sock',
 ]);
 const LIMIT = 4096;
 const DEADLINE = 5000;
@@ -71,7 +70,7 @@ export async function listenProbe(socketPath, identity, emit = () => {}) {
     await fs.mkdir(directory, { mode: 0o700 }); // EEXIST refuses files, links and existing directories.
     const directoryStat = await fs.lstat(directory);
     if (directoryStat.uid !== process.getuid() || (directoryStat.mode & 0o777) !== 0o700) {
-        throw new Error('Probe directory ownership or mode mismatch');
+        throw new Error(`Probe directory ownership or mode mismatch: uid=${directoryStat.uid}, mode=${(directoryStat.mode & 0o777).toString(8)}, expectedUid=${process.getuid()}`);
     }
     const incarnation = nonce();
     const connections = new Set();
@@ -99,7 +98,7 @@ export async function listenProbe(socketPath, identity, emit = () => {}) {
         await fs.chmod(socketPath, 0o600);
         socketStat = await fs.lstat(socketPath);
         if (!socketStat.isSocket() || socketStat.uid !== process.getuid() || (socketStat.mode & 0o777) !== 0o600) {
-            throw new Error('Probe socket ownership or mode mismatch');
+            throw new Error(`Probe socket ownership or mode mismatch: isSocket=${socketStat.isSocket()}, uid=${socketStat.uid}, mode=${(socketStat.mode & 0o777).toString(8)}, expectedUid=${process.getuid()}`);
         }
     } catch (error) {
         server.unref();

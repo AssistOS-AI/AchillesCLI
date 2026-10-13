@@ -34,7 +34,7 @@ test('fixed entrypoint gates import nothing for every off state and preserve com
     assert.equal(manifest.agent, 'sh /code/scripts/startAgent.sh');
     assert.equal(manifest.cli, 'node /code/server/robot-cli.mjs');
     assert.ok(manifest.profiles.default.env.includes('ROBOTEAM_LIVE_SESSIONS_SPIKE'));
-    assert.deepEqual(SOCKET_PATHS, ['/dev/shm/roboteam-live/registry.sock', '/run/roboteam-live/registry.sock']);
+    assert.deepEqual(SOCKET_PATHS, ['/dev/shm/roboteam-live/registry.sock']);
 });
 
 test('private listener accepts a fresh challenge and cleans up its exact identities', async t => {
@@ -142,8 +142,7 @@ test('missing runtime evidence never creates a passing artifact', async t => {
     await assert.rejects(fs.lstat(path.join(root, 'p3-spike.json')), { code: 'ENOENT' });
 });
 
-test('owner evidence without the wrong-tuple control cannot produce passing artifacts', async t => {
-    const { root } = await fixture(t);
+function completeEvidence() {
     const hash = 'a'.repeat(64);
     const service = SOCKET_PATHS.map(socketPath => ({ kind: 'service-ready', socketPath,
         pid: 77, uid: 1, mountNamespace: 'mnt:[77]', incarnationDigest: hash }));
@@ -152,10 +151,10 @@ test('owner evidence without the wrong-tuple control cannot produce passing arti
         incarnationDigest: entry.incarnationDigest, challengeDigest }));
     const before = controls(hash);
     const after = controls('b'.repeat(64));
-    const owner = { status: 'passed', checks: ['real-router-serializer-minter', 'raw-hash', 'jti-replay',
+    const owner = { status: 'passed', checks: ['real-router-serializer-minter', 'raw-hash', 'wrong-tuple', 'jti-replay',
         'text', 'presentation', 'tool', 'audience', 'expiry', 'receive-preparation-delay'],
         started: [{ admittedAt: 1, expiresAt: 2, startedAt: 3 }] };
-    const files = {
+    return {
         'runtime-pins.json': { workspace: path.join(os.homedir(), 'work', 'testExplorerFresh'), branch: 'live-sessions',
             revisions: Object.fromEntries(['ploinky', 'AssistOSExplorer', 'AchillesCLI', 'AdvancedLanguageAgent'].map(name => [name, 'a'.repeat(40)])),
             images: Object.fromEntries(['box', 'roboTeam'].map(name => [name, { digest: `sha256:${hash}`, id: `sha256:${hash}` }])),
@@ -163,11 +162,22 @@ test('owner evidence without the wrong-tuple control cannot produce passing arti
         'service-probe.json': service, 'cli-before.json': before, 'cli-after.json': after,
         'owner-result.json': owner,
         'sandbox-result.json': { status: 'passed', before, after, backendSha256: hash,
-            plan: { wrapperSha256: hash, sockets: SOCKET_PATHS.map(socketPath => ({ aliases: [socketPath] })) },
+            plan: { wrapperSha256: hash, sockets: SOCKET_PATHS.map(socketPath => ({ socketPath, realpath: socketPath, aliases: [socketPath] })) },
             observed: { results: SOCKET_PATHS.map(socketPath => ({ path: socketPath, error: 'ENOENT' })) } },
         'commands.json': Array.from({ length: 5 }, () => ({ command: 'diagnostic fixture', exitCode: 0 })),
     };
+}
+
+async function writeEvidence(root, files) {
     for (const [name, value] of Object.entries(files)) await fs.writeFile(path.join(root, name), JSON.stringify(value));
+}
+
+test('owner evidence without the wrong-tuple control cannot produce passing artifacts', async t => {
+    const { root } = await fixture(t);
+    const files = completeEvidence();
+    const owner = files['owner-result.json'];
+    owner.checks = owner.checks.filter(check => check !== 'wrong-tuple');
+    await writeEvidence(root, files);
     await assert.rejects(assembleEvidence(root), /wrong-tuple/);
     await assert.rejects(fs.lstat(path.join(root, 'p3-spike.txt')), { code: 'ENOENT' });
     await assert.rejects(fs.lstat(path.join(root, 'p3-spike.json')), { code: 'ENOENT' });
@@ -180,5 +190,37 @@ test('owner evidence without the wrong-tuple control cannot produce passing arti
     await assert.rejects(fs.lstat(path.join(root, 'p3-spike.json')), { code: 'ENOENT' });
     files['runtime-pins.json'].workspace = correctWorkspace;
     await fs.writeFile(path.join(root, 'runtime-pins.json'), JSON.stringify(files['runtime-pins.json']));
-    assert.equal((await assembleEvidence(root)).checks.realRouterOwnerProbe, true);
+    const manifest = await assembleEvidence(root);
+    assert.equal(manifest.checks.realRouterOwnerProbe, true);
+    assert.equal(manifest.selectedSocketPath, '/dev/shm/roboteam-live/registry.sock');
+});
+
+test('selected socket evidence refuses incomplete or substituted identity and alias records', async t => {
+    const cases = [
+        ['missing primary', files => { files['sandbox-result.json'].plan.sockets = []; }],
+        ['foreign primary', files => { files['sandbox-result.json'].plan.sockets[0].socketPath = '/run/roboteam-live/registry.sock'; }],
+        ['duplicate primary', files => { files['sandbox-result.json'].plan.sockets.push(structuredClone(files['sandbox-result.json'].plan.sockets[0])); }],
+        ['missing direct alias', files => {
+            files['sandbox-result.json'].plan.sockets[0].aliases = ['/elsewhere/registry.sock'];
+            files['sandbox-result.json'].observed.results[0].path = '/elsewhere/registry.sock';
+        }],
+        ['missing realpath alias', files => { files['sandbox-result.json'].plan.sockets[0].realpath = '/elsewhere/registry.sock'; }],
+        ['missing alias result', files => { files['sandbox-result.json'].observed.results = []; }],
+        ['unprobed derived alias', files => { files['sandbox-result.json'].plan.sockets[0].aliases.push('/workspace/alias/registry.sock'); }],
+        ['non-ENOENT', files => { files['sandbox-result.json'].observed.results[0].error = 'EACCES'; }],
+        ['missing service', files => { files['service-probe.json'] = []; }],
+        ['missing CLI before', files => { files['cli-before.json'] = []; }],
+        ['missing CLI after', files => { files['cli-after.json'] = []; }],
+        ['duplicate CLI', files => { files['cli-before.json'].push(structuredClone(files['cli-before.json'][0])); }],
+        ['incarnation mismatch', files => { files['cli-after.json'][0].incarnationDigest = 'c'.repeat(64); }],
+    ];
+    for (const [name, change] of cases) await t.test(name, async child => {
+        const { root } = await fixture(child);
+        const files = completeEvidence();
+        change(files);
+        await writeEvidence(root, files);
+        await assert.rejects(assembleEvidence(root), { code: 'ERR_ASSERTION' });
+        await assert.rejects(fs.lstat(path.join(root, 'p3-spike.txt')), { code: 'ENOENT' });
+        await assert.rejects(fs.lstat(path.join(root, 'p3-spike.json')), { code: 'ENOENT' });
+    });
 });
