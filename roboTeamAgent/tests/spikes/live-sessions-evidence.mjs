@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { SOCKET_PATHS } from './live-sessions-process-probe.mjs';
@@ -10,7 +11,7 @@ import { SOCKET_PATHS } from './live-sessions-process-probe.mjs';
 export async function assembleEvidence(directory) {
     const read = async name => JSON.parse(await fs.readFile(path.join(directory, name), 'utf8'));
     const pins = await read('runtime-pins.json');
-    assert.equal(pins.workspace, '/Users/danielsava/work/testExplorerFresh');
+    assert.equal(pins.workspace, path.join(os.homedir(), 'work', 'testExplorerFresh'));
     assert.equal(pins.branch, 'live-sessions');
     for (const name of ['ploinky', 'AssistOSExplorer', 'AchillesCLI', 'AdvancedLanguageAgent']) {
         assert.match(pins.revisions?.[name], /^[a-f0-9]{40}$/);

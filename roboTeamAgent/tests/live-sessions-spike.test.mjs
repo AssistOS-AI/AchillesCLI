@@ -156,7 +156,7 @@ test('owner evidence without the wrong-tuple control cannot produce passing arti
         'text', 'presentation', 'tool', 'audience', 'expiry', 'receive-preparation-delay'],
         started: [{ admittedAt: 1, expiresAt: 2, startedAt: 3 }] };
     const files = {
-        'runtime-pins.json': { workspace: '/Users/danielsava/work/testExplorerFresh', branch: 'live-sessions',
+        'runtime-pins.json': { workspace: path.join(os.homedir(), 'work', 'testExplorerFresh'), branch: 'live-sessions',
             revisions: Object.fromEntries(['ploinky', 'AssistOSExplorer', 'AchillesCLI', 'AdvancedLanguageAgent'].map(name => [name, 'a'.repeat(40)])),
             images: Object.fromEntries(['box', 'roboTeam'].map(name => [name, { digest: `sha256:${hash}`, id: `sha256:${hash}` }])),
             containers: { box: hash, roboTeam: hash }, candidateManifestSha256: hash, readinessEvidenceSha256: hash },
@@ -173,5 +173,12 @@ test('owner evidence without the wrong-tuple control cannot produce passing arti
     await assert.rejects(fs.lstat(path.join(root, 'p3-spike.json')), { code: 'ENOENT' });
     owner.checks.push('wrong-tuple');
     await fs.writeFile(path.join(root, 'owner-result.json'), JSON.stringify(owner));
+    const correctWorkspace = files['runtime-pins.json'].workspace;
+    files['runtime-pins.json'].workspace = path.join(os.homedir(), 'work', 'different-workspace');
+    await fs.writeFile(path.join(root, 'runtime-pins.json'), JSON.stringify(files['runtime-pins.json']));
+    await assert.rejects(assembleEvidence(root), { code: 'ERR_ASSERTION' });
+    await assert.rejects(fs.lstat(path.join(root, 'p3-spike.json')), { code: 'ENOENT' });
+    files['runtime-pins.json'].workspace = correctWorkspace;
+    await fs.writeFile(path.join(root, 'runtime-pins.json'), JSON.stringify(files['runtime-pins.json']));
     assert.equal((await assembleEvidence(root)).checks.realRouterOwnerProbe, true);
 });
