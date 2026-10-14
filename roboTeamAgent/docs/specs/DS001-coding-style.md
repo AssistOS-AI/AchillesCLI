@@ -16,13 +16,14 @@ Paths below are relative to `roboTeamAgent/`. Folders group modules by responsib
 | Folder | Responsibility |
 | --- | --- |
 | `server/` | HTTP service, robot configuration, skill policies, runtime preparation and execution lifecycle. |
+| `server/live-sessions/` | Live Sessions registry, source contract, in-process runtime source and the private IPC listener for copilot publishers. |
 | `server/roboflow/` | Workflow definitions, matching robots to tasks, graph execution, run persistence and durable recurring schedules. |
 | `server/plugins/` | Integrations loaded by native coding-agent runtimes. |
 | `public/` | Browser pages, styles and scripts for robots, workflow editing, Cron jobs, runs and output views. |
 | `tools/` | MCP command entrypoints that expose RoboTeam operations. |
 | `scripts/` | Installation, startup, data preparation and service checks. |
 | `shared/` | Shared processing used by the server and copilot, including summary markers and indexes. |
-| `IDE-plugins/` | Explorer contributions for launching Copilot and opening RoboTeam; each subfolder owns one contribution. |
+| `IDE-plugins/` | Explorer contributions for launching Copilot, opening RoboTeam and declaring RoboTeam's Live Sessions source; each subfolder owns one contribution. |
 | `copilot/` | Conversational CLI package and its integration with RoboTeam. |
 | `copilot/bin/` | Executable package entrypoints. |
 | `copilot/scripts/` | Package setup and maintenance scripts. |
@@ -52,6 +53,7 @@ Paths below are relative to `copilot/src/lib/`. Group by the module's actual res
 | `ploinky/` | MCP clients, agent readiness and preparing Ploinky context for task scripts. |
 | `tasks/` | Background task records, events, control, continuation and live-session metadata. |
 | `webchat/` | WebChat protocol, dispatch, progress, sessions, interactions, resources and task presentation adapters. |
+| `liveSessions/` | The Live Sessions publisher (IPC client, owner claims, lifecycle and output queues) and the copilot-turn adapter. |
 | `diagnostics/` | Logging and metrics. |
 | `errors/` | Error types and safe lifecycle error formatting. |
 

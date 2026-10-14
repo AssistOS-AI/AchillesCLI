@@ -127,6 +127,12 @@ Task-start and live-session notifications use newline-delimited JSON over the Un
 
 Skillset discovery visibility is administrator-controlled per robot through PATCH /api/robots/:id/skillsets with an id and boolean enabled. Persist disabledSkillsets in robot metadata; absent entries are enabled. The management catalog includes disabled sets and their enabled state. Default turn catalogs and robot_list omit them, including nested repository definitions. A repository with disabled definitions must not become an individual-skill fallback. Existing execution selections and continuations are unaffected.
 
+### Live Sessions projection
+
+The copilot publishes each ALA turn as a Live Sessions run after the conversation lease, preparation and `beginTurn` succeeded and before ALA starts; a same-session overlap is still refused at the lease and publishes nothing. The run carries the WebChat owner claim made on the message's arrival and the turn's View Thinking link. ALA events become run output: coding-agent messages as `assistant` or `output` chunks, selection, progress and diagnostics as status lines, message receipts as user lines, and a permission request as a status line that points to WebChat. An owner message is written to ALA's control input as `{type: "message", id, message}` through the existing control writer and resolves only from the receipt carrying that id; it is unknown after 35 seconds without one and run_ended once ALA exited. Stop aborts the turn. The run ends on every exit path after the task notification channel drained, so tasks delegated by the turn are published with its owner claim before it ends. Robot task processes never publish; the copilot removes its publishing switch from ALA's environment. DS008 owns the contract.
+
+Robot tasks started through HTTP record the signed principal of the starting user as their owner; internal MCP callers record none. Resume keeps the original owner. Robot task records bind the owner with a service-private HMAC; a record that fails the check, a legacy record or one from before a service restart has no owner.
+
 ### Task duration across continuation
 
 WebChat task metadata persists completed active time as `elapsedMs` and the current interval start as `activeSince`. Terminal updates freeze the duration. Continuing the same task retains its elapsed time and begins a new interval, excluding the pause. Log, model and metadata updates do not advance a paused timer. Ploinky preserves these fields for task cards and task details.

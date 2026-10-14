@@ -21,7 +21,12 @@ export const IPC_DEFAULTS = Object.freeze({
     handleLiveRuns: 16,
     pendingClaims: 64,
     principalPendingClaims: 16,
-    maxPublishers: 8,
+    // Every copilot process is one publisher incarnation, kept for the
+    // reconnect window after it disconnects. Ploinky runs at most 20 WebChat
+    // runtimes per router (all agents together) and 24 WebTTY shells that can
+    // run a terminal CLI; the rest is margin for processes replaced within the
+    // window.
+    maxPublishers: 64,
     reconnectMs: 30 * 1000,
     handleLifetimeMs: 24 * 60 * 60 * 1000,
     controlTimeoutMs: 38 * 1000,
@@ -248,13 +253,23 @@ export class LiveSessionsIpcServer {
             return this._drop(connection, 'invalid hello');
         }
         // Same-uid publishers are bounded so they cannot crowd out in-process
-        // sources; only the extra hello is refused.
+        // sources. At the bound, the incarnation that has been disconnected
+        // longest gives way: its reconnect window ends now and its runs are
+        // lost. A new hello is refused only when every incarnation is connected.
         if (this.publishers.size >= this.limits.maxPublishers) {
-            this._send(connection, { type: 'hello-refused', reason: 'publisher-limit' });
-            return this._drop(connection, 'publisher limit');
+            let oldest = null;
+            for (const candidate of this.publishers.values()) {
+                if (!candidate.connection && (!oldest || candidate.disconnectedAt < oldest.disconnectedAt)) oldest = candidate;
+            }
+            if (!oldest) {
+                this._send(connection, { type: 'hello-refused', reason: 'publisher-limit' });
+                return this._drop(connection, 'publisher limit, every publisher is connected');
+            }
+            this.log(`[live-sessions] publisher limit: disconnected publisher ${oldest.publisherId} evicted; its runs are lost`);
+            this._lose(oldest);
         }
         const publisher = { publisherId: random(), resumeToken: random(), connection, runs: new Map(), localRefs: new Map(),
-            handles: new Map(), lostTimer: null };
+            handles: new Map(), lostTimer: null, disconnectedAt: null };
         this.publishers.set(publisher.publisherId, publisher);
         connection.publisher = publisher;
         this._send(connection, { type: 'welcome', publisherId: publisher.publisherId, resumeToken: publisher.resumeToken });
@@ -279,6 +294,7 @@ export class LiveSessionsIpcServer {
         clearTimeout(publisher.lostTimer);
         publisher.lostTimer = null;
         publisher.connection = connection;
+        publisher.disconnectedAt = null;
         connection.publisher = publisher;
         const runs = [];
         for (const run of publisher.runs.values()) {
@@ -299,6 +315,7 @@ export class LiveSessionsIpcServer {
         connection.publisher = null;
         if (!publisher || connection.replaced || publisher.connection !== connection) return;
         publisher.connection = null;
+        publisher.disconnectedAt = this.now();
         for (const run of publisher.runs.values()) if (!run.ended) this.registry.status(run.runId, 'reconnecting');
         this._settleControls(publisher, 'unknown', 'publisher disconnected');
         if (this.closed) return;
@@ -308,6 +325,8 @@ export class LiveSessionsIpcServer {
 
     _lose(publisher) {
         if (publisher.connection) return;
+        clearTimeout(publisher.lostTimer);
+        publisher.lostTimer = null;
         for (const run of publisher.runs.values()) {
             if (run.ended) continue;
             run.ended = true;
@@ -391,7 +410,7 @@ export class LiveSessionsIpcServer {
                 cwdDisplay: typeof message.cwd === 'string' ? message.cwd : '',
                 ownerState: handle ? 'verified' : 'unverified',
                 ownerPrincipal: handle?.principal,
-                controls: this._controlsFor(publisher, ref),
+                controls: this._controlsFor(publisher, ref, message.kind),
                 transcript,
             });
         } catch (error) {
@@ -481,9 +500,10 @@ export class LiveSessionsIpcServer {
         return { sent, result };
     }
 
-    _controlsFor(publisher, ref) {
+    // Delegated copilot tasks take no messages; their only control is Stop.
+    _controlsFor(publisher, ref, kind) {
         return {
-            message: (text) => this._control(publisher, ref.runId, 'message', text).result,
+            ...(kind === 'copilot-task' ? {} : { message: (text) => this._control(publisher, ref.runId, 'message', text).result }),
             // Stop is accepted once it reaches the publisher; the run ends when
             // the publisher reports run-end.
             stop: async () => {

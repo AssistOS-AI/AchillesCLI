@@ -73,6 +73,10 @@ Task instances and runs persist `elapsedMs` for completed active intervals and `
 
 Workflow resume, phase pause, live prompt and continue are exposed only through the RoboTeam HTTP API and the flow page; they are not RoboTeam MCP tools.
 
+### Live Sessions ownership and pause
+
+Every running phase is a Live Sessions `workflow-phase` run. Flows record the signed `ownerPrincipal` of the user who started them. A schedule's owner is the signed principal of its last saver, set inside the optimistic save transaction; `createdBy` and `updatedBy` keep their meaning. Cron launches use the schedule's owner, and run-now uses the actor who pressed it without changing the schedule's owner. Sub-flows inherit their parent's owner, and resume keeps the original owner. Records without an owner, such as legacy flows and schedules, list as `system` for administrators only. A Live Sessions message to a phase is its live prompt. Stop on a phase pauses the whole workflow, as the phase's own Pause does; the workflow stays resumable and the row says "Stop pauses the whole workflow". DS008 owns the listing contract.
+
 ### Task input and routing output
 
 Every task receives the objective, complete captured graph, currentTaskId and ordered previousFinalResponses. Only previous final responses enter this history. Logs, transcript replay, artifacts and file references do not enter task context. Responses stay intact; exceeding the one MiB context limit fails explicitly.
