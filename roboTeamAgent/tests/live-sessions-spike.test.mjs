@@ -34,24 +34,16 @@ async function fixture(t) {
     return { root, socketPath: path.join(root, 'private', 'registry.sock') };
 }
 
-test('fixed entrypoint gates import nothing for every off state and preserve commands', async () => {
+test('production entrypoints carry no diagnostic hook, flag or test import; commands are preserved', async () => {
     for (const name of ['main', 'robot-cli']) {
         const source = await fs.readFile(new URL(`../server/${name}.mjs`, import.meta.url), 'utf8');
-        const gate = source.match(/^( *)if \(process\.env\.ROBOTEAM_LIVE_SESSIONS_SPIKE === '1'\) \{[\s\S]*?\n\1\}/m)?.[0];
-        assert.ok(gate);
-        assert.match(gate, /import\('\.\.\/tests\/spikes\/live-sessions-process-probe\.mjs'\)/);
-        for (const value of [undefined, '', '0', 'true', '2', ' 1']) {
-            let imports = 0;
-            const fn = new (async () => {}).constructor('process', 'load', 'liveSessionsSpike',
-                gate.replace("import('../tests/spikes/live-sessions-process-probe.mjs')", 'load()'));
-            await fn({ env: { ROBOTEAM_LIVE_SESSIONS_SPIKE: value } }, () => { imports++; throw new Error('Unexpected diagnostic I/O'); });
-            assert.equal(imports, 0);
-        }
+        assert.doesNotMatch(source, /ROBOTEAM_LIVE_SESSIONS_SPIKE/u, name);
+        assert.doesNotMatch(source, /tests\//u, name);
     }
     const manifest = JSON.parse(await fs.readFile(new URL('../manifest.json', import.meta.url)));
     assert.equal(manifest.agent, 'sh /code/scripts/startAgent.sh');
     assert.equal(manifest.cli, 'node /code/server/robot-cli.mjs');
-    assert.ok(manifest.profiles.default.env.includes('ROBOTEAM_LIVE_SESSIONS_SPIKE'));
+    assert.equal(JSON.stringify(manifest).includes('ROBOTEAM_LIVE_SESSIONS_SPIKE'), false);
     assert.deepEqual(SOCKET_PATHS, ['/dev/shm/roboteam-live/registry.sock']);
 });
 
@@ -492,4 +484,161 @@ test('assembler checkout provenance through the real git reader', async t => {
     const dirty = await run(repository, head);
     await assert.rejects(dirty.result, /spike files must be unmodified/);
     await assert.rejects(fs.lstat(path.join(dirty.root, 'p3-spike.json')), { code: 'ENOENT' });
+});
+
+// G2 trusted controls against the production IPC listener.
+const production = () => import('./spikes/live-sessions-production-probe.mjs');
+const NET_UNIX_HEADER = 'Num       RefCount Protocol Flags    Type St Inode Path';
+
+async function fakeProc(root, socketPath, { inode = '4242', owners = [7001], namespace = 'mnt:[4026531840]', listening = true, uid = process.getuid() } = {}) {
+    const proc = path.join(root, 'proc');
+    await fs.mkdir(path.join(proc, 'net'), { recursive: true });
+    await fs.writeFile(path.join(proc, 'net', 'unix'), [NET_UNIX_HEADER,
+        `0000000000000000: 00000002 00000000 ${listening ? '00010000' : '00000000'} 0001 01 ${inode} ${socketPath}`,
+        `0000000000000000: 00000002 00000000 00010000 0001 01 9999 /other/socket`, ''].join('\n'));
+    for (const pid of owners) {
+        await fs.mkdir(path.join(proc, String(pid), 'fd'), { recursive: true });
+        await fs.mkdir(path.join(proc, String(pid), 'ns'), { recursive: true });
+        await fs.symlink(`socket:[${inode}]`, path.join(proc, String(pid), 'fd', '7'));
+        await fs.symlink('/dev/null', path.join(proc, String(pid), 'fd', '1'));
+        await fs.symlink(namespace, path.join(proc, String(pid), 'ns', 'mnt'));
+        await fs.writeFile(path.join(proc, String(pid), 'status'), `Name:\tnode\nUid:\t${uid}\t${uid}\t${uid}\t${uid}\n`);
+    }
+    await fs.mkdir(path.join(proc, 'self'));
+    return proc;
+}
+
+test('production controls parse only the listening socket for the exact path', async () => {
+    const { unixListenerInode } = await production();
+    const text = [NET_UNIX_HEADER, '0: 00000002 00000000 00010000 0001 01 11 /dev/shm/roboteam-live/registry.sock',
+        '0: 00000003 00000000 00000000 0001 03 12 /dev/shm/roboteam-live/registry.sock', '0: 00000002 00000000 00010000 0001 01 13 /x'].join('\n');
+    assert.equal(unixListenerInode(text, '/dev/shm/roboteam-live/registry.sock'), '11');
+    assert.throws(() => unixListenerInode(text, '/missing'), /Exactly one listening/);
+    assert.throws(() => unixListenerInode(`${text}\n0: 00000002 00000000 00010000 0001 01 14 /x`, '/x'), /Exactly one listening/);
+});
+
+test('production controls identify the single owning process and refuse ambiguity', async t => {
+    const { root } = await fixture(t);
+    const { socketListenerProcess } = await production();
+    const proc = await fakeProc(root, '/s', { owners: [7001] });
+    assert.deepEqual(await socketListenerProcess('4242', { procRoot: proc }), { pid: 7001, uid: process.getuid(), mountNamespace: 'mnt:[4026531840]' });
+    await assert.rejects(socketListenerProcess('5555', { procRoot: proc }), /Exactly one process/);
+    const shared = await fakeProc(path.join(root, 'shared'), '/s', { owners: [7001, 7002] });
+    await assert.rejects(socketListenerProcess('4242', { procRoot: shared }), /Exactly one process/);
+});
+
+test('production controls accept the real IPC listener, bind its incarnation and refuse every mismatch', async t => {
+    const { root, socketPath } = await fixture(t);
+    const { connectProductionProbe } = await production();
+    const { LiveSessionsIpcServer } = await import('../server/live-sessions/ipc-server.mjs');
+    const { LiveSessionsRegistry } = await import('../server/live-sessions/registry.mjs');
+    const registry = new LiveSessionsRegistry();
+    const server = new LiveSessionsIpcServer({ registry, log: () => {} });
+    await server.listen(socketPath);
+    try {
+        const procRoot = await fakeProc(root, socketPath);
+        const local = { pid: process.pid, uid: process.getuid(), mountNamespace: 'mnt:[4026531840]' };
+        const before = await connectProductionProbe(socketPath, local, undefined, { procRoot });
+        assert.equal(before.listener, 'production');
+        assert.deepEqual(before.service, { pid: 7001, uid: process.getuid(), mountNamespace: 'mnt:[4026531840]' });
+        const after = await connectProductionProbe(socketPath, local, before.incarnationDigest, { procRoot });
+        assert.equal(after.incarnationDigest, before.incarnationDigest);
+        assert.notEqual(after.challengeDigest, before.challengeDigest, 'each control is a fresh exchange');
+        await assert.rejects(connectProductionProbe(socketPath, local, '0'.repeat(64), { procRoot }), /incarnation mismatch/);
+        await assert.rejects(connectProductionProbe(socketPath, { ...local, mountNamespace: 'mnt:[1]' }, undefined, { procRoot }), /identity or protocol/);
+        await assert.rejects(connectProductionProbe(socketPath, { ...local, uid: local.uid + 1 }, undefined, { procRoot }), /service user/);
+        const notListening = await fakeProc(path.join(root, 'idle'), socketPath, { listening: false });
+        await assert.rejects(connectProductionProbe(socketPath, local, undefined, { procRoot: notListening }), /Exactly one listening/);
+        await fs.chmod(socketPath, 0o644);
+        await assert.rejects(connectProductionProbe(socketPath, local, undefined, { procRoot }), /private/);
+        await fs.chmod(socketPath, 0o600);
+    } finally { await server.close(); registry.close(); }
+});
+
+test('production controls refuse a listener that does not speak the production protocol', async t => {
+    const { root, socketPath } = await fixture(t);
+    const { connectProductionProbe } = await production();
+    const listener = await listenProbe(socketPath, identity);
+    try {
+        const procRoot = await fakeProc(root, socketPath, { namespace: identity.mountNamespace });
+        await assert.rejects(connectProductionProbe(socketPath, identity, undefined, { procRoot }), /Production probe/);
+    } finally { await listener.close(); }
+});
+
+test('production controls identify a real listener through the real /proc', { skip: process.platform !== 'linux' && 'needs Linux /proc' }, async t => {
+    const { socketPath } = await fixture(t);
+    const { connectProductionProbe } = await production();
+    const { processIdentity } = await import('./spikes/live-sessions-process-probe.mjs');
+    const { LiveSessionsIpcServer } = await import('../server/live-sessions/ipc-server.mjs');
+    const { LiveSessionsRegistry } = await import('../server/live-sessions/registry.mjs');
+    const registry = new LiveSessionsRegistry();
+    const server = new LiveSessionsIpcServer({ registry, log: () => {} });
+    await server.listen(socketPath);
+    try {
+        const local = await processIdentity();
+        const before = await connectProductionProbe(socketPath, local);
+        assert.equal(before.service.pid, process.pid);
+        assert.equal(before.service.mountNamespace, local.mountNamespace);
+        const after = await connectProductionProbe(socketPath, local, before.incarnationDigest);
+        assert.equal(after.incarnationDigest, before.incarnationDigest);
+    } finally { await server.close(); registry.close(); }
+});
+
+async function probeServer(t, socketPath, onConnection = () => {}) {
+    await fs.mkdir(path.dirname(socketPath), { mode: 0o700 });
+    const sockets = new Set();
+    const server = net.createServer(async socket => {
+        sockets.add(socket);
+        socket.on('error', () => {});
+        await onConnection();
+        socket.end(`${JSON.stringify({ type: 'welcome', publisherId: 'p'.repeat(32), resumeToken: 'r'.repeat(32) })}\n`);
+    });
+    await new Promise(resolve => server.listen(socketPath, resolve));
+    await fs.chmod(socketPath, 0o600);
+    return { close: () => { for (const socket of sockets) socket.destroy(); return new Promise(resolve => server.close(resolve)); } };
+}
+
+test('production controls refuse a replaced listener, a different owning process and a foreign process uid', async t => {
+    const { root, socketPath } = await fixture(t);
+    const { connectProductionProbe } = await production();
+    const server = await probeServer(t, socketPath);
+    try {
+        const local = { pid: process.pid, uid: process.getuid(), mountNamespace: 'mnt:[4026531840]' };
+        const before = await connectProductionProbe(socketPath, local, undefined, { procRoot: await fakeProc(path.join(root, 'a'), socketPath) });
+        const otherInode = await fakeProc(path.join(root, 'b'), socketPath, { inode: '4343' });
+        await assert.rejects(connectProductionProbe(socketPath, local, before.incarnationDigest, { procRoot: otherInode }), /incarnation mismatch/);
+        const otherPid = await fakeProc(path.join(root, 'c'), socketPath, { owners: [7002] });
+        await assert.rejects(connectProductionProbe(socketPath, local, before.incarnationDigest, { procRoot: otherPid }), /incarnation mismatch/);
+        const foreignUid = await fakeProc(path.join(root, 'd'), socketPath, { uid: process.getuid() + 1 });
+        await assert.rejects(connectProductionProbe(socketPath, local, undefined, { procRoot: foreignUid }), /identity or protocol/);
+    } finally { await server.close(); }
+});
+
+test('production controls refuse a listener that changes during the exchange', async t => {
+    const { root, socketPath } = await fixture(t);
+    const { connectProductionProbe } = await production();
+    const procRoot = await fakeProc(root, socketPath);
+    const swapped = (await fs.readFile(path.join(procRoot, 'net', 'unix'), 'utf8')).replace(' 4242 ', ' 4343 ');
+    const server = await probeServer(t, socketPath, async () => {
+        await fs.writeFile(path.join(procRoot, 'net', 'unix'), swapped);
+        await fs.symlink('socket:[4343]', path.join(procRoot, '7001', 'fd', '8'));
+    });
+    try {
+        const local = { pid: process.pid, uid: process.getuid(), mountNamespace: 'mnt:[4026531840]' };
+        await assert.rejects(connectProductionProbe(socketPath, local, undefined, { procRoot }), /changed during the exchange/);
+    } finally { await server.close(); }
+});
+
+test('the sandbox harness requires an explicit listener mode', async () => {
+    const harness = fileURLToPath(new URL('./spikes/live-sessions-sandbox.mjs', import.meta.url));
+    for (const args of [['p3-spike-x', os.tmpdir()], ['p3-spike-x', os.tmpdir(), '--other'], ['p3-spike-x', os.tmpdir(), '--production', 'extra']]) {
+        let failure;
+        try { execFileSync(process.execPath, [harness, ...args], { stdio: ['ignore', 'pipe', 'pipe'] }); }
+        catch (error) { failure = error; }
+        assert.ok(failure, args.join(' '));
+        assert.equal(failure.status, 1);
+        const report = JSON.parse(String(failure.stderr).trim().split('\n').at(-1));
+        assert.equal(report.code, 'ERR_ASSERTION');
+        assert.ok(!report.frames.some(frame => frame.includes('runSandboxProbe')), 'refused as a usage error before any probe runs');
+    }
 });

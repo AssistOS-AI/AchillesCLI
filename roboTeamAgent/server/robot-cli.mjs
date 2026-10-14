@@ -34,10 +34,6 @@ try {
     releaseUsage = context.releaseUsage;
     const { setRobotContext } = await import('../copilot/src/lib/execution/robotContext.mjs');
     setRobotContext(context);
-    if (process.env.ROBOTEAM_LIVE_SESSIONS_SPIKE === '1') {
-        const { runCliProbe } = await import('../tests/spikes/live-sessions-process-probe.mjs');
-        await runCliProbe();
-    }
     const { main } = await import('../copilot/src/index.mjs');
     await main(args, { workflowSkills: true, systemPrompt: WORKSPACE_COPILOT_PROMPT });
 } catch (error) {

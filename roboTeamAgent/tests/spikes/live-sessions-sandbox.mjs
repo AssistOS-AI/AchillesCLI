@@ -7,6 +7,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { SOCKET_PATHS, connectProbe, processIdentity } from './live-sessions-process-probe.mjs';
+import { connectProductionProbe } from './live-sessions-production-probe.mjs';
 
 export const PLAN_FILE = '.p3-spike-plan.json';
 export const PRODUCTION_GRANTS = Object.freeze(['ploinky-runtime', 'roboflow-human-input', 'roboteam-task-failure',
@@ -163,8 +164,13 @@ export async function runAlaCapture() {
     }
 }
 
-export async function runSandboxProbe(robotName, workingDir) {
+// listener selects the trusted controls: 'diagnostic' (P3.0 listener) or
+// 'production' (the production IPC listener, for G2). The sandbox alias
+// checks are identical for both.
+export async function runSandboxProbe(robotName, workingDir, { listener = 'diagnostic' } = {}) {
     assert.equal(process.platform, 'linux', 'Real sandbox spike requires Linux');
+    assert.ok(['diagnostic', 'production'].includes(listener), 'Unknown listener');
+    const control = listener === 'production' ? connectProductionProbe : connectProbe;
     assert.match(robotName, /^p3-spike-[a-z0-9-]+$/, 'Select a dedicated diagnostic robot');
     const workspaceRoot = await fsp.realpath(process.env.PLOINKY_WORKSPACE_ROOT);
     const cwd = await fsp.realpath(workingDir);
@@ -193,7 +199,7 @@ export async function runSandboxProbe(robotName, workingDir) {
             installation: { ...installation, entryPath: fileURLToPath(import.meta.url) },
             execution: { robotId: context.robot.id, backend: 'claude', workflowExecution: true } });
         const identity = await processIdentity();
-        const before = await Promise.all(SOCKET_PATHS.map(socketPath => connectProbe(socketPath, identity)));
+        const before = await Promise.all(SOCKET_PATHS.map(socketPath => control(socketPath, identity)));
         // The trusted controls prove this harness shares the service mount
         // namespace, so its mountinfo identifies the service-side socket device.
         const serviceMounts = parseMountInfo(await fsp.readFile('/proc/self/mountinfo', 'utf8'));
@@ -206,8 +212,8 @@ export async function runSandboxProbe(robotName, workingDir) {
         const observed = JSON.parse(result.outputText);
         const plan = JSON.parse(await fsp.readFile(path.join(cwd, PLAN_FILE), 'utf8'));
         verifySandboxRecord({ plan, observed, socketDevices }, identity.mountNamespace);
-        const after = await Promise.all(before.map(entry => connectProbe(entry.socketPath, identity, entry.incarnationDigest)));
-        return { kind: 'sandbox-spike', status: 'passed', before, after, plan, observed, socketDevices,
+        const after = await Promise.all(before.map(entry => control(entry.socketPath, identity, entry.incarnationDigest)));
+        return { kind: 'sandbox-spike', status: 'passed', listener, before, after, plan, observed, socketDevices,
             backendSha256: createHash('sha256').update(await fsp.readFile(process.env.CLAUDE_BIN)).digest('hex'),
             limitation: 'Trusted controls here run in harness; actual Ploinky CLI before/after controls are separately required.' };
     } finally {
@@ -223,8 +229,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     try {
         if (process.argv.includes('--home')) await runAlaCapture();
         else {
-            assert.equal(process.argv.length, 4, 'Usage: node live-sessions-sandbox.mjs p3-spike-ROBOT /absolute/empty/cwd');
-            console.log(JSON.stringify(await runSandboxProbe(process.argv[2], process.argv[3])));
+            const listener = { '--diagnostic': 'diagnostic', '--production': 'production' }[process.argv[4]];
+            assert.ok(process.argv.length === 5 && listener,
+                'Usage: node live-sessions-sandbox.mjs p3-spike-ROBOT /absolute/empty/cwd --diagnostic|--production');
+            console.log(JSON.stringify(await runSandboxProbe(process.argv[2], process.argv[3], { listener })));
         }
     } catch (error) {
         console.error(JSON.stringify({ kind: 'sandbox-spike', status: 'failed', code: error.code || error.name,
