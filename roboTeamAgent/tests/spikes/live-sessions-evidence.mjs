@@ -24,22 +24,25 @@ export async function candidateHashes(directory = SPIKE_DIRECTORY) {
 }
 
 // Revision of the checkout that holds this assembler. An explicit revision is
-// accepted only when git cannot identify the checkout; it never overrides git.
+// accepted only when git is not installed or the directory is provably outside
+// any repository; every other git failure is refused. It never overrides git.
 export async function readCheckout(directory = SPIKE_DIRECTORY, { explicitRevision } = {}) {
-    let observed = null;
+    const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))), LC_ALL: 'C' };
+    const git = (...args) => execFileSync('git', ['-C', directory, ...args], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    let observed;
     try {
-        const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
-        const git = (...args) => execFileSync('git', ['-C', directory, ...args], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
         observed = { revision: git('rev-parse', 'HEAD'),
             dirty: git('status', '--porcelain', '--untracked-files=no', '--', '.') !== '', source: 'git' };
-    } catch { observed = null; }
-    if (observed) {
-        if (explicitRevision !== undefined) assert.equal(explicitRevision, observed.revision, 'Explicit revision differs from the git checkout');
-        return observed;
+    } catch (error) {
+        const stderr = String(error.stderr || '');
+        const unavailable = error.code === 'ENOENT' || /^fatal: not a git repository \(or any of the parent directories\)/m.test(stderr);
+        if (!unavailable) assert.fail(`Git could not verify the assembler checkout: ${stderr.trim().split('\n')[0] || error.code || error.message}`);
+        assert.ok(typeof explicitRevision === 'string' && REVISION.test(explicitRevision),
+            'Git is unavailable; supply the checkout revision explicitly');
+        return { revision: explicitRevision, dirty: null, source: 'explicit' };
     }
-    assert.ok(typeof explicitRevision === 'string' && REVISION.test(explicitRevision),
-        'Git is unavailable; supply the checkout revision explicitly');
-    return { revision: explicitRevision, dirty: null, source: 'explicit' };
+    if (explicitRevision !== undefined) assert.equal(explicitRevision, observed.revision, 'Explicit revision differs from the git checkout');
+    return observed;
 }
 
 function requireSocketSet(records, label) {
@@ -85,6 +88,7 @@ export async function assembleEvidence(directory, { explicitRevision, readChecko
     assert.equal(owner.harnessSha256, candidate.owner, 'Owner probe must be the candidate harness');
     assert.equal(owner.ploinky?.revision, pins.revisions.ploinky, 'Owner probe must import the pinned Ploinky revision');
     assert.equal(owner.ploinky?.dirty, false, 'Owner probe Ploinky source must be clean');
+    assert.deepEqual(owner.ploinkyAfter, owner.ploinky, 'Owner probe Ploinky source must not change during the probe');
     requireSocketSet(service, 'Service');
     requireSocketSet(before, 'CLI before');
     requireSocketSet(after, 'CLI after');
@@ -166,7 +170,10 @@ export async function assembleEvidence(directory, { explicitRevision, readChecko
         + `Socket alias probes: ${expected.length}; every result ENOENT.\n`
         + 'No sandbox mount exposes the socket filesystem device; the backend ran in a distinct mount namespace.\n'
         + 'Production coding-agent runtime mounts stay inside their tool-cache generations; nothing is mounted below the cache.\n'
-        + `Harness hashes match AchillesCLI ${checkout.revision}; owner probe used clean Ploinky ${owner.ploinky.revision}.\n`
+        + (checkout.source === 'explicit'
+            ? `Harness hashes match this checkout, whose AchillesCLI revision ${checkout.revision} is operator-asserted and unverified (git unavailable).\n`
+            : `Harness hashes match AchillesCLI ${checkout.revision}; the checkout's spike files are unmodified.\n`)
+        + `Owner probe used clean Ploinky ${owner.ploinky.revision}, unchanged during the probe.\n`
         + 'Real service and CLI identity controls agree before and after the sandbox run.\n'
         + 'Real Router minting, expiry, replay, tampering and receive/preparation delay checks passed.\n', { flag: 'wx', mode: 0o600 });
     return manifest;

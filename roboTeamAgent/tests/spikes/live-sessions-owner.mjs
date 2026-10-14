@@ -151,8 +151,9 @@ export async function runOwnerProbe(ploinkyRoot) {
         await dispatcher.drain();
         assert.equal(started.length, 2);
         assert.ok(started[1].startedAt > started[1].expiresAt);
-        assert.deepEqual(sourceRevision(ploinkyRoot), ploinky, 'Ploinky source changed during the probe');
-        return { kind: 'owner-spike', status: 'passed', ploinky, harnessSha256, audience, ttlSeconds: 30,
+        const ploinkyAfter = sourceRevision(ploinkyRoot);
+        assert.deepEqual(ploinkyAfter, ploinky, 'Ploinky source changed during the probe');
+        return { kind: 'owner-spike', status: 'passed', ploinky, ploinkyAfter, harnessSha256, audience, ttlSeconds: 30,
             rch: admitted.payload.rch, jtiDigest: createHash('sha256').update(admitted.payload.jti).digest('hex'),
             checks: ['real-router-serializer-minter', 'raw-hash', 'wrong-tuple', 'jti-replay', 'text', 'presentation', 'tab', 'page',
                 'attachments', 'references', 'tool', 'audience', 'method', 'path', 'expiry', 'receive-preparation-delay'], started,

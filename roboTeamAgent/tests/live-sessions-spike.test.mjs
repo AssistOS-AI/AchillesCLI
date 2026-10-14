@@ -170,6 +170,7 @@ function completeEvidence() {
     const before = controls(hash);
     const after = controls('b'.repeat(64));
     const owner = { kind: 'owner-spike', status: 'passed', ploinky: { revision: REVISIONS.ploinky, dirty: false },
+        ploinkyAfter: { revision: REVISIONS.ploinky, dirty: false },
         harnessSha256: CANDIDATE.owner, checks: ['real-router-serializer-minter', 'raw-hash', 'wrong-tuple', 'jti-replay',
             'text', 'presentation', 'tool', 'audience', 'expiry', 'receive-preparation-delay'],
         started: [{ admittedAt: 1, expiresAt: 2, startedAt: 3 }] };
@@ -300,6 +301,8 @@ test('assembler re-verifies the sandbox record, provenance and owner source inst
         ['Ploinky source dirty', files => { files['owner-result.json'].ploinky.dirty = true; }, /Ploinky source must be clean/],
         ['Ploinky dirty state missing', files => { delete files['owner-result.json'].ploinky.dirty; }, /Ploinky source must be clean/],
         ['Ploinky revision missing', files => { delete files['owner-result.json'].ploinky; }, /pinned Ploinky revision/],
+        ['Ploinky revision changed during the probe', files => { files['owner-result.json'].ploinkyAfter.revision = 'f'.repeat(40); }, /must not change during the probe/],
+        ['Ploinky end state missing', files => { delete files['owner-result.json'].ploinkyAfter; }, /must not change during the probe/],
         ['Achilles revision mismatch', () => ({ readCheckout: async () => ({ revision: 'f'.repeat(40), dirty: false, source: 'git' }) }), /pinned Achilles revision/],
         ['Achilles spike files dirty', () => ({ readCheckout: async () => ({ revision: REVISIONS.AchillesCLI, dirty: true, source: 'git' }) }), /spike files must be unmodified/],
         ['shm device mounted at its root', shmMount('/'), /expose the socket filesystem/],
@@ -310,6 +313,7 @@ test('assembler re-verifies the sandbox record, provenance and owner source inst
         ['malformed sandbox mount device', files => { sandbox(files).observed.mounts[0].device = 'shm'; }, /entries must be complete/],
         ['missing sandbox root mount', files => { sandbox(files).observed.mounts = sandbox(files).observed.mounts.filter(mount => mount.target !== '/'); }, /include its root mount/],
         ['missing socket device', files => { delete sandbox(files).socketDevices; }, /device identities are required/],
+        ['malformed socket device', files => { Object.assign(sandbox(files).socketDevices[0], { device: 'shm', statDevice: 'shm' }); }, /Socket device is required/],
         ['socket device stat disagreement', files => { sandbox(files).socketDevices[0].statDevice = '0:30'; }, /stat devices must agree/],
         ['substituted socket device path', files => { sandbox(files).socketDevices[0].socketPath = '/run/roboteam-live/registry.sock'; }, /exactly the selected socket set/],
         ['tool cache unavailable', files => { Object.assign(toolcache(files), { status: 'unavailable', agents: [] }); delete toolcache(files).ala; }, /Tool-cache state must be observed/],
@@ -447,4 +451,45 @@ test('tool-cache collector peeks without preparing and records the production bi
     assert.equal(mounted.status, 'unavailable');
     assert.deepEqual(mounted.cacheMounts.map(mount => mount.target), ['/data/tool-cache/claude']);
     assert.throws(() => verifyToolCacheRecord(mounted), /must be observed/);
+});
+
+test('assembler checkout provenance through the real git reader', async t => {
+    const { readCheckout } = await spike('evidence');
+    const { root: checkout } = await fixture(t);
+    const through = directory => (_, options) => readCheckout(directory, options);
+    const run = async (directory, revision, options = {}) => {
+        const { root } = await fixture(t);
+        const files = completeEvidence();
+        files['runtime-pins.json'].revisions.AchillesCLI = revision;
+        await writeEvidence(root, files);
+        return { root, result: assembleEvidence(root, { readCheckout: through(directory), ...options }) };
+    };
+    // Provably outside any repository: only an operator-asserted revision passes, and says so.
+    const noRevision = await run(checkout, REVISIONS.AchillesCLI);
+    await assert.rejects(noRevision.result, /supply the checkout revision/);
+    const explicit = await run(checkout, REVISIONS.AchillesCLI, { explicitRevision: REVISIONS.AchillesCLI });
+    const manifest = await explicit.result;
+    assert.deepEqual(manifest.assemblerCheckout, { revision: REVISIONS.AchillesCLI, source: 'explicit' });
+    assert.match(await fs.readFile(path.join(explicit.root, 'p3-spike.txt'), 'utf8'), /operator-asserted and unverified/);
+    // Any other git failure is refused even with an explicit revision.
+    const broken = path.join(checkout, 'broken');
+    await fs.mkdir(broken);
+    await fs.writeFile(path.join(broken, '.git'), 'gitdir: /nonexistent/p3-fixture\n');
+    const refused = await run(broken, REVISIONS.AchillesCLI, { explicitRevision: REVISIONS.AchillesCLI });
+    await assert.rejects(refused.result, /Git could not verify the assembler checkout: fatal: not a git repository: /);
+    await assert.rejects(fs.lstat(path.join(refused.root, 'p3-spike.txt')), { code: 'ENOENT' });
+    // A real repository at the pinned revision with a modified tracked spike file is refused.
+    const repository = path.join(checkout, 'repository');
+    await fs.mkdir(repository);
+    git(repository, 'init', '-q');
+    await fs.writeFile(path.join(repository, 'live-sessions-evidence.mjs'), 'export {};\n');
+    git(repository, 'add', '.');
+    git(repository, 'commit', '-q', '-m', 'fixture');
+    const head = git(repository, 'rev-parse', 'HEAD');
+    const clean = await run(repository, head);
+    assert.equal((await clean.result).assemblerCheckout.source, 'git');
+    await fs.writeFile(path.join(repository, 'live-sessions-evidence.mjs'), 'export const weakened = true;\n');
+    const dirty = await run(repository, head);
+    await assert.rejects(dirty.result, /spike files must be unmodified/);
+    await assert.rejects(fs.lstat(path.join(dirty.root, 'p3-spike.json')), { code: 'ENOENT' });
 });
