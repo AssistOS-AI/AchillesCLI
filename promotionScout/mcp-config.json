@@ -644,6 +644,270 @@
       }
     },
     {
+      "name": "scout_agent_topics_list",
+      "title": "List topics (agents)",
+      "description": "Pages the active topics with their search terms, tags and subtopics. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "topics-list"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_topic_create",
+      "title": "Add topic (agents)",
+      "description": "Adds a topic, or restores a removed one, with optional search terms and tags. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "topic-create"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "searchTerms": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 50
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_topic_delete",
+      "title": "Remove topic (agents)",
+      "description": "Deactivates a topic; its history stays stored and adding it again restores it. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "topic-delete"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_subtopic_add",
+      "title": "Add subtopic (agents)",
+      "description": "Adds a subtopic to a topic. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "subtopic-add"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_subtopic_remove",
+      "title": "Remove subtopic (agents)",
+      "description": "Removes a subtopic and its scores. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "subtopic-remove"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_discussions_list",
+      "title": "List subtopic matches (agents)",
+      "description": "Pages the discussions read behind results, with their post, comments, subtopic scores and stored comments. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "discussions-list"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "show": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "new",
+              "all"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "scout_agent_comments_add",
+      "title": "Store comments (agents)",
+      "description": "Stores a batch of comments written by an agent for discussions of the Subtopic matches tab, in one transaction: all are stored or none. Each comment names its discussion by the item id and project scout_agent_discussions_list returns; without a subtopic it is filed under the best-scoring one. Shared agent and model names apply to comments that do not set their own. For other agents, such as RoboTeam robots.",
+      "command": "node",
+      "args": [
+        "tools/scout.mjs",
+        "comments-add"
+      ],
+      "cwd": "/code",
+      "timeoutMs": 60000,
+      "tags": [
+        "internal"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "comments": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "project": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "comment": {
+                  "type": "string",
+                  "maxLength": 10000
+                },
+                "subtopic": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "agent": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "model": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "item",
+                "project",
+                "comment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "agent": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "scout_run_cycle",
       "title": "Run one monitoring cycle",
       "description": "Runs one collection, ranking and discussion cycle as an asynchronous task. Started only by the agent daemon; progress is the task log.",

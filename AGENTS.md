@@ -40,4 +40,5 @@ Manual Run now shares scheduled execution claims and run linkage, requires an ad
 - `roboTeamAgent/docs/`: current documentation and specifications.
 - `GPTResearcher/docs/`: separate research-worker documentation, local canonical wiki and specification set. Its generated-local model adapter must retain the `PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED` refusal before routing credential access until authority-transport certification exists.
 - `promotionScout/`: the Promotion Scout agent (manifest, MCP tools, daemon, static web interface), its documentation and specifications under `promotionScout/docs/`, and its tests under `promotionScout/test/`.
+- `skills/`: self-contained Anthropic skills for RoboTeam robots, currently Promotion Scout's (specified in `promotionScout/docs/specs/DS009-agent-runtime.md`). This root folder makes AchillesCLI a mixed repository for Ploinky; RoboTeam reads only this folder from it. Keep every skill folder with a valid `SKILL.md` and no symbolic links, or Ploinky stops listing the repository as a skill source.
 - `tests/`, `roboTeamAgent/tests/`, `roboTeamAgent/copilot/tests/`: integration and module tests.

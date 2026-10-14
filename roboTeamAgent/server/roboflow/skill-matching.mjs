@@ -46,10 +46,11 @@ export async function discoverWorkflowSkillsets(client) {
     const repositories = await client.listRepositories();
     const skillsets = [], diagnostics = [];
     for (let repository of repositories) {
-        // Only dedicated skill repositories contribute workflow skillsets. Their
-        // skills live under `skills/`; other directories such as `.agents/skills`
+        // Skill repositories and mixed repositories (agents plus a root `skills/`
+        // folder) contribute workflow skillsets. Their skills live under `skills/`;
+        // other directories such as `.agents/skills` or an agent's own folders
         // belong to agent instructions and are never scanned.
-        if (repository.kind !== 'skills') continue;
+        if (!['skills', 'mixed'].includes(repository.kind)) continue;
         if (!repository.source) { diagnostics.push({ repository: repository.name, message: 'Repository source is unavailable' }); continue; }
         try {
             if (repository.origin === 'remote') {
@@ -68,10 +69,13 @@ export async function discoverWorkflowSkillsets(client) {
             if (!definitions.length && path.resolve(source) !== path.resolve(skillsRoot)) {
                 definitions.push(...await readSkillsetDefinitions(skillsRoot, skillNames));
             }
-            if (definitions.length) for (const set of definitions) skillsets.push({ id: canonicalSkillset(source, set.name), kind: 'skillset',
-                name: set.name, description: set.description, repositoryId: source, repositoryName: repository.name });
-            else for (const name of skillNames) skillsets.push({ id: canonicalSkill(source, name), kind: 'skill', name,
-                description: '', repositoryId: source, repositoryName: repository.name });
+            // A robot records a mixed repository by its skills/ folder (RobotSkillsets.skillRoot), so the
+            // workflow ids of its skills start there too; a skills repository is recorded by its root.
+            const base = repository.kind === 'mixed' ? skillsRoot : source;
+            if (definitions.length) for (const set of definitions) skillsets.push({ id: canonicalSkillset(base, set.name), kind: 'skillset',
+                name: set.name, description: set.description, repositoryId: base, repositoryName: repository.name });
+            else for (const name of skillNames) skillsets.push({ id: canonicalSkill(base, name), kind: 'skill', name,
+                description: '', repositoryId: base, repositoryName: repository.name });
         } catch (error) { diagnostics.push({ repository: repository.name, message: error.message }); }
     }
     const copilotSkills = await listSkillNames(copilotSkillsRoot);

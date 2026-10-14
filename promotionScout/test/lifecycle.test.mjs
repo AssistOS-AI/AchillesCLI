@@ -89,21 +89,24 @@ test('lifecycle lock excludes concurrent work and is released after failure', as
   assert.ok((await identity(process.pid)).start);
 });
 
-test('only init downloads unavailable models; inference errors never trigger downloads', async () => {
+test('only the install step downloads models, once, and never runs inference', async t => {
+  const dir = await workspace(t);
   let calls = [], disposed = 0;
-  const profile = { provider: 'fixture', dimensions: 2 };
+  const profile = { provider: 'fixture', model: 'org/model', revision: 'abc', dtype: 'q8', dimensions: 2 };
   const registry = { fixture: { create: async (_profile, options) => {
     calls.push(options.download === true);
     if (!options.download) throw Object.assign(Error('missing'), { code: 'MODEL_UNAVAILABLE' });
-    return { embed: async () => [[1, 0]], dispose: async () => disposed++ };
+    return { embed: async () => { throw Error('inference must not run'); }, dispose: async () => disposed++ };
   } } };
-  await assert.rejects(prepareModel(profile, '/unused', quiet, registry), { code: 'MODEL_UNAVAILABLE' });
+  await assert.rejects(prepareModel(profile, dir, quiet, registry), { code: 'MODEL_UNAVAILABLE' });
   assert.deepEqual(calls, [false]); calls = [];
-  await prepareModel(profile, '/unused', quiet, registry, true);
-  assert.deepEqual(calls, [false, true]); assert.equal(disposed, 1);
-  registry.fixture.create = async () => ({ embed: async () => { throw Error('bad inference'); }, dispose: async () => disposed++ });
-  await assert.rejects(prepareModel(profile, '/unused', quiet, registry, true), /bad inference/);
-  assert.equal(disposed, 2);
+  await prepareModel(profile, dir, quiet, registry, true);
+  assert.deepEqual(calls, [false, true]); assert.equal(disposed, 1); calls = [];
+  await prepareModel(profile, dir, quiet, registry, true);
+  assert.deepEqual(calls, [], 'a recorded download is not loaded again');
+  const failing = { fixture: { create: async () => { throw Object.assign(Error('offline'), { code: 'MODEL_DOWNLOAD_FAILED' }); } } };
+  await assert.rejects(prepareModel({ ...profile, revision: 'def' }, dir, quiet, failing, true), /offline/);
+  await assert.rejects(prepareModel({ ...profile, revision: 'def' }, dir, quiet, failing, true), /offline/, 'a failed download records nothing');
 });
 
 test('stop cleans up a child that ignores SIGTERM after its parent exits', async t => {

@@ -172,7 +172,7 @@ export function discussionsView(store, space, { project, threshold, subtopicThre
     LEFT JOIN thread_scores ts ON ts.subtopic=st.id AND ts.item=? AND ts.space=? AND ts.content_hash=?
     WHERE st.project=? ORDER BY ts.score DESC, st.id`);
   const names = sitesOf(store, rows.map(row => row.id));
-  // Comments generated before comment generation was removed stay readable, oldest first; nothing adds new ones.
+  // Stored comments, oldest first: those other agents add with scout_agent_comments_add and any from earlier versions.
   const generationsOf = store.db.prepare(`SELECT id, comment, agent, model, subtopic, finished_at FROM generations
     WHERE item=? AND project=? AND status='done' AND comment IS NOT NULL ORDER BY id`);
   const all = rows.map(({ comments, item_title, content_hash, seen_at, ...row }) => {

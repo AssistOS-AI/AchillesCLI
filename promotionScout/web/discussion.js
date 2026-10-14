@@ -1,4 +1,4 @@
-// The post, its comments and any comments generated before comment generation was removed; nothing generates new ones.
+// The post, its comments and the comments stored for it: written by other agents (RoboTeam robots) or by earlier versions.
 export function createDiscussionBody({ el, when, state }) {
   return function discussionBody(row) {
     const key = `${row.id}|${row.project}`;

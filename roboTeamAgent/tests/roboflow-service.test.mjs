@@ -436,10 +436,13 @@ test('workflow skillset discovery reads only skills/ by folder name and never pa
     await fs.mkdir(path.dirname(skill), { recursive: true });
     // A descriptor with a different declared name must not affect the catalog.
     await fs.writeFile(skill, '---\nname: Review Extra\ndescription: Review code.\n---\n');
+    const mixedSource = path.join(f.root, 'mixed');
+    await fs.mkdir(path.join(mixedSource, 'skills', 'review'), { recursive: true });
+    await fs.writeFile(path.join(mixedSource, 'skills', 'review', 'SKILL.md'), '---\nname: review\ndescription: Review code.\n---\n');
     const catalog = await discoverWorkflowSkillsets({
         listRepositories: async () => [
             { name: 'project', source, origin: 'workspace', kind: 'skills' },
-            { name: 'mixed-repo', source, origin: 'workspace', kind: 'mixed' },
+            { name: 'mixed-repo', source: mixedSource, origin: 'workspace', kind: 'mixed' },
             { name: 'agent-repo', source, origin: 'workspace', kind: 'agents' },
         ],
     });
@@ -447,7 +450,15 @@ test('workflow skillset discovery reads only skills/ by folder name and never pa
     assert.ok(catalog.skillsets.some(set => set.kind === 'skill' && set.repositoryName === 'project' && set.name === 'review'));
     assert.equal(catalog.skillsets.some(set => set.name === 'Review Extra'), false);
     assert.equal(catalog.skillsets.some(set => set.name === 'achilles_specs'), false);
-    assert.equal(catalog.skillsets.some(set => ['mixed-repo', 'agent-repo'].includes(set.repositoryName)), false);
+    const mixedSkill = catalog.skillsets.find(set => set.repositoryName === 'mixed-repo' && set.name === 'review');
+    assert.ok(mixedSkill, 'mixed repositories contribute their skills/ folder');
+    // A robot records a mixed repository by its skills/ folder, so it covers the workflow's id for the skill.
+    const mixedRoot = path.join(await fs.realpath(mixedSource), 'skills');
+    assert.equal(mixedSkill.id, canonicalSkill(mixedRoot, 'review'));
+    const robot = { id: 'scout', name: 'scout', skillsets: [{ name: 'mixed-repo', source: mixedRoot,
+        skills: [{ name: 'review', description: 'Review code.', directory: 'review' }], definitions: [] }] };
+    assert.equal(matchRobot(robot, { skillsets: [mixedSkill.id] }), true);
+    assert.equal(catalog.skillsets.some(set => set.repositoryName === 'agent-repo'), false);
 });
 
 test('repositories without declared skillsets match and mount individual skills', () => {
