@@ -9,6 +9,10 @@ import { createHash } from 'node:crypto';
 import { SOCKET_PATHS, connectProbe, processIdentity } from './live-sessions-process-probe.mjs';
 
 export const PLAN_FILE = '.p3-spike-plan.json';
+export const PRODUCTION_GRANTS = Object.freeze(['ploinky-runtime', 'roboflow-human-input', 'roboteam-task-failure',
+    'report-task-blocked'].map(name => `/workspace/${name}`));
+const MOUNT_DEVICE = /^\d+:\d+$/;
+const MOUNT_NAMESPACE = /^mnt:\[\d+\]$/;
 const inside = (root, value) => value === root || value.startsWith(root === '/' ? '/' : `${root}/`);
 const unescapeMount = value => value.replace(/\\([0-7]{3})/g, (_, digits) => String.fromCharCode(parseInt(digits, 8)));
 
@@ -38,13 +42,32 @@ export function captureGrants(args) {
     return grants;
 }
 
+// Filesystem coordinate of an absolute path: the backing device and the path
+// below that filesystem's root. The deepest covering mount wins; among stacked
+// mounts on one target, the last listed entry is the visible one.
+export function mountCoordinate(value, mounts) {
+    const mount = mounts.map((entry, index) => ({ entry, index })).filter(({ entry }) => inside(entry.target, value))
+        .sort((a, b) => b.entry.target.length - a.entry.target.length || b.index - a.index)[0]?.entry;
+    assert.ok(mount, 'Missing mount source identity');
+    return { device: mount.device, file: path.posix.join(mount.root, path.posix.relative(mount.target, value)) };
+}
+
+// Linux dev_t encoding (glibc gnu_dev_major/minor) for a bigint stat device.
+export function linuxDevice(dev) {
+    const major = ((dev >> 8n) & 0xfffn) | ((dev >> 32n) & ~0xfffn);
+    const minor = (dev & 0xffn) | ((dev >> 12n) & ~0xffn);
+    return `${major}:${minor}`;
+}
+
+// Mount entries inside the sandbox that expose a recorded socket's backing
+// filesystem at or above the socket. A fresh tmpfs has a different device.
+export function socketDeviceExposures(observedMounts, socketDevices) {
+    return observedMounts.filter(mount => socketDevices.some(socket => mount.device === socket.device
+        && inside(unescapeMount(mount.root), socket.file)));
+}
+
 export function aliasesFor(socketPath, grants, mounts, realpath = value => fs.realpathSync(value)) {
-    const coordinate = value => {
-        const actual = realpath(value);
-        const mount = mounts.filter(entry => inside(entry.target, actual)).sort((a, b) => b.target.length - a.target.length)[0];
-        assert.ok(mount, 'Missing mount source identity');
-        return { device: mount.device, file: path.posix.join(mount.root, path.posix.relative(mount.target, actual)) };
-    };
+    const coordinate = value => mountCoordinate(realpath(value), mounts);
     const socket = coordinate(socketPath);
     const aliases = new Set([socketPath, realpath(socketPath)]);
     for (const grant of grants.filter(entry => entry.kind === 'bind')) {
@@ -71,6 +94,39 @@ export function aliasesFor(socketPath, grants, mounts, realpath = value => fs.re
         assert.ok(aliases.size < 256, 'Alias expansion limit exceeded');
     }
     return [...aliases].sort();
+}
+
+// Pure checks over a recorded sandbox result. The harness runs them before
+// reporting success and the evidence assembler re-runs them on the record.
+export function verifySandboxRecord({ plan, observed, socketDevices }, serviceMountNamespace) {
+    assert.equal(plan?.kind, 'actual-bwrap-spawn', 'Sandbox plan must come from the actual bwrap spawn');
+    assert.ok(Array.isArray(plan.grants), 'Sandbox grants are required');
+    const binds = plan.grants.filter(grant => grant?.kind === 'bind' && typeof grant.target === 'string');
+    for (const target of PRODUCTION_GRANTS) assert.ok(binds.some(grant => grant.target === target), `Missing production ${target} grant`);
+    assert.ok(binds.some(grant => grant.target.endsWith('/.agents/skills')), 'Missing production skill overlay');
+    assert.equal(observed?.kind, 'sandbox-socket-probe', 'Sandbox observation must come from the diagnostic backend');
+    assert.ok(typeof serviceMountNamespace === 'string' && MOUNT_NAMESPACE.test(serviceMountNamespace), 'Service mount namespace is required');
+    assert.ok(typeof observed.mountNamespace === 'string' && MOUNT_NAMESPACE.test(observed.mountNamespace), 'Sandbox mount namespace is required');
+    assert.notEqual(observed.mountNamespace, serviceMountNamespace, 'Backend must execute in a distinct mount namespace');
+    assert.ok(Array.isArray(observed.mounts) && observed.mounts.length > 0, 'Sandbox mountinfo must be observed');
+    assert.ok(observed.mounts.every(mount => typeof mount?.device === 'string' && MOUNT_DEVICE.test(mount.device)
+        && typeof mount.root === 'string' && mount.root.startsWith('/')
+        && typeof mount.target === 'string' && mount.target.startsWith('/')), 'Sandbox mountinfo entries must be complete');
+    assert.ok(observed.mounts.some(mount => mount.target === '/'), 'Sandbox mountinfo must include its root mount');
+    assert.ok(Array.isArray(socketDevices), 'Socket device identities are required');
+    assert.deepEqual(socketDevices.map(entry => entry?.socketPath).sort(), [...SOCKET_PATHS].sort(),
+        'Socket device identities must cover exactly the selected socket set');
+    for (const socket of socketDevices) {
+        assert.ok(typeof socket.device === 'string' && MOUNT_DEVICE.test(socket.device), 'Socket device is required');
+        assert.equal(socket.statDevice, socket.device, 'Socket mountinfo and stat devices must agree');
+        assert.ok(typeof socket.file === 'string' && path.posix.isAbsolute(socket.file), 'Socket filesystem path is required');
+    }
+    assert.deepEqual(socketDeviceExposures(observed.mounts, socketDevices), [],
+        'No sandbox mount may expose the socket filesystem at or above the socket');
+    assert.ok(Array.isArray(plan.sockets) && Array.isArray(observed.results), 'Sandbox aliases and results are required');
+    const aliases = [...new Set(plan.sockets.flatMap(entry => entry.aliases))].sort();
+    assert.deepEqual(observed.results.map(entry => entry.path).sort(), aliases);
+    for (const entry of observed.results) assert.equal(entry.error, 'ENOENT', 'Every socket alias must be absent inside ALA');
 }
 
 export async function runAlaCapture() {
@@ -138,23 +194,20 @@ export async function runSandboxProbe(robotName, workingDir) {
             execution: { robotId: context.robot.id, backend: 'claude', workflowExecution: true } });
         const identity = await processIdentity();
         const before = await Promise.all(SOCKET_PATHS.map(socketPath => connectProbe(socketPath, identity)));
+        // The trusted controls prove this harness shares the service mount
+        // namespace, so its mountinfo identifies the service-side socket device.
+        const serviceMounts = parseMountInfo(await fsp.readFile('/proc/self/mountinfo', 'utf8'));
+        const socketDevices = await Promise.all(SOCKET_PATHS.map(async socketPath => {
+            const realpath = await fsp.realpath(socketPath);
+            return { socketPath, realpath, ...mountCoordinate(realpath, serviceMounts),
+                statDevice: linuxDevice((await fsp.stat(realpath, { bigint: true })).dev) };
+        }));
         const result = await engine.executeTurn({ sessionId: session.sessionId, prompt: 'Run the fixed isolation diagnostic.' });
         const observed = JSON.parse(result.outputText);
-        assert.equal(observed.kind, 'sandbox-socket-probe');
-        assert.match(observed.mountNamespace, /^mnt:\[\d+\]$/);
-        assert.notEqual(observed.mountNamespace, identity.mountNamespace, 'Backend must execute in a distinct mount namespace');
-        assert.ok(observed.mounts.length > 0, 'Sandbox mountinfo must be observed');
         const plan = JSON.parse(await fsp.readFile(path.join(cwd, PLAN_FILE), 'utf8'));
-        assert.equal(plan.kind, 'actual-bwrap-spawn');
-        for (const target of ['ploinky-runtime', 'roboflow-human-input', 'roboteam-task-failure', 'report-task-blocked']) {
-            assert.ok(plan.grants.some(grant => grant.target === `/workspace/${target}`), `Missing production ${target} grant`);
-        }
-        assert.ok(plan.grants.some(grant => grant.target.endsWith('/.agents/skills')), 'Missing production skill overlay');
-        const aliases = [...new Set(plan.sockets.flatMap(entry => entry.aliases))].sort();
-        assert.deepEqual(observed.results.map(entry => entry.path).sort(), aliases);
-        for (const entry of observed.results) assert.equal(entry.error, 'ENOENT', 'Every socket alias must be absent inside ALA');
+        verifySandboxRecord({ plan, observed, socketDevices }, identity.mountNamespace);
         const after = await Promise.all(before.map(entry => connectProbe(entry.socketPath, identity, entry.incarnationDigest)));
-        return { kind: 'sandbox-spike', status: 'passed', before, after, plan, observed,
+        return { kind: 'sandbox-spike', status: 'passed', before, after, plan, observed, socketDevices,
             backendSha256: createHash('sha256').update(await fsp.readFile(process.env.CLAUDE_BIN)).digest('hex'),
             limitation: 'Trusted controls here run in harness; actual Ploinky CLI before/after controls are separately required.' };
     } finally {

@@ -3,12 +3,26 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomBytes, createHash } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+
+// Revision of the exact repository root whose modules the probe imports. Dirty
+// means tracked changes; ignored dependencies and untracked files are excluded.
+export function sourceRevision(root) {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+    const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    assert.equal(git('rev-parse', '--show-toplevel'), root, 'Ploinky source must be a repository root');
+    const revision = git('rev-parse', 'HEAD');
+    assert.match(revision, /^[a-f0-9]{40}$/);
+    return { revision, dirty: git('status', '--porcelain', '--untracked-files=no') !== '' };
+}
 
 // Standalone process only: Router modules bind the workspace at import time.
 // Never run against a deployed Router or use its credentials.
 export async function runOwnerProbe(ploinkyRoot) {
+    const ploinky = sourceRevision(ploinkyRoot);
+    const harnessSha256 = createHash('sha256').update(await fs.readFile(fileURLToPath(import.meta.url))).digest('hex');
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'p3-owner-')));
     const originalCwd = process.cwd();
     const saved = { ...process.env };
@@ -137,7 +151,8 @@ export async function runOwnerProbe(ploinkyRoot) {
         await dispatcher.drain();
         assert.equal(started.length, 2);
         assert.ok(started[1].startedAt > started[1].expiresAt);
-        return { kind: 'owner-spike', status: 'passed', audience, ttlSeconds: 30,
+        assert.deepEqual(sourceRevision(ploinkyRoot), ploinky, 'Ploinky source changed during the probe');
+        return { kind: 'owner-spike', status: 'passed', ploinky, harnessSha256, audience, ttlSeconds: 30,
             rch: admitted.payload.rch, jtiDigest: createHash('sha256').update(admitted.payload.jti).digest('hex'),
             checks: ['real-router-serializer-minter', 'raw-hash', 'wrong-tuple', 'jti-replay', 'text', 'presentation', 'tab', 'page',
                 'attachments', 'references', 'tool', 'audience', 'method', 'path', 'expiry', 'receive-preparation-delay'], started,

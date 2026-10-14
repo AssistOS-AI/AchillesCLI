@@ -3,8 +3,44 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { SOCKET_PATHS } from './live-sessions-process-probe.mjs';
+import { verifySandboxRecord } from './live-sessions-sandbox.mjs';
+import { verifyToolCacheRecord } from './live-sessions-toolcache.mjs';
+
+const SPIKE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+// Candidate files whose recorded runtime hashes must equal this checkout's copy.
+export const CANDIDATE_FILES = Object.freeze({ wrapper: 'live-sessions-sandbox.mjs',
+    backend: 'live-sessions-probe-claude.mjs', owner: 'live-sessions-owner.mjs', toolcache: 'live-sessions-toolcache.mjs' });
+const REVISION = /^[a-f0-9]{40}$/;
+
+export async function candidateHashes(directory = SPIKE_DIRECTORY) {
+    const hashes = {};
+    for (const [name, file] of Object.entries(CANDIDATE_FILES)) {
+        hashes[name] = createHash('sha256').update(await fs.readFile(path.join(directory, file))).digest('hex');
+    }
+    return hashes;
+}
+
+// Revision of the checkout that holds this assembler. An explicit revision is
+// accepted only when git cannot identify the checkout; it never overrides git.
+export async function readCheckout(directory = SPIKE_DIRECTORY, { explicitRevision } = {}) {
+    let observed = null;
+    try {
+        const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+        const git = (...args) => execFileSync('git', ['-C', directory, ...args], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        observed = { revision: git('rev-parse', 'HEAD'),
+            dirty: git('status', '--porcelain', '--untracked-files=no', '--', '.') !== '', source: 'git' };
+    } catch { observed = null; }
+    if (observed) {
+        if (explicitRevision !== undefined) assert.equal(explicitRevision, observed.revision, 'Explicit revision differs from the git checkout');
+        return observed;
+    }
+    assert.ok(typeof explicitRevision === 'string' && REVISION.test(explicitRevision),
+        'Git is unavailable; supply the checkout revision explicitly');
+    return { revision: explicitRevision, dirty: null, source: 'explicit' };
+}
 
 function requireSocketSet(records, label) {
     assert.ok(Array.isArray(records), `${label} records are required`);
@@ -14,7 +50,8 @@ function requireSocketSet(records, label) {
 
 // Inputs are redacted JSON records only, never container logs, environment
 // dumps, envelopes or credentials. Coordinator supplies checked identities.
-export async function assembleEvidence(directory) {
+// Tests may inject the checkout reader; the CLI accepts only an explicit revision.
+export async function assembleEvidence(directory, { explicitRevision, readCheckout: reader = readCheckout } = {}) {
     const read = async name => JSON.parse(await fs.readFile(path.join(directory, name), 'utf8'));
     const pins = await read('runtime-pins.json');
     assert.equal(pins.workspace, path.join(os.homedir(), 'work', 'testExplorerFresh'));
@@ -29,13 +66,25 @@ export async function assembleEvidence(directory) {
     }
     assert.match(pins.candidateManifestSha256, /^[a-f0-9]{64}$/);
     assert.match(pins.readinessEvidenceSha256, /^[a-f0-9]{64}$/);
+    const checkout = await reader(SPIKE_DIRECTORY, { explicitRevision });
+    assert.equal(checkout?.revision, pins.revisions.AchillesCLI, 'Assembler checkout must be the pinned Achilles revision');
+    if (checkout.source !== 'explicit') assert.equal(checkout.dirty, false, 'Assembler spike files must be unmodified');
+    const candidate = await candidateHashes();
     const before = await read('cli-before.json');
     const after = await read('cli-after.json');
     const service = await read('service-probe.json');
     const sandbox = await read('sandbox-result.json');
     const owner = await read('owner-result.json');
+    const toolcache = await read('toolcache-result.json');
     assert.equal(sandbox.status, 'passed');
     assert.equal(owner.status, 'passed');
+    assert.equal(sandbox.kind, 'sandbox-spike', 'Sandbox result must come from the sandbox harness');
+    assert.equal(owner.kind, 'owner-spike', 'Owner result must come from the owner probe');
+    assert.equal(sandbox.plan?.wrapperSha256, candidate.wrapper, 'Sandbox wrapper must be the candidate harness');
+    assert.equal(sandbox.backendSha256, candidate.backend, 'Sandbox backend must be the candidate fixture');
+    assert.equal(owner.harnessSha256, candidate.owner, 'Owner probe must be the candidate harness');
+    assert.equal(owner.ploinky?.revision, pins.revisions.ploinky, 'Owner probe must import the pinned Ploinky revision');
+    assert.equal(owner.ploinky?.dirty, false, 'Owner probe Ploinky source must be clean');
     requireSocketSet(service, 'Service');
     requireSocketSet(before, 'CLI before');
     requireSocketSet(after, 'CLI after');
@@ -75,8 +124,14 @@ export async function assembleEvidence(directory) {
     assert.deepEqual(sandbox.observed.results.map(entry => entry.path).sort(), expected);
     assert.ok(expected.length >= SOCKET_PATHS.length);
     assert.ok(sandbox.observed.results.every(entry => entry.error === 'ENOENT'));
-    assert.match(sandbox.backendSha256, /^[a-f0-9]{64}$/);
-    assert.match(sandbox.plan.wrapperSha256, /^[a-f0-9]{64}$/);
+    // Re-run every harness check on the record instead of trusting its status.
+    const main = service.find(entry => entry.kind === 'service-ready' && entry.socketPath === SOCKET_PATHS[0]);
+    verifySandboxRecord(sandbox, main.mountNamespace);
+    // The fixture backend's runtime mount differs from production; production
+    // agent binaries must mount only their own tool-cache generation.
+    assert.equal(toolcache?.collectorSha256, candidate.toolcache, 'Tool-cache collector must be the candidate harness');
+    verifyToolCacheRecord(toolcache);
+    assert.equal(toolcache.mountNamespace, main.mountNamespace, 'Tool cache must be observed in the service mount namespace');
     const sourceChecks = ['real-router-serializer-minter', 'raw-hash', 'wrong-tuple', 'jti-replay', 'text', 'presentation', 'tool', 'audience', 'expiry', 'receive-preparation-delay'];
     for (const check of sourceChecks) assert.ok(owner.checks.includes(check), `Missing owner probe check: ${check}`);
     assert.ok(owner.started.some(entry => entry.startedAt > entry.expiresAt && entry.admittedAt < entry.expiresAt));
@@ -92,11 +147,15 @@ export async function assembleEvidence(directory) {
         containers: Object.fromEntries(['box', 'roboTeam'].map(name => [name, pins.containers[name]])),
         candidateManifestSha256: pins.candidateManifestSha256,
         readinessEvidenceSha256: pins.readinessEvidenceSha256,
+        assemblerCheckout: { revision: checkout.revision, source: checkout.source },
+        candidateSha256: candidate,
         checks: { sameUidAndMountNamespace: true, realCliBeforeAfter: true,
-            allSocketAliasesAbsent: true, realRouterOwnerProbe: true },
+            allSocketAliasesAbsent: true, realRouterOwnerProbe: true, sandboxRecordReverified: true,
+            socketDeviceUnexposed: true, harnessHashesBound: true, ownerPloinkyRevisionPinned: true,
+            productionRuntimeMountsInToolCacheGeneration: true },
         inputHashes: {} };
     for (const name of ['runtime-pins.json', 'cli-before.json', 'cli-after.json', 'service-probe.json',
-        'sandbox-result.json', 'owner-result.json', 'commands.json']) {
+        'sandbox-result.json', 'owner-result.json', 'toolcache-result.json', 'commands.json']) {
         manifest.inputHashes[name] = createHash('sha256').update(await fs.readFile(path.join(directory, name))).digest('hex');
     }
     await fs.writeFile(path.join(directory, 'p3-spike.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -105,12 +164,20 @@ export async function assembleEvidence(directory) {
         + `Candidate manifest SHA256: ${manifest.candidateManifestSha256}\n`
         + `Selected socket: ${manifest.selectedSocketPath}\n`
         + `Socket alias probes: ${expected.length}; every result ENOENT.\n`
+        + 'No sandbox mount exposes the socket filesystem device; the backend ran in a distinct mount namespace.\n'
+        + 'Production coding-agent runtime mounts stay inside their tool-cache generations; nothing is mounted below the cache.\n'
+        + `Harness hashes match AchillesCLI ${checkout.revision}; owner probe used clean Ploinky ${owner.ploinky.revision}.\n`
         + 'Real service and CLI identity controls agree before and after the sandbox run.\n'
         + 'Real Router minting, expiry, replay, tampering and receive/preparation delay checks passed.\n', { flag: 'wx', mode: 0o600 });
     return manifest;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-    try { await assembleEvidence(await fs.realpath(process.argv[2])); }
+    const flag = process.argv.indexOf('--achilles-revision');
+    try {
+        assert.ok([3, 5].includes(process.argv.length) && (process.argv.length === 3 || flag === 3),
+            'Usage: node live-sessions-evidence.mjs /artifact/dir [--achilles-revision SHA]');
+        await assembleEvidence(await fs.realpath(process.argv[2]), { explicitRevision: flag === 3 ? process.argv[4] : undefined });
+    }
     catch { console.error('P3 evidence incomplete or inconsistent; no success claim is available.'); process.exitCode = 1; }
 }
