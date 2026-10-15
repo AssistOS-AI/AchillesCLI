@@ -28,8 +28,16 @@ export class WorkflowRegistry {
         this.files = options.files || (options.workspaceRoot ? new WorkflowFiles({ workspaceRoot: options.workspaceRoot, folders: options.folders }) : null);
         this.fileIndex = new Map();
         this.fileErrors = [];
+        this.chain = Promise.resolve();
     }
-    async refreshFiles() {
+    // Scans and mutations share one queue because every scan republishes the whole catalog.
+    _serialize(operation) {
+        const next = this.chain.then(operation);
+        this.chain = next.catch(() => {});
+        return next;
+    }
+    async refreshFiles() { return this._serialize(async () => { await this._initialize(); await this._refreshFiles(); }); }
+    async _refreshFiles() {
         if (!this.files) return;
         const internal = new Set(this.database.db.prepare('SELECT id FROM workflow_types').all().map(row => row.id));
         const entries = await this.files.scan(), counts = new Map();
@@ -50,7 +58,8 @@ export class WorkflowRegistry {
         const entry = this.files.readSync(indexed.file);
         return entry.error ? null : entry;
     }
-    async initialize() {
+    async initialize() { return this._serialize(() => this._initialize()); }
+    async _initialize() {
         this.database.initialize();
         if (this.legacyDirectory) {
             const entries = await fs.readdir(this.legacyDirectory, { withFileTypes: true }).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
@@ -65,19 +74,24 @@ export class WorkflowRegistry {
         const entry = this.fileSync(id);
         return entry ? presentFile(entry) : null;
     }
-    async get(id) { await this.initialize(); await this.refreshFiles(); return this.getSync(id); }
-    async list() {
-        await this.initialize();
-        await this.refreshFiles();
+    async get(id) { return this._serialize(() => this._get(id)); }
+    async _get(id) { await this._initialize(); await this._refreshFiles(); return this.getSync(id); }
+    async list() { return this._serialize(() => this._list()); }
+    async _list() {
+        await this._initialize();
+        await this._refreshFiles();
         const internal = this.database.db.prepare('SELECT record FROM workflow_types').all().map(row => presentWorkflow(JSON.parse(row.record)));
         return [...internal, ...[...this.fileIndex.values()].map(presentFile)].sort((a, b) => a.name.localeCompare(b.name));
     }
     // With a location (a workspace folder), the workflow is created as <location>/flows/<id>.json.
     async create(input, builtin = false, { system = false, location } = {}) {
-        await this.initialize();
+        return this._serialize(() => this._create(input, builtin, { system, location }));
+    }
+    async _create(input, builtin, { system, location }) {
+        await this._initialize();
         const graph = normalizeWorkflow(input, { builtin });
         if (graph.id === 'code-development' && !system) throw conflict('Code Development is a reserved workflow');
-        await this.refreshFiles();
+        await this._refreshFiles();
         if (this.fileIndex.has(graph.id)) throw conflict('workflow id already exists');
         if (location !== undefined) {
             if (!this.files) throw invalid('workflow files need a workspace');
@@ -95,12 +109,15 @@ export class WorkflowRegistry {
             return record;
         });
     }
-    async ensure(input, { builtin = true, system = false } = {}) { return await this.get(input.id) || this.create(input, builtin, { system }); }
-    async update(id, input) {
+    async ensure(input, { builtin = true, system = false } = {}) {
+        return this._serialize(async () => await this._get(input.id) || this._create(input, builtin, { system }));
+    }
+    async update(id, input) { return this._serialize(() => this._update(id, input)); }
+    async _update(id, input) {
         if (protectedIds.has(id)) throw Object.assign(invalid('built-in workflows cannot be edited'), { statusCode: 409 });
-        await this.initialize();
+        await this._initialize();
         if (!this.internalSync(id)) {
-            await this.refreshFiles();
+            await this._refreshFiles();
             const entry = this.fileSync(id);
             if (!entry) return null;
             const previous = presentFile(entry);
@@ -121,15 +138,19 @@ export class WorkflowRegistry {
         });
     }
     async remove(id, { beforeRemove = () => {} } = {}) {
+        return this._serialize(() => this._remove(id, beforeRemove));
+    }
+    async _remove(id, beforeRemove) {
         if (protectedIds.has(id)) throw Object.assign(invalid('built-in workflows cannot be deleted'), { statusCode: 409 });
-        await this.initialize();
+        await this._initialize();
         if (!this.internalSync(id)) {
-            await this.refreshFiles();
+            await this._refreshFiles();
             const entry = this.fileIndex.get(id);
             if (!entry) return false;
             beforeRemove(id);
+            const removed = await this.files.remove(entry);
             this.fileIndex.delete(id);
-            return this.files.remove(entry);
+            return removed;
         }
         beforeRemove(id);
         return this.database.db.prepare('DELETE FROM workflow_types WHERE id=?').run(id).changes > 0;

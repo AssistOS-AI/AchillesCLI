@@ -9,6 +9,54 @@ import { ScheduleFolders } from '../server/roboflow/schedule-folders.mjs';
 const definition = (name, extra = {}) => ({ name, description: '', entryTaskId: 'one', edges: [],
     tasks: [{ id: 'one', name: 'One', prompt: 'Do one.', executionType: 'terminal', skillsets: [] }], ...extra });
 
+function deferred() {
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    return { promise, resolve };
+}
+
+async function bounded(promise) {
+    let timer;
+    try {
+        return await Promise.race([promise, new Promise((resolve, reject) => {
+            timer = setTimeout(() => reject(new Error('workflow operation did not settle')), 3000);
+        })]);
+    } finally { clearTimeout(timer); }
+}
+
+// Hold only the first real filesystem operation. A serialized second caller cannot enter yet.
+function holdFirst(t, object, method, { after = false } = {}) {
+    const original = object[method].bind(object), entered = deferred(), release = deferred();
+    let first = true;
+    object[method] = async (...args) => {
+        if (!first) return original(...args);
+        first = false;
+        const value = after ? await original(...args) : undefined;
+        entered.resolve();
+        await bounded(release.promise);
+        return after ? value : original(...args);
+    };
+    t.after(() => { release.resolve(); object[method] = original; });
+    return { entered: entered.promise, release: () => release.resolve() };
+}
+
+async function overlap(gate, first, second) {
+    // Attach rejection handlers before allowing either request to complete.
+    const results = Promise.allSettled([first, second]);
+    try {
+        // Give the competing request time to reach a scan/write on the unfixed registry.
+        await new Promise(resolve => setTimeout(resolve, 30));
+    } finally { gate.release(); }
+    return bounded(results);
+}
+
+function uniqueWinner(results) {
+    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(results.filter(result => result.status === 'rejected').length, 1);
+    assert.equal(results.find(result => result.status === 'rejected').reason.statusCode, 409);
+    return results.find(result => result.status === 'fulfilled').value;
+}
+
 async function workspace(t) {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'workflow-files-')));
     const registry = new WorkflowRegistry({ databaseFile: path.join(root, '.data', 'roboflow.sqlite'),
@@ -124,4 +172,131 @@ test('Save as on an existing workflow stores an external copy with -copy beside 
     // Long ids stay within the id limit; a new draft without an id keeps its own identity.
     assert.equal(workflowCopy({ ...original, id: 'a'.repeat(64) }).id, `${'a'.repeat(59)}-copy`);
     assert.equal(workflowCopy({ name: 'New', tasks: [] }).id, undefined);
+});
+
+test('overlapping file saves accept one revision and persist only that winner', async t => {
+    const { root, registry } = await workspace(t);
+    await fs.mkdir(path.join(root, 'Repo'));
+    const created = await registry.create(definition('Save race'), false, { location: 'Repo' });
+    const gate = holdFirst(t, registry.files, 'write');
+    const first = registry.update(created.id, { ...created, description: 'First editor' });
+    await bounded(gate.entered);
+    const results = await overlap(gate, first, registry.update(created.id, { ...created, description: 'Second editor' }));
+    const winner = uniqueWinner(results);
+    assert.equal(winner.description, 'First editor');
+    assert.equal(JSON.parse(await fs.readFile(path.join(root, winner.source.path), 'utf8')).description, winner.description);
+    assert.equal((await registry.get(created.id)).revision, winner.revision);
+    assert.equal((await registry.list())[0].description, winner.description);
+});
+
+test('overlapping creates in separate repositories retain one global workflow id', async t => {
+    const { root, registry } = await workspace(t);
+    await fs.mkdir(path.join(root, 'RepoA'));
+    await fs.mkdir(path.join(root, 'RepoB'));
+    const gate = holdFirst(t, registry.files, 'create');
+    const first = registry.create(definition('Global race'), false, { location: 'RepoA' });
+    await bounded(gate.entered);
+    const winner = uniqueWinner(await overlap(gate, first, registry.create(definition('Global race'), false, { location: 'RepoB' })));
+    assert.equal(winner.source.path, 'RepoA/flows/global-race.json');
+    assert.equal(JSON.parse(await fs.readFile(path.join(root, winner.source.path), 'utf8')).name, winner.name);
+    await assert.rejects(fs.access(path.join(root, 'RepoB/flows/global-race.json')), { code: 'ENOENT' });
+    assert.deepEqual((await registry.list()).map(graph => graph.id), [winner.id]);
+    assert.equal((await registry.get(winner.id)).revision, winner.revision);
+    assert.deepEqual(registry.fileErrors, []);
+});
+
+for (const firstSource of ['file', 'internal']) test(`overlapping ${firstSource}-first creation excludes the other source after a delayed real operation`, async t => {
+    const { root, registry } = await workspace(t);
+    await fs.mkdir(path.join(root, 'Repo'));
+    await registry.initialize();
+    // Internal-first holds its real empty admission scan; file-first holds file publication.
+    const gate = holdFirst(t, registry.files, firstSource === 'file' ? 'create' : 'scan', { after: firstSource === 'internal' });
+    const input = definition('Mixed race');
+    const create = source => registry.create({ ...input, description: source }, false, source === 'file' ? { location: 'Repo' } : {});
+    const first = create(firstSource);
+    await bounded(gate.entered);
+    const winner = uniqueWinner(await overlap(gate, first, create(firstSource === 'file' ? 'internal' : 'file')));
+    assert.equal(winner.description, firstSource);
+    assert.equal(Boolean(winner.source), firstSource === 'file');
+    const records = registry.database.db.prepare('SELECT id FROM workflow_types').all();
+    assert.equal(records.length, firstSource === 'internal' ? 1 : 0);
+    if (firstSource === 'file') assert.equal(JSON.parse(await fs.readFile(path.join(root, winner.source.path), 'utf8')).description, firstSource);
+    else await assert.rejects(fs.access(path.join(root, 'Repo/flows/mixed-race.json')), { code: 'ENOENT' });
+    assert.deepEqual((await registry.list()).map(graph => graph.id), [winner.id]);
+    assert.equal((await registry.get(winner.id)).description, firstSource);
+    assert.deepEqual(registry.fileErrors, []);
+});
+
+test('a delayed catalog refresh cannot clear a subsequent file creation', async t => {
+    const { root, registry } = await workspace(t);
+    await fs.mkdir(path.join(root, 'Repo'));
+    await registry.initialize();
+    const gate = holdFirst(t, registry.files, 'scan', { after: true });
+    const refresh = registry.refreshFiles();
+    await bounded(gate.entered);
+    const results = await overlap(gate, refresh, registry.create(definition('After refresh'), false, { location: 'Repo' }));
+    assert.deepEqual(results.map(result => result.status), ['fulfilled', 'fulfilled']);
+    const winner = results[1].value;
+    assert.equal(registry.getSync(winner.id)?.revision, winner.revision);
+    assert.equal((await registry.get(winner.id)).revision, winner.revision);
+    assert.deepEqual((await registry.list()).map(graph => graph.id), [winner.id]);
+    assert.deepEqual(registry.fileErrors, []);
+});
+
+test('scan, persistence and removal-guard rejections leave subsequent operations usable', async t => {
+    const { root, registry } = await workspace(t);
+    await fs.mkdir(path.join(root, 'Repo'));
+    const scan = registry.files.scan.bind(registry.files);
+    registry.files.scan = async () => { await scan(); throw new Error('injected scan failure'); };
+    await assert.rejects(registry.get('missing'), /injected scan failure/);
+    registry.files.scan = scan;
+    const create = registry.files.create.bind(registry.files);
+    registry.files.create = async () => { throw new Error('injected create failure'); };
+    await assert.rejects(registry.create(definition('Recovery'), false, { location: 'Repo' }), /injected create failure/);
+    registry.files.create = create;
+    const created = await bounded(registry.create(definition('Recovery'), false, { location: 'Repo' }));
+    const write = registry.files.write.bind(registry.files);
+    registry.files.write = async () => { throw new Error('injected write failure'); };
+    await assert.rejects(registry.update(created.id, { ...created, description: 'Failed write' }), /injected write failure/);
+    registry.files.write = write;
+    assert.equal((await registry.get(created.id)).revision, created.revision);
+    const saved = await bounded(registry.update(created.id, { ...created, description: 'Recovered' }));
+    await assert.rejects(registry.remove(created.id, { beforeRemove: () => { throw new Error('injected guard failure'); } }), /injected guard failure/);
+    assert.equal((await bounded(registry.get(created.id))).revision, saved.revision);
+    assert.equal((await bounded(registry.list()))[0].description, 'Recovered');
+    assert.equal(JSON.parse(await fs.readFile(path.join(root, saved.source.path), 'utf8')).description, 'Recovered');
+    assert.equal(await bounded(registry.remove(created.id)), true);
+    assert.equal(await bounded(registry.remove(created.id)), false);
+});
+
+test('concurrent initialize and ensure clean legacy files once and retain protected internal definitions', async t => {
+    const { root, registry } = await workspace(t);
+    registry.legacyDirectory = path.join(root, 'legacy');
+    await fs.mkdir(registry.legacyDirectory);
+    await fs.writeFile(path.join(registry.legacyDirectory, 'old.json'), '{}');
+    await fs.writeFile(path.join(registry.legacyDirectory, 'keep.txt'), 'keep');
+    const results = await bounded(Promise.all([
+        registry.initialize(), registry.initialize(),
+        registry.ensure(definition('Ensured', { id: 'ensured' }), { builtin: false }),
+        registry.ensure(definition('Ensured', { id: 'ensured' }), { builtin: false }),
+        registry.ensure(definition('Default', { id: 'default' })),
+        registry.ensure(definition('Code Development', { id: 'code-development' }), { builtin: false, system: true })
+    ]));
+    assert.equal(results[2].id, results[3].id);
+    assert.equal(results[2].revision, results[3].revision);
+    assert.deepEqual(await fs.readdir(path.join(root, 'legacy')), ['keep.txt']);
+    assert.equal(registry.legacyDirectory, null);
+    assert.deepEqual((await registry.list()).map(graph => graph.id).sort(), ['code-development', 'default', 'ensured']);
+    for (const id of ['default', 'code-development']) {
+        assert.equal(registry.getSync(id).readOnly, true);
+        assert.equal(registry.getSync(id).source, undefined);
+        await assert.rejects(registry.update(id, {}), { statusCode: 409 });
+        await assert.rejects(registry.remove(id), { statusCode: 409 });
+    }
+    assert.equal(await registry.update('missing', {}), null);
+    assert.equal(await registry.remove('missing'), false);
+    const saved = await registry.get('ensured');
+    await assert.rejects(registry.update(saved.id, { ...saved, revision: undefined }), { statusCode: 409 });
+    await assert.rejects(registry.update(saved.id, { ...saved, revision: 0 }), { statusCode: 409 });
+    assert.equal((await registry.ensure(definition('Ensured', { id: 'ensured' }), { builtin: false })).revision, saved.revision);
 });
