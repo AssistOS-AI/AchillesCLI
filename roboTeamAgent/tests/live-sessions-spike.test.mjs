@@ -41,7 +41,7 @@ test('production entrypoints carry no diagnostic hook, flag or test import; comm
         assert.doesNotMatch(source, /tests\//u, name);
     }
     const manifest = JSON.parse(await fs.readFile(new URL('../manifest.json', import.meta.url)));
-    assert.equal(manifest.agent, 'sh /code/scripts/startAgent.sh');
+    assert.equal(manifest.agent, 'exec sh /code/scripts/startAgent.sh');
     assert.equal(manifest.cli, 'node /code/server/robot-cli.mjs');
     assert.equal(JSON.stringify(manifest).includes('ROBOTEAM_LIVE_SESSIONS_SPIKE'), false);
     assert.deepEqual(SOCKET_PATHS, ['/dev/shm/roboteam-live/registry.sock']);
