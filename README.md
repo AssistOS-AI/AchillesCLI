@@ -72,7 +72,7 @@ node --test tests/*.test.mjs
 
 GPTResearcher remains an optional Ploinky worker. Codex, OpenCode, Pi and Claude Code run through ALA inside RoboTeam, not through separate Ploinky agents.
 
-Skill repositories are managed from each robot’s **Manage skills** dialog. Their optional `skillsets.md` defines named combinations with Description and Skills sections. The graph editor discovers named skillsets through Ploinky. RoboFlow matches their canonical repository-source identities against each robot catalog.
+Skill repositories are managed from each robot’s **Manage skills** dialog: select a repository on the left to inspect compact skillsets and their member names on the right. Administrator switches control catalog availability, not automatic execution. Required skills has its own navigation entry; the discreet + Add repo action beside Repositories opens a separate popup. Removal is in the selected repository's More actions menu. Their optional `skillsets.md` defines named combinations with Description and Skills sections. The graph editor discovers named skillsets through Ploinky. RoboFlow matches their canonical repository-source identities against each robot catalog.
 
 See [Skills & Skillsets](roboTeamAgent/docs/skills.html) for repository management, Markdown definitions and the execution catalog flow.
 
