@@ -125,6 +125,16 @@ export function verifySandboxRecord({ plan, observed, socketDevices }, serviceMo
     assert.deepEqual(socketDeviceExposures(observed.mounts, socketDevices), [],
         'No sandbox mount may expose the socket filesystem at or above the socket');
     assert.ok(Array.isArray(plan.sockets) && Array.isArray(observed.results), 'Sandbox aliases and results are required');
+    assert.deepEqual(plan.sockets.map(entry => entry?.socketPath).sort(), [...SOCKET_PATHS].sort(),
+        'Sandbox plan must cover exactly the selected socket set');
+    for (const socket of plan.sockets) {
+        assert.ok(typeof socket.realpath === 'string' && path.posix.isAbsolute(socket.realpath), 'Socket realpath is required');
+        assert.ok(Array.isArray(socket.aliases), 'Socket aliases are required');
+        assert.equal(new Set(socket.aliases).size, socket.aliases.length, 'Socket aliases must be unique');
+        assert.ok(socket.aliases.every(alias => typeof alias === 'string' && path.posix.isAbsolute(alias)), 'Socket aliases must be absolute paths');
+        assert.ok(socket.aliases.includes(socket.socketPath), 'Socket aliases must include the direct path');
+        assert.ok(socket.aliases.includes(socket.realpath), 'Socket aliases must include its realpath');
+    }
     const aliases = [...new Set(plan.sockets.flatMap(entry => entry.aliases))].sort();
     assert.deepEqual(observed.results.map(entry => entry.path).sort(), aliases);
     for (const entry of observed.results) assert.equal(entry.error, 'ENOENT', 'Every socket alias must be absent inside ALA');

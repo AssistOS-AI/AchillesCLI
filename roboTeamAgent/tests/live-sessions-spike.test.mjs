@@ -206,6 +206,46 @@ async function writeEvidence(root, files) {
     for (const [name, value] of Object.entries(files)) await fs.writeFile(path.join(root, name), JSON.stringify(value));
 }
 
+test('standalone sandbox verifier accepts distinct realpath and derived aliases only when all are probed', async () => {
+    const { verifySandboxRecord } = await spike('sandbox');
+    const record = completeEvidence()['sandbox-result.json'];
+    const socket = record.plan.sockets[0];
+    socket.realpath = '/run/roboteam-live/registry.sock';
+    socket.aliases.push(socket.realpath, '/workspace/socket-alias/registry.sock');
+    record.observed.results = socket.aliases.map(alias => ({ path: alias, error: 'ENOENT' }));
+    assert.doesNotThrow(() => verifySandboxRecord(record, SERVICE_NAMESPACE));
+    record.observed.results.pop();
+    assert.throws(() => verifySandboxRecord(record, SERVICE_NAMESPACE), { code: 'ERR_ASSERTION' });
+});
+
+test('standalone sandbox verifier refuses incomplete socket sets and invalid aliases', async t => {
+    const { verifySandboxRecord } = await spike('sandbox');
+    const cases = [
+        ['missing socket', record => { record.plan.sockets = []; }],
+        ['foreign socket', record => { record.plan.sockets[0].socketPath = '/other/registry.sock'; }],
+        ['duplicate socket', record => { record.plan.sockets.push(structuredClone(record.plan.sockets[0])); }],
+        ['empty aliases', record => { record.plan.sockets[0].aliases = []; }],
+        ['unrelated aliases', record => { record.plan.sockets[0].aliases = ['/elsewhere/registry.sock']; }],
+        ['missing distinct realpath alias', record => { record.plan.sockets[0].realpath = '/run/roboteam-live/registry.sock'; }],
+        ['missing aliases', record => { delete record.plan.sockets[0].aliases; }],
+        ['duplicate alias', record => { record.plan.sockets[0].aliases.push(record.plan.sockets[0].socketPath); }],
+        ['relative alias', record => { record.plan.sockets[0].aliases.push('relative.sock'); }],
+        ['non-string alias', record => { record.plan.sockets[0].aliases.push(null); }],
+        ['empty realpath', record => { record.plan.sockets[0].realpath = ''; }],
+        ['relative realpath', record => { record.plan.sockets[0].realpath = 'relative.sock'; }],
+        ['non-string realpath', record => { record.plan.sockets[0].realpath = null; }],
+    ];
+    for (const [name, change] of cases) await t.test(name, () => {
+        const record = completeEvidence()['sandbox-result.json'];
+        change(record);
+        // Keep the observations consistent with the supplied aliases so only
+        // the verifier's socket-set and alias validation can reject the record.
+        const aliases = [...new Set(record.plan.sockets.flatMap(socket => socket.aliases))];
+        record.observed.results = aliases.map(alias => ({ path: alias, error: 'ENOENT' }));
+        assert.throws(() => verifySandboxRecord(record, SERVICE_NAMESPACE), { code: 'ERR_ASSERTION' });
+    });
+});
+
 test('owner evidence without the wrong-tuple control cannot produce passing artifacts', async t => {
     const { root } = await fixture(t);
     const files = completeEvidence();
