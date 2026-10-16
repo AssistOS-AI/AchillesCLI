@@ -4,31 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AchillesCLI Agent Suite</title>
-  <link rel="stylesheet" href="GPTResearcher/docs/styles.css">
-  <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
-</head>
+  <style>body{font-family:system-ui,sans-serif;margin:0;color:#1d2330}.site-header{padding:12px 24px;border-bottom:1px solid #d8dde6;display:flex;gap:24px;align-items:center}.site-title{font-weight:600}.site-nav a{margin-right:16px}.page{max-width:60rem;margin:0 auto;padding:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8dde6;padding:8px;text-align:left}.site-footer{padding:16px 24px;border-top:1px solid #d8dde6}</style>
+  </head>
 <body>
   <header class="site-header">
     <span class="site-title">AchillesCLI Agent Suite</span>
     <nav class="site-nav" aria-label="Primary navigation">
       <div class="nav-menu">
         <button class="nav-trigger" type="button" aria-expanded="false" aria-haspopup="true"><span>Agents</span><span class="submenu-indicator" aria-hidden="true">▾</span></button>
-        <div class="nav-panel"><a href="GPTResearcher/docs/index.html">GPTResearcher</a><a href="roboTeamAgent/docs/index.html">RoboTeam Agent</a></div>
+        <div class="nav-panel"><a href="https://github.com/AssistOS-AI/legacy-agents/tree/main/GPTResearcher/docs/index.html">GPTResearcher (legacy-agents)</a><a href="https://github.com/AssistOS-AI/AssistOSExplorer/tree/main/roboTeamAgent/docs/index.html">RoboTeam Agent (AssistOSExplorer)</a></div>
       </div>
     </nav>
   </header>
   <main class="page"><article class="page__panel">
     <p class="breadcrumbs">Agent repository</p>
     <h1>AchillesCLI Agent Suite</h1>
-    <p class="lead">RoboTeam owns the default workspace copilot and every robot conversation. GPTResearcher remains an optional Ploinky worker. Codex, Pi and OpenCode are coding backends executed by ALA. AchillesCLI is no longer a standalone agent.</p>
+    <p class="lead">This repository no longer contains any agent: only the repository documentation and size-check scripts remain. RoboTeam Agent moved to <a href="https://github.com/AssistOS-AI/AssistOSExplorer/tree/main/roboTeamAgent">AssistOS-AI/AssistOSExplorer (roboTeamAgent/)</a> and GPTResearcher moved to <a href="https://github.com/AssistOS-AI/legacy-agents/tree/main/GPTResearcher">AssistOS-AI/legacy-agents (GPTResearcher/)</a>. RoboTeam owns the default workspace copilot and every robot conversation. GPTResearcher remains an optional Ploinky worker. Codex, Pi and OpenCode are coding backends executed by ALA. AchillesCLI is no longer a standalone agent.</p>
 
-    <h2>Agents in this repository</h2>
+    <h2>Agents formerly in this repository</h2>
     <table>
       <thead><tr><th>Agent</th><th>Primary responsibility</th><th>Documentation</th></tr></thead>
       <tbody>
 
-        <tr><td>GPTResearcher</td><td>Combines web search and optional local documents into a Markdown research report saved in the selected workspace.</td><td><a href="GPTResearcher/docs/index.html">Open GPTResearcher docs</a></td></tr>
-        <tr><td>RoboTeam Agent</td><td>Manages persistent robots, private workspaces, browser state, and authenticated interactive Linux desktops.</td><td><a href="roboTeamAgent/docs/index.html">Open RoboTeam Agent docs</a></td></tr>
+        <tr><td>GPTResearcher</td><td>Combines web search and optional local documents into a Markdown research report saved in the selected workspace.</td><td><a href="https://github.com/AssistOS-AI/legacy-agents/tree/main/GPTResearcher/docs/index.html">Open GPTResearcher docs (legacy-agents)</a></td></tr>
+        <tr><td>RoboTeam Agent</td><td>Manages persistent robots, private workspaces, browser state, and authenticated interactive Linux desktops.</td><td><a href="https://github.com/AssistOS-AI/AssistOSExplorer/tree/main/roboTeamAgent/docs/index.html">Open RoboTeam Agent docs (AssistOSExplorer)</a></td></tr>
       </tbody>
     </table>
 
@@ -41,7 +40,7 @@
     <h2>Shared operational boundary</h2>
     <p>Explorer enables RoboTeam globally. Optional workers start only when requested. Ploinky owns routing and authorization, RoboTeam owns robot sessions and GUI lifecycle, and ALA runs the selected native coding agent inside Bubblewrap.</p>
   </article></main>
-  <footer class="site-footer">Select an agent above to open its dedicated documentation.</footer>
+  <footer class="site-footer">Select an agent above to open its documentation in its new repository.</footer>
   <script>
     const menus = [...document.querySelectorAll('.nav-menu')];
     const closeMenus = (except = null) => menus.forEach((menu) => { if (menu === except) return; menu.classList.remove('is-open'); menu.querySelector('.nav-trigger')?.setAttribute('aria-expanded', 'false'); });
