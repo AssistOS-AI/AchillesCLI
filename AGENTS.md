@@ -1,5 +1,7 @@
 # Scope
 
+This repository no longer contains any agent; it holds documentation and the size-check scripts only. RoboTeam Agent moved to `AssistOS-AI/AssistOSExplorer` (`roboTeamAgent/`, identity `AchillesIDE/roboTeamAgent`; former root `tests/` now `roboTeamAgent/tests/cli/`). GPTResearcher moved to `AssistOS-AI/legacy-agents` (`GPTResearcher/`, identity `legacy-agents/GPTResearcher`). Every `roboTeamAgent/` or `GPTResearcher/` path below is relative to the repository that now owns it. Edit those agents there.
+
 RoboTeam is the workspace robot and copilot agent. The conversational runtime lives in `roboTeamAgent/copilot/`; GPTResearcher remains a separate optional research worker.
 
 # Mandatory Reading Order
@@ -39,4 +41,4 @@ Manual Run now shares scheduled execution claims and run linkage, requires an ad
 - `roboTeamAgent/IDE-plugins/`: Explorer copilot and RoboTeam actions.
 - `roboTeamAgent/docs/`: current documentation and specifications.
 - `GPTResearcher/docs/`: separate research-worker documentation, local canonical wiki and specification set. Its generated-local model adapter must retain the `PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED` refusal before routing credential access until authority-transport certification exists.
-- `tests/`, `roboTeamAgent/tests/`, `roboTeamAgent/copilot/tests/`: integration and module tests.
+- `roboTeamAgent/tests/` (including `tests/cli/`), `roboTeamAgent/copilot/tests/`: integration and module tests.
