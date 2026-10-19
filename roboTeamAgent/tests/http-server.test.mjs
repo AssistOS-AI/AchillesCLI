@@ -116,6 +116,7 @@ test('skillset mutations are admin-only, including rejection of internal agents'
         add: async (...args) => calls.push(['add', ...args]),
         remove: async (...args) => calls.push(['remove', ...args]),
         setSkillsetEnabled: async (...args) => calls.push(['toggle', ...args]),
+        setRepositorySkillEnabled: async (...args) => calls.push(['skill-toggle', ...args]),
     } });
     t.after(fixture.close);
     const robot = await fixture.robotStore.create({ name: 'Skills' });
@@ -139,6 +140,23 @@ test('skillset mutations are admin-only, including rejection of internal agents'
     const removed = await fetch(removeUrl, { method: 'DELETE', headers: { 'x-ploinky-auth-info': authHeader('admin', ['admin']) } });
     assert.equal(removed.status, 200);
     assert.deepEqual(calls.at(-1), ['remove', robot.id, 'repo-4d529e42-fad0-43b7-b357-95029c882355']);
+    const patch = headers => fetch(`${fixture.baseUrl}/api/robots/${robot.id}/skillsets`, {
+        method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ skill: 'docs/read-pdf', enabled: false }),
+    });
+    const count = calls.length;
+    for (const headers of [{}, { 'x-ploinky-auth-info': authHeader('user') }, { 'x-roboteam-internal-token': 'test-token' }]) {
+        assert.ok([401, 403].includes((await patch(headers)).status));
+    }
+    assert.equal(calls.length, count);
+    assert.equal((await patch({ 'x-ploinky-auth-info': authHeader('admin', ['admin']) })).status, 200);
+    assert.deepEqual(calls.at(-1), ['skill-toggle', robot.id, { skill: 'docs/read-pdf', enabled: false }]);
+    const ambiguous = await fetch(`${fixture.baseUrl}/api/robots/${robot.id}/skillsets`, {
+        method: 'PATCH', headers: { 'x-ploinky-auth-info': authHeader('admin', ['admin']), 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'docs-set-1', skill: 'docs/read-pdf', enabled: false }),
+    });
+    assert.equal(ambiguous.status, 400);
+    assert.equal(calls.length, count + 1);
 });
 
 test('task starts validate allowed policy intent and ignore caller-supplied snapshots and policy references', async (t) => {

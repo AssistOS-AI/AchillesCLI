@@ -640,7 +640,12 @@ export function createRoboTeamServer(options) {
                 if (!isAdminActor(actor)) return sendError(res, 403, 'administrator role is required');
                 const body = await readJsonBody(req);
                 if (req.method === 'POST') await skillsets.add(skillsetsId, body);
-                else if (req.method === 'PATCH') await skillsets.setSkillsetEnabled(skillsetsId, body);
+                else if (req.method === 'PATCH') {
+                    if (Object.hasOwn(body, 'skill')) {
+                        if (Object.hasOwn(body, 'id')) return sendError(res, 400, 'select either a skill or a skillset');
+                        await skillsets.setRepositorySkillEnabled(skillsetsId, body);
+                    } else await skillsets.setSkillsetEnabled(skillsetsId, body);
+                }
                 else await skillsets.remove(skillsetsId, url.searchParams.get('name') ?? body.name);
                 await roboflow?.refreshCoverage();
                 return sendJson(res, 200, { ok: true });

@@ -254,7 +254,10 @@ test('robot_list sends the agent origin proof only for an agent acting on its ow
     const server = http.createServer((request, response) => {
         requests.push({ method: request.method, url: request.url, headers: request.headers });
         response.setHeader('content-type', 'application/json');
-        response.end(JSON.stringify({ ok: true, canAdmin: false, robots: [{ id: 'robot-a1b2c3', repositories: [{ skillsets: [{ id: 'on' }, { id: 'off', enabled: false }] }] }] }));
+        response.end(JSON.stringify({ ok: true, canAdmin: false, robots: [{ id: 'robot-a1b2c3', repositories: [{
+            skills: [{ name: 'one', enabled: true }, { name: 'two', enabled: false }],
+            skillsets: [{ id: 'on', skills: ['one', 'two'] }, { id: 'empty', skills: ['two'] }, { id: 'off', enabled: false, skills: ['one'] }],
+        }] }] }));
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     t.after(() => server.close());
@@ -265,7 +268,8 @@ test('robot_list sends the agent origin proof only for an agent acting on its ow
         sub: agent, actor: { kind: 'agent', id: agent, roles: [] }, caller: { kind: 'agent', id: agent, roles: ['agent'] },
     }) });
     assert.equal(own.code, 0, own.stderr);
-    assert.deepEqual(JSON.parse(own.stdout).robots[0].repositories[0].skillsets, [{ id: 'on' }]);
+    assert.deepEqual(JSON.parse(own.stdout).robots[0].repositories[0].skillsets, [{ id: 'on', skills: ['one'] }]);
+    assert.deepEqual(JSON.parse(own.stdout).robots[0].repositories[0].skills, [{ name: 'one', enabled: true }]);
     assert.equal(requests.length, 1);
     assert.equal(requests[0].method, 'GET');
     assert.equal(requests[0].url, '/api/robots');

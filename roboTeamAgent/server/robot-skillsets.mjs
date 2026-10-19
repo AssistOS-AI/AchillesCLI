@@ -10,6 +10,7 @@ import { resolveAlaCommand } from './ala-command.mjs';
 import { SkillPolicies, selectorNames } from './skill-policy.mjs';
 import { LiveSkillCatalog } from './live-skill-catalog.mjs';
 import { readSkillTree, catalogDigest, hashValue } from './skill-files.mjs';
+import { HUMAN_REPORT_SKILL } from './required-skills.mjs';
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const UUID = /^[a-f0-9-]{36}$/;
@@ -141,6 +142,21 @@ export class RobotSkillsets {
         });
     }
 
+    async setRepositorySkillEnabled(robotId, { skill, enabled }) {
+        if (typeof skill !== 'string' || typeof enabled !== 'boolean') throw invalid('skill identity and boolean enabled are required');
+        return this.robotStore.withRobot(robotId, async (robot, save) => {
+            const member = availableRepositories(robot).flatMap(repo => repo.skills.map(entry => ({
+                ...entry, id: `${repo.name}/${entry.name}`,
+            }))).find(entry => entry.id === skill);
+            if (!member) throw invalid('skill not found');
+            if (member.name === HUMAN_REPORT_SKILL) throw invalid('Required skills are read-only');
+            const disabled = new Set(robot.disabledSkills || []);
+            if (enabled) disabled.delete(skill);
+            else disabled.add(skill);
+            await save({ ...robot, disabledSkills: [...disabled] });
+        });
+    }
+
     async remove(robotId, name) {
         if (name === 'copilot') throw invalid('copilot is a reserved skill source');
         selectionNames([name]);
@@ -200,6 +216,7 @@ export class RobotSkillsets {
         const entry = inventory.skills.find((skill) => skill.identity === identity);
         if (!entry) throw invalid('skill identity is unavailable');
         if (entry.required || entry.readOnly) throw invalid('Required skills are read-only');
+        if (enabled && robot.disabledSkills?.includes(identity)) throw invalid('Skill is disabled for this robot; enable it in Manage skills first');
         let policy = structuredClone(inventory.policy);
         policy.excludedSkills = policy.excludedSkills.filter((name) => name !== identity);
         if (!enabled) policy.excludedSkills.push(identity);
@@ -233,25 +250,30 @@ export class RobotSkillsets {
 
 export function publicSkillsets(robot, { includeDisabled = false } = {}) {
     const disabled = new Set(robot.disabledSkillsets || []);
+    const disabledSkills = new Set(robot.disabledSkills || []);
     return availableSkillsets(robot).filter(set => includeDisabled || !disabled.has(set.id)).map(({ id, name, description, repository, skills }) => ({
         id, name, description, repositoryId: repository.name, builtin: Boolean(repository.builtin),
         ...(includeDisabled ? { enabled: !disabled.has(id) } : {}),
-        skills: skills.map(skill => skill.name),
-    }));
+        skills: skills.filter(skill => includeDisabled || !disabledSkills.has(`${repository.name}/${skill.name}`)).map(skill => skill.name),
+    })).filter(set => includeDisabled || set.skills.length);
 }
 
 export function publicRepositories(robot) {
     const sets = publicSkillsets(robot, { includeDisabled: true });
+    const disabled = new Set(robot.disabledSkills || []);
     return availableRepositories(robot).map(repo => ({
         id: repo.name, source: repo.source, builtin: Boolean(repo.builtin),
-        skills: repo.skills.map(({ name, description }) => ({ name, description, id: `${repo.name}/${name}` })),
+        skills: repo.skills.map(({ name, description }) => ({ name, description, id: `${repo.name}/${name}`,
+            enabled: name === HUMAN_REPORT_SKILL || !disabled.has(`${repo.name}/${name}`),
+            readOnly: name === HUMAN_REPORT_SKILL })),
         skillsets: sets.filter(set => set.repositoryId === repo.name),
     }));
 }
 
 export function individualSkillRepositories(robot) {
+    const disabled = new Set(robot.disabledSkills || []);
     return availableRepositories(robot).filter(repo => !(repo.definitions || []).length).map(repo => ({
         id: repo.name,
-        skills: repo.skills.map(({ name, description }) => ({ name, description })),
-    }));
+        skills: repo.skills.filter(skill => !disabled.has(`${repo.name}/${skill.name}`)).map(({ name, description }) => ({ name, description })),
+    })).filter(repo => repo.skills.length);
 }

@@ -40,7 +40,7 @@ test('the manager keeps a discreet add action in the navigation heading and open
 });
 
 test('skill names stay inside their skillset, with only ungrouped skills listed separately', () => {
-    assert.match(manager, /item\.append\(skillList\(set\.skills, `Skills included in/);
+    assert.match(manager, /item\.append\(skillList\(repo, set\.skills, `Skills included in/);
     assert.match(manager, /new Set\(sets\.flatMap\(set => set\.skills\)\)/);
     assert.match(manager, /repo\.skills\.filter\(skill => !grouped\.has\(skill\.name\)\)/);
     assert.match(manager, /sets\.length \? 'Other skills' : 'Skills'/);
@@ -48,6 +48,18 @@ test('skill names stay inside their skillset, with only ungrouped skills listed 
     assert.match(manager, /input\.setAttribute\('role', 'switch'\)/);
     assert.match(manager, /input\.disabled = busy \|\| !canAdmin/);
     assert.match(manager, /mutate\('PATCH', \{ id: set\.id, enabled: input\.checked \}\)/);
+});
+
+test('each member and ungrouped skill has a robot-scoped switch with independent focus restoration', () => {
+    assert.match(manager, /repo\.skills\.find\(member => member\.name === name\)/);
+    assert.match(manager, /input\.checked = skill\.enabled !== false/);
+    assert.match(manager, /input\.disabled = busy \|\| !canAdmin \|\| skill\.readOnly/);
+    assert.match(manager, /`skill:\$\{repo\.id\}:\$\{group\}:\$\{name\}`/);
+    assert.match(manager, /mutate\('PATCH', \{ skill: skill\.id, enabled: input\.checked \}\)/);
+    assert.match(manager, /skillList\(repo, otherSkills, 'Individual repository skills'\)/);
+    assert.match(manager, /skill\.readOnly \? 'Required'/);
+    assert.match(css, /\.skill-member-toggle \{[^}]*min-height: 36px/);
+    assert.match(css, /\.skill-member-toggle:has\(input:focus-visible\)/);
 });
 
 test('administrator mutations retain the existing API and built-in sources cannot be removed', () => {

@@ -11,16 +11,21 @@ export function canonicalSkill(source, name) { return `${source.replace(/\/$/, '
 // none, its individual skills, mirroring robot task configuration.
 export function robotSelections(robot) {
     const disabled = new Set(robot.disabledSkillsets || []);
-    const selections = availableSkillsets(robot).filter(set => !disabled.has(set.id)).map(set => ({
+    const disabledSkills = new Set(robot.disabledSkills || []);
+    const selections = availableSkillsets(robot).filter(set => !disabled.has(set.id)
+        && set.skills.some(skill => !disabledSkills.has(`${set.repository.name}/${skill.name}`))).map(set => ({
         id: canonicalSkillset(set.repository.source, set.name), kind: 'skillset', selector: set.id, name: set.name,
         description: set.description, repositoryId: set.repository.source, repositoryName: set.repository.name,
     }));
     for (const repository of availableRepositories(robot)) {
         if ((repository.definitions || []).length) continue;
-        for (const skill of repository.skills || []) selections.push({
-            id: canonicalSkill(repository.source, skill.name), kind: 'skill', selector: `${repository.name}/${skill.name}`,
-            name: skill.name, description: skill.description, repositoryId: repository.source, repositoryName: repository.name,
-        });
+        for (const skill of repository.skills || []) {
+            if (disabledSkills.has(`${repository.name}/${skill.name}`)) continue;
+            selections.push({
+                id: canonicalSkill(repository.source, skill.name), kind: 'skill', selector: `${repository.name}/${skill.name}`,
+                name: skill.name, description: skill.description, repositoryId: repository.source, repositoryName: repository.name,
+            });
+        }
     }
     return selections;
 }

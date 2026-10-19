@@ -76,6 +76,8 @@ Skill repositories are managed from each robot’s **Manage skills** dialog: sel
 
 See [Skills & Skillsets](roboTeamAgent/docs/skills.html) for repository management, Markdown definitions and the execution catalog flow.
 
+Manage skills also offers an administrator switch for every member inside a skillset and for ungrouped skills. Availability is saved per robot and repository-qualified skill, shared across overlapping groups. Disabled skills are omitted from discovery and the next live execution, without changing saved conversation selections or interrupting running tasks. Required skills remain read-only.
+
 Local instruction skills use live conversation policies and capture current files at execution start. See [local skill discovery](roboTeamAgent/docs/local-skills.html).
 
 ## Execution summaries

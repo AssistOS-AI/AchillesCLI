@@ -7,6 +7,8 @@ import test from 'node:test';
 import { RobotStore } from '../server/robot-store.mjs';
 import { RobotSkillsets, publicSkillsets, publicRepositories, individualSkillRepositories } from '../server/robot-skillsets.mjs';
 import { RuntimeManager } from '../server/runtime-manager.mjs';
+import { robotSelections } from '../server/roboflow/skill-matching.mjs';
+import { installLiveSkills } from '../server/live-skill-install.mjs';
 
 async function discoverSkills(roots) {
     const result = [];
@@ -95,6 +97,78 @@ test('disabled skillsets persist per robot and disappear only from discovery', a
     await assert.rejects(f.skillsets.setSkillsetEnabled(f.robot.id, { id, enabled: 'false' }), /boolean/);
     await f.skillsets.setSkillsetEnabled(f.robot.id, { id, enabled: true });
     assert.equal(publicSkillsets(await f.store.get(f.robot.id)).length, 2);
+});
+
+test('member switches persist per robot and filter overlapping sets and live executions without changing policies', async t => {
+    const f = await fixture(t);
+    await f.skillsets.add(f.robot.id, { name: 'documents', source: f.source });
+    const original = await f.store.get(f.robot.id);
+    const policyId = crypto.randomUUID();
+    const selected = await f.skillsets.policies.ensure(original, policyId, { input: { skillSets: ['documents-set-1'] }, useDefaults: false });
+    const cwd = path.join(f.source, '..', 'project');
+    await fs.mkdir(cwd);
+    const request = { service: f.skillsets, robot: original, policyId, cwd, sessionId: crypto.randomUUID(),
+        client: { listRepositories: async () => [f.documentationRepository] } };
+    const before = await installLiveSkills(request);
+    assert.ok((await fs.readdir(before.skillsDirectory)).includes('read-pdf'));
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'documents/read-pdf', enabled: false });
+    const saved = await new RobotStore({ dataDir: f.dataDir }).get(f.robot.id);
+    assert.deepEqual(saved.disabledSkills, ['documents/read-pdf']);
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'documents/read-pdf', enabled: false });
+    assert.deepEqual((await f.store.get(f.robot.id)).disabledSkills, ['documents/read-pdf'], 'repeated requests are idempotent');
+    assert.deepEqual(publicSkillsets(saved).map(set => [set.id, set.skills]), [['documents-set-1', ['write-doc']]]);
+    assert.deepEqual(robotSelections(saved).map(set => set.selector), ['documents-set-1']);
+    assert.deepEqual(publicRepositories(saved)[0].skillsets.map(set => set.skills), [['read-pdf', 'write-doc'], ['read-pdf']]);
+    assert.equal(publicRepositories(saved)[0].skills.find(skill => skill.name === 'read-pdf').enabled, false);
+    assert.deepEqual(await f.skillsets.policies.read(original.id, policyId), selected, 'availability must not rewrite conversation policies');
+    const after = await installLiveSkills({ ...request, robot: saved });
+    assert.deepEqual((await fs.readdir(after.skillsDirectory)).sort(), ['human-report', 'write-doc']);
+    const explicit = await f.capture(saved, { skills: ['documents/read-pdf'] });
+    assert.deepEqual(selectedSkills(explicit.resolvedSkills), [], 'explicit selection must not bypass availability');
+    await assert.rejects(f.skillsets.setEnabled(saved, policyId, selected.policyVersion, 'documents/read-pdf', true, cwd), /Manage skills/);
+    const other = await f.store.create({ name: 'Other' });
+    await f.skillsets.add(other.id, { name: 'documents', source: f.source });
+    assert.deepEqual(publicSkillsets(await f.store.get(other.id))[0].skills, ['read-pdf', 'write-doc']);
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'documents/read-pdf', enabled: true });
+    const enabled = await f.store.get(f.robot.id);
+    const restored = await installLiveSkills({ ...request, robot: enabled });
+    assert.deepEqual((await fs.readdir(restored.skillsDirectory)).sort(), ['human-report', 'read-pdf', 'write-doc']);
+    assert.deepEqual(await f.skillsets.policies.read(original.id, policyId), selected);
+    await f.skillsets.setEnabled(enabled, policyId, selected.policyVersion, 'documents/write-doc', false, cwd);
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'documents/write-doc', enabled: false });
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'documents/write-doc', enabled: true });
+    const excluded = await installLiveSkills({ ...request, robot: await f.store.get(f.robot.id) });
+    assert.deepEqual((await fs.readdir(excluded.skillsDirectory)).sort(), ['human-report', 'read-pdf'], 're-enabling availability keeps conversation exclusions');
+});
+
+test('member identity distinguishes repositories and validates required skills, skill names and boolean values', async t => {
+    const f = await fixture(t);
+    await f.skillsets.add(f.robot.id, { name: 'documents', source: f.source });
+    const second = path.join(f.source, '..', 'second');
+    await fs.cp(f.source, second, { recursive: true });
+    await fs.unlink(path.join(second, 'skillsets.md'));
+    await f.skillsets.add(f.robot.id, { name: 'other', source: second });
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'documents/read-pdf', enabled: false });
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'documents/write-doc', enabled: false });
+    assert.deepEqual(publicSkillsets(await f.store.get(f.robot.id)), []);
+    assert.deepEqual(individualSkillRepositories(await f.store.get(f.robot.id))[0].skills.map(skill => skill.name), ['read-pdf', 'write-doc']);
+    await f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'other/read-pdf', enabled: false });
+    assert.deepEqual(individualSkillRepositories(await f.store.get(f.robot.id))[0].skills.map(skill => skill.name), ['write-doc']);
+    assert.deepEqual(robotSelections(await f.store.get(f.robot.id)).map(selection => selection.selector), ['other/write-doc']);
+    const unchanged = await f.store.get(f.robot.id);
+    for (const input of [{ skill: 'read-pdf', enabled: false }, { skill: 'documents/missing', enabled: false },
+        { skill: 'required/human-report', enabled: false }, { skill: 'documents/read-pdf', enabled: 'false' }]) {
+        await assert.rejects(f.skillsets.setRepositorySkillEnabled(f.robot.id, input), /required|not found|boolean/i);
+    }
+    assert.deepEqual(await f.store.get(f.robot.id), unchanged, 'invalid requests do not change metadata');
+    await f.skillsets.add(f.robot.id, { name: 'reports', source: f.documentationRepository.source });
+    await assert.rejects(f.skillsets.setRepositorySkillEnabled(f.robot.id, { skill: 'reports/human-report', enabled: false }), /read-only/);
+    const required = publicRepositories(await f.store.get(f.robot.id)).find(repo => repo.id === 'reports').skills[0];
+    assert.equal(required.enabled, true);
+    assert.equal(required.readOnly, true);
+    const robot = await f.store.ensureDefaultRobot();
+    await f.skillsets.setRepositorySkillEnabled(robot.id, { skill: 'copilot/bash', enabled: false });
+    assert.equal(publicRepositories(await f.store.get(robot.id))[0].skills.find(skill => skill.name === 'bash').enabled, false);
 });
 
 test('copilot is registered only on default and rejects selection on other robots', async (t) => {

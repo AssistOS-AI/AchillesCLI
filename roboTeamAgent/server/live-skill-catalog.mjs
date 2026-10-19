@@ -50,6 +50,8 @@ export class LiveSkillCatalog {
 
     // workflowSkills adds list-workflows and launch-workflow, which only WebChat conversations receive.
     async resolve(robot, policy, cwd, { workflowSkills = false, workflowExecution = false } = {}) {
+        // Robot availability applies to every live selection without rewriting conversation policies.
+        policy = { ...policy, excludedSkills: [...new Set([...policy.excludedSkills, ...(robot.disabledSkills || [])])] };
         const workspace = await fs.realpath(this.service.workspaceRoot);
         const scope = await fs.realpath(policy.scopeRoot);
         if (scope !== path.resolve(policy.scopeRoot) || !inside(workspace, scope)) throw skillError('saved skill scope is outside the workspace');

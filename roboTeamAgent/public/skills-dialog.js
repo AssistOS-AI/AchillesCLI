@@ -56,7 +56,7 @@ export function openSkillsDialog(robot, { api, onChanged, canAdmin }) {
                 <section class="required-skills" id="skills-required-panel" aria-labelledby="skills-required-title" hidden><h3 id="skills-required-title">Required skills</h3><p class="muted">Managed by RoboTeam. These skills cannot be disabled.</p><div class="required-skills-list"><p class="muted">Loading…</p></div></section>
             </div>
         </div>
-        <footer class="skills-manager-footer"><p class="muted">Enabled skillsets are offered for selection. Existing task selections and continuations are unchanged.</p><p class="message" role="status" aria-live="polite" hidden></p></footer>`;
+        <footer class="skills-manager-footer"><p class="muted">Skill switches apply to this robot across its skillsets, from the next execution. Running tasks are unchanged.</p><p class="message" role="status" aria-live="polite" hidden></p></footer>`;
     const addDialog = document.createElement('dialog');
     addDialog.id = 'skills-add-dialog';
     addDialog.className = 'skills-dialog skills-add-dialog';
@@ -125,10 +125,26 @@ export function openSkillsDialog(robot, { api, onChanged, canAdmin }) {
     });
     addDialog.addEventListener('cancel', event => event.stopPropagation());
     addDialog.addEventListener('close', () => addTrigger.setAttribute('aria-expanded', 'false'));
-    function skillList(names, label) {
+    function skillList(repo, names, label, group = 'other') {
         const list = node('ul', '', 'skill-members');
         list.setAttribute('aria-label', label);
-        for (const name of names) list.append(node('li', name));
+        for (const name of names) {
+            const skill = repo.skills.find(member => member.name === name);
+            const row = node('li', '', 'skill-member');
+            const toggle = node('label', '', 'skill-member-toggle');
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.setAttribute('role', 'switch');
+            input.checked = skill.enabled !== false;
+            input.disabled = busy || !canAdmin || skill.readOnly;
+            input.setAttribute('aria-label', `${name}: enabled for ${current.name}`);
+            input.dataset.skillsFocus = `skill:${repo.id}:${group}:${name}`;
+            input.addEventListener('change', () => void mutate('PATCH', { skill: skill.id, enabled: input.checked }));
+            toggle.append(input, node('span', name, 'skill-member-name'),
+                node('span', skill.readOnly ? 'Required' : input.checked ? 'Enabled' : 'Disabled', 'skill-member-state'));
+            row.append(toggle);
+            list.append(row);
+        }
         return list;
     }
     function renderRepository(repo) {
@@ -181,7 +197,7 @@ export function openSkillsDialog(robot, { api, onChanged, canAdmin }) {
             head.append(toggle);
             item.append(head);
             if (set.description) item.append(node('p', set.description, 'skillset-description'));
-            item.append(skillList(set.skills, `Skills included in ${set.name || set.id}`));
+            item.append(skillList(repo, set.skills, `Skills included in ${set.name || set.id}`, set.id));
             repositoryPanel.append(item);
         }
         const grouped = new Set(sets.flatMap(set => set.skills));
@@ -189,7 +205,7 @@ export function openSkillsDialog(robot, { api, onChanged, canAdmin }) {
         if (otherSkills.length || !sets.length) {
             repositoryPanel.append(node('h4', sets.length ? 'Other skills' : 'Skills', 'skills-section-label'));
             if (sets.length) repositoryPanel.append(node('p', 'Not included in the declared skillsets.', 'muted'));
-            if (otherSkills.length) repositoryPanel.append(skillList(otherSkills, 'Individual repository skills'));
+            if (otherSkills.length) repositoryPanel.append(skillList(repo, otherSkills, 'Individual repository skills'));
             else repositoryPanel.append(node('p', 'No skills available.', 'muted'));
         }
     }
@@ -261,7 +277,8 @@ export function openSkillsDialog(robot, { api, onChanged, canAdmin }) {
         const updating = method === 'PATCH';
         const idsBefore = new Set((current.repositories || []).map(repo => repo.id));
         const focusKey = document.activeElement?.dataset.skillsFocus;
-        setMessage(updating ? 'Updating skillset…' : method === 'POST' ? 'Adding repository…' : 'Removing repository…');
+        const subject = body.skill ? 'Skill' : 'Skillset';
+        setMessage(updating ? `Updating ${subject.toLowerCase()}…` : method === 'POST' ? 'Adding repository…' : 'Removing repository…');
         render();
         try {
             const route = `api/robots/${robot.id}/skillsets`;
@@ -277,7 +294,7 @@ export function openSkillsDialog(robot, { api, onChanged, canAdmin }) {
                 if (added) { selectedId = added.id; view = 'repository'; contentPane.scrollTop = 0; }
                 addController.complete();
             }
-            setMessage(updating ? `Skillset ${body.enabled ? 'enabled' : 'disabled'}.` : method === 'POST' ? 'Repository added.' : 'Repository removed. Selected skills from this source will be unavailable when tasks next start or resume.');
+            setMessage(updating ? `${subject} ${body.enabled ? 'enabled' : 'disabled'}.` : method === 'POST' ? 'Repository added.' : 'Repository removed. Selected skills from this source will be unavailable when tasks next start or resume.');
             await onChanged();
         } catch (error) {
             setMessage(error.message, true);

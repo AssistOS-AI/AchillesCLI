@@ -201,7 +201,10 @@ async function main() {
         // Repository management includes disabled combinations; discovery must omit them.
         for (const robot of result.robots || []) {
             for (const repo of robot.repositories || []) {
-                repo.skillsets = (repo.skillsets || []).filter(set => set.enabled !== false);
+                const disabled = new Set((repo.skills || []).filter(skill => skill.enabled === false).map(skill => skill.name));
+                repo.skillsets = (repo.skillsets || []).filter(set => set.enabled !== false)
+                    .map(set => ({ ...set, skills: set.skills.filter(name => !disabled.has(name)) })).filter(set => set.skills.length);
+                repo.skills = (repo.skills || []).filter(skill => skill.enabled !== false);
             }
         }
     }
