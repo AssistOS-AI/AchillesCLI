@@ -1,5 +1,7 @@
 # Scope
 
+This repository no longer contains any agent; it holds documentation and the size-check scripts only. RoboTeam Agent moved to `AssistOS-AI/AssistOSExplorer` (`roboTeamAgent/`, identity `AchillesIDE/roboTeamAgent`; former root `tests/` now `roboTeamAgent/tests/cli/`). GPTResearcher moved to `AssistOS-AI/legacy-agents` (`GPTResearcher/`, identity `legacy-agents/GPTResearcher`). Every `roboTeamAgent/` or `GPTResearcher/` path below is relative to the repository that now owns it. Edit those agents there.
+
 RoboTeam is the workspace robot and copilot agent. The conversational runtime lives in `roboTeamAgent/copilot/`; GPTResearcher remains a separate optional research worker.
 
 # Mandatory Reading Order
@@ -15,7 +17,7 @@ The bundled `copilot` repository contains seven self-contained Anthropic skills 
 - Use English for source comments and documentation, ES modules and four-space JavaScript indentation.
 - ALA owns coding-agent selection, native sessions and Bubblewrap execution. Do not restore MainAgent or the retired Bash broker as the conversational engine.
 - Skills call the real Ploinky MCP client through the Router. Never introduce a parallel MCP bridge or forward master/user-session credentials.
-- Robot homes and native accounts are robot-scoped. Copilot conversations and native task history belong to the opened folder under `.roboteam/`. ALA alone writes and reads conversation text, in `.roboteam/.ala/sessions/<sessionId>.jsonl`; RoboTeam reads it only through ALA's transcript module and keeps its own turn metadata in `.roboteam/sessions/<sessionId>/config.json`. RoboFlow workflow definitions and run metadata are global SQLite records; its logs and final responses remain in the execution folder.
+- Robot homes and native accounts are robot-scoped. Copilot conversations and native task history belong to the opened folder under `.roboteam/`. ALA alone writes and reads conversation text, in `.roboteam/.ala/sessions/<sessionId>.jsonl`; RoboTeam reads it only through ALA's transcript module and keeps its own turn metadata in `.roboteam/sessions/<sessionId>/config.json`. RoboFlow run metadata are global SQLite records; workflow definitions are JSON files (built-in in `roboTeamAgent/default-flows/`, saved in `/data/roboflow/flows/`, or in workspace `flows/` folders) and runs refer to them by id with a graph snapshot. Logs and final responses remain in the execution folder.
 - Session model and effort overrides are passed to ALA through `--model` and `--effort`; `--effort default` clears inherited effort. Executions without overrides read the robot home configuration directly. Never generate an intermediate ALA config file.
 - Session skill links live in `.roboteam/sessions/<sessionId>/skills`, alongside `config.json`. Mount them read-only at cwd `.agents/skills` through ALA’s explicit `at` and `expose` folder options; never install robot links into the shared project skill directory. Existing project skills remain available, with robot selections taking precedence only inside their own session.
 - Independent CLI conversations run concurrently. Desktop and Browser share exactly one GUI container and queue per robot. A conversation has one execution at a time.
@@ -39,4 +41,4 @@ Manual Run now shares scheduled execution claims and run linkage, requires an ad
 - `roboTeamAgent/IDE-plugins/`: Explorer copilot and RoboTeam actions.
 - `roboTeamAgent/docs/`: current documentation and specifications.
 - `GPTResearcher/docs/`: separate research-worker documentation, local canonical wiki and specification set. Its generated-local model adapter must retain the `PLOINKY_LOCAL_GENERATED_CONSUMER_NOT_CERTIFIED` refusal before routing credential access until authority-transport certification exists.
-- `tests/`, `roboTeamAgent/tests/`, `roboTeamAgent/copilot/tests/`: integration and module tests.
+- `roboTeamAgent/tests/` (including `tests/cli/`), `roboTeamAgent/copilot/tests/`: integration and module tests.

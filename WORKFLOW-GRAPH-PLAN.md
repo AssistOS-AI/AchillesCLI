@@ -1,5 +1,7 @@
 # Workflow graph implementation plan
 
+Note: this repository no longer contains any agent. The `roboTeamAgent/` paths in this historical plan now live in `AssistOS-AI/AssistOSExplorer` at `roboTeamAgent/` (identity `AchillesIDE/roboTeamAgent`).
+
 Status: implemented in the workspace on 2026-09-22. DS007 now defines the graph model. RoboTeam uses SQLite, and the linked AdvancedLanguageAgent checkout supplies separate caller system instructions. Activation requires restarting RoboTeam; startup removes legacy workflow definitions as agreed.
 
 The requested behavior takes precedence over the existing workflow design in AGENTS.md and DS007. Implementation must update those contracts together with the code. Documentation is in English as required by AGENTS.md.
